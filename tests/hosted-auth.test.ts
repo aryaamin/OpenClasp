@@ -1,14 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { POST as mcpHandler } from '../api/mcp.js';
 import { GET as metadataHandler } from '../api/oauth-protected-resource.js';
 
 describe('hosted MCP authorization', () => {
-  const originalPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  afterEach(() => {
-    if (originalPublishableKey === undefined) delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-    else process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = originalPublishableKey;
-  });
-
   it('challenges unauthenticated remote MCP requests', async () => {
     const response = await mcpHandler(
       new Request('https://openclasp.example/mcp', {
@@ -23,11 +17,15 @@ describe('hosted MCP authorization', () => {
     );
   });
 
-  it('fails closed when the OAuth issuer is not configured', () => {
-    delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  it('publishes Auth0 protected-resource metadata', async () => {
     const response = metadataHandler(
       new Request('https://openclasp.example/.well-known/oauth-protected-resource'),
     );
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      resource: 'https://openclasp.example/mcp',
+      authorization_servers: ['https://icfg-0ua6bab8d4omtfolx72mrhzo.us.auth0.com/'],
+      scopes_supported: ['mcp:access'],
+    });
   });
 });

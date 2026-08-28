@@ -1,7 +1,14 @@
-import { authServerMetadataHandlerClerk } from '@clerk/mcp-tools/next';
+import { auth0Config } from './auth0.js';
 
 export async function GET(): Promise<Response> {
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
-    return Response.json({ error: 'OAuth provider is not configured' }, { status: 503 });
-  return authServerMetadataHandlerClerk()();
+  const { issuer } = auth0Config();
+  const response = await fetch(`${issuer}.well-known/oauth-authorization-server`);
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      'access-control-allow-origin': '*',
+      'cache-control': 'public, max-age=3600',
+      'content-type': 'application/json',
+    },
+  });
 }

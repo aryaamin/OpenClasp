@@ -1,7 +1,11 @@
-import { protectedResourceHandlerClerk } from '@clerk/mcp-tools/next';
+import { auth0Config } from './auth0.js';
 
 export function GET(request: Request): Response {
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
-    return Response.json({ error: 'OAuth provider is not configured' }, { status: 503 });
-  return protectedResourceHandlerClerk()(request);
+  const config = auth0Config();
+  return Response.json({
+    resource: process.env.OPENCLASP_MCP_URL ?? `${new URL(request.url).origin}/mcp`,
+    authorization_servers: [config.issuer],
+    scopes_supported: ['mcp:access'],
+    bearer_methods_supported: ['header'],
+  });
 }

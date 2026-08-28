@@ -23,8 +23,6 @@
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",
-    "@clerk/backend": "^3.16.12",
-    "@clerk/mcp-tools": "^0.6.0",
     "@fastify/cors": "^11.1.0",
     "@fastify/swagger": "^9.5.1",
     "@modelcontextprotocol/server": "^2.0.0",
@@ -32,6 +30,7 @@
     "@openclasp/mcp-server": "workspace:*",
     "@openclasp/protocol": "workspace:*",
     "fastify": "^5.6.0",
+    "jose": "^6.2.10",
     "json-canonicalize": "^3.0.0",
     "mcp-handler": "^2.0.0",
     "react": "^19.1.1",

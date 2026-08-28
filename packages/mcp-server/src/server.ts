@@ -84,7 +84,7 @@ export function registerOpenClaspTools(
         ...input,
         operatorRef:
           typeof authenticatedOperator === 'string'
-            ? `clerk:${authenticatedOperator}`
+            ? `auth0:${authenticatedOperator}`
             : input.operatorRef,
       });
       return text(created);
@@ -100,7 +100,7 @@ export function registerOpenClaspTools(
       const authenticatedOperator = context.http?.authInfo?.extra?.operatorId;
       if (
         typeof authenticatedOperator === 'string' &&
-        input.operatorRef !== `clerk:${authenticatedOperator}`
+        input.operatorRef !== `auth0:${authenticatedOperator}`
       ) {
         throw new Error('Agent identity is not owned by the authenticated operator');
       }

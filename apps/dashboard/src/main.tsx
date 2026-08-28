@@ -1,16 +1,17 @@
-import {
-  AuthenticateWithRedirectCallback,
-  ClerkProvider,
-  useAuth,
-  useClerk,
-  useUser,
-} from '@clerk/react';
-import { useSignIn } from '@clerk/react/legacy';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-declare const __CLERK_PUBLISHABLE_KEY__: string;
+declare const __AUTH0_DOMAIN__: string;
+declare const __AUTH0_CLIENT_ID__: string;
+declare const __AUTH0_AUDIENCE__: string;
+
+type Auth0User = { sub: string; name?: string; email?: string; picture?: string };
+type AuthSession = { accessToken: string; expiresAt: number; user: Auth0User };
+type AuthTransaction = { state: string; nonce: string; verifier: string };
+
+const authSessionKey = 'openclasp.auth0.session';
+const authTransactionKey = 'openclasp.auth0.transaction';
 
 type DashboardData = {
   agents: Record<string, any>[];
@@ -49,6 +50,61 @@ type Page = (typeof pages)[number];
 
 let getAuthToken: () => Promise<string | null> = async () => null;
 
+function base64Url(bytes: Uint8Array) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function randomValue(size = 32) {
+  return base64Url(crypto.getRandomValues(new Uint8Array(size)));
+}
+
+function readAuthSession(): AuthSession | null {
+  try {
+    const raw = sessionStorage.getItem(authSessionKey);
+    if (!raw) return null;
+    const session = JSON.parse(raw) as AuthSession;
+    if (!session.accessToken || session.expiresAt <= Date.now()) {
+      sessionStorage.removeItem(authSessionKey);
+      return null;
+    }
+    return session;
+  } catch {
+    sessionStorage.removeItem(authSessionKey);
+    return null;
+  }
+}
+
+async function beginAuth(provider: 'google' | 'github') {
+  const verifier = randomValue(48);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const transaction: AuthTransaction = { state: randomValue(), nonce: randomValue(), verifier };
+  sessionStorage.setItem(authTransactionKey, JSON.stringify(transaction));
+  const parameters = new URLSearchParams({
+    client_id: __AUTH0_CLIENT_ID__,
+    redirect_uri: `${location.origin}/sso-callback`,
+    response_type: 'code',
+    scope: 'openid profile email mcp:access',
+    audience: __AUTH0_AUDIENCE__,
+    state: transaction.state,
+    nonce: transaction.nonce,
+    code_challenge: base64Url(new Uint8Array(digest)),
+    code_challenge_method: 'S256',
+    connection: provider === 'google' ? 'google-oauth2' : 'github',
+  });
+  location.assign(`https://${__AUTH0_DOMAIN__}/authorize?${parameters}`);
+}
+
+function signOut() {
+  sessionStorage.removeItem(authSessionKey);
+  const parameters = new URLSearchParams({
+    client_id: __AUTH0_CLIENT_ID__,
+    returnTo: `${location.origin}/login`,
+  });
+  location.assign(`https://${__AUTH0_DOMAIN__}/v2/logout?${parameters}`);
+}
+
 async function api(path: string, init?: RequestInit) {
   const token = await getAuthToken();
   return fetch(path, {
@@ -71,9 +127,7 @@ function route(): Page {
 }
 
 function App() {
-  const { isLoaded: isAuthLoaded, isSignedIn, getToken } = useAuth();
-  const { isLoaded: isUserLoaded, user } = useUser();
-  const { signOut } = useClerk();
+  const [session] = useState(readAuthSession);
   const [page, setPage] = useState<Page>(route());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -87,10 +141,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    getAuthToken = getToken;
-    if (isAuthLoaded && !isSignedIn && location.pathname !== '/login')
-      history.replaceState({}, '', '/login');
-    if (!isSignedIn) return;
+    getAuthToken = async () => session?.accessToken ?? null;
+    if (!session && location.pathname !== '/login') history.replaceState({}, '', '/login');
+    if (!session) return;
     if (location.pathname === '/login') history.replaceState({}, '', '/dashboard');
     setPage(route());
     Promise.all([api('/v0.1/dashboard'), api('/v0.1/settings')])
@@ -102,15 +155,14 @@ function App() {
         setError(reason instanceof Error ? reason.message : 'Load failed'),
       )
       .finally(() => setLoading(false));
-  }, [getToken, isAuthLoaded, isSignedIn]);
+  }, [session]);
 
   const navigate = (next: Page) => {
     history.pushState({}, '', `/${next}`);
     setPage(next);
   };
 
-  if (!isAuthLoaded || !isUserLoaded) return <Loading />;
-  if (!isSignedIn) return <Login />;
+  if (!session) return <Login />;
 
   return (
     <div className="appShell">
@@ -137,11 +189,11 @@ function App() {
             <small>Raw conversations stay local</small>
           </div>
         </div>
-        <button className="account" onClick={() => void signOut({ redirectUrl: '/login' })}>
-          <span>{initials(user?.fullName || user?.primaryEmailAddress?.emailAddress || 'OC')}</span>
+        <button className="account" onClick={signOut}>
+          <span>{initials(session.user.name || session.user.email || 'OC')}</span>
           <div>
-            <strong>{user?.fullName || 'OpenClasp user'}</strong>
-            <small>{user?.primaryEmailAddress?.emailAddress || 'Sign out'}</small>
+            <strong>{session.user.name || 'OpenClasp user'}</strong>
+            <small>{session.user.email || 'Sign out'}</small>
           </div>
           <b>↗</b>
         </button>
@@ -165,17 +217,11 @@ function App() {
 }
 
 function Login() {
-  const { isLoaded, signIn } = useSignIn();
   const [error, setError] = useState('');
   const continueWith = async (provider: 'google' | 'github') => {
     setError('');
     try {
-      if (!isLoaded) return;
-      await signIn.authenticateWithRedirect({
-        strategy: provider === 'google' ? 'oauth_google' : 'oauth_github',
-        redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/dashboard',
-      });
+      await beginAuth(provider);
     } catch {
       setError(`${provider === 'google' ? 'Google' : 'GitHub'} sign-in is not configured yet.`);
     }
@@ -224,6 +270,66 @@ function Login() {
       </section>
     </div>
   );
+}
+
+let callbackStarted = false;
+function AuthCallback() {
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (callbackStarted) return;
+    callbackStarted = true;
+    const finish = async () => {
+      const query = new URLSearchParams(location.search);
+      const oauthError = query.get('error_description') ?? query.get('error');
+      if (oauthError) throw new Error(oauthError);
+      const code = query.get('code');
+      const returnedState = query.get('state');
+      const rawTransaction = sessionStorage.getItem(authTransactionKey);
+      if (!code || !returnedState || !rawTransaction) throw new Error('Missing OAuth transaction');
+      const transaction = JSON.parse(rawTransaction) as AuthTransaction;
+      sessionStorage.removeItem(authTransactionKey);
+      if (returnedState !== transaction.state) throw new Error('OAuth state mismatch');
+      const response = await fetch(`https://${__AUTH0_DOMAIN__}/oauth/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: __AUTH0_CLIENT_ID__,
+          code,
+          code_verifier: transaction.verifier,
+          redirect_uri: `${location.origin}/sso-callback`,
+        }),
+      });
+      if (!response.ok) throw new Error('Auth0 token exchange failed');
+      const tokens = (await response.json()) as { access_token: string; expires_in: number };
+      const profileResponse = await fetch(`https://${__AUTH0_DOMAIN__}/userinfo`, {
+        headers: { authorization: `Bearer ${tokens.access_token}` },
+      });
+      if (!profileResponse.ok) throw new Error('Auth0 profile request failed');
+      const user = (await profileResponse.json()) as Auth0User;
+      sessionStorage.setItem(
+        authSessionKey,
+        JSON.stringify({
+          accessToken: tokens.access_token,
+          expiresAt: Date.now() + Math.max(tokens.expires_in - 30, 1) * 1000,
+          user,
+        } satisfies AuthSession),
+      );
+      location.replace('/dashboard');
+    };
+    void finish().catch((reason: unknown) =>
+      setError(reason instanceof Error ? reason.message : 'Authentication failed'),
+    );
+  }, []);
+  if (error)
+    return (
+      <div className="loading">
+        <span className="mark">OC</span>
+        <p>{error}</p>
+        <a href="/login">Return to login</a>
+      </div>
+    );
+  return <Loading />;
 }
 
 function PageContent({
@@ -410,7 +516,7 @@ function Connect() {
           </div>
           <ol>
             <li>Add the URL as a remote MCP server in your agent or framework.</li>
-            <li>The client discovers OAuth and opens the Descope login page.</li>
+            <li>The client discovers OAuth and opens the Auth0 login page.</li>
             <li>Sign in with this account and approve access.</li>
             <li>Ask the agent to create and register its OpenClasp identity.</li>
           </ol>
@@ -771,11 +877,10 @@ function timestamp(item: Record<string, any>) {
   return String(item.timestamp ?? item.completedAt ?? item.createdAt ?? new Date(0).toISOString());
 }
 
-if (!__CLERK_PUBLISHABLE_KEY__) throw new Error('Clerk publishable key is not configured');
+if (!__AUTH0_DOMAIN__ || !__AUTH0_CLIENT_ID__ || !__AUTH0_AUDIENCE__)
+  throw new Error('Auth0 public configuration is incomplete');
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={__CLERK_PUBLISHABLE_KEY__} afterSignOutUrl="/login">
-      {location.pathname === '/sso-callback' ? <AuthenticateWithRedirectCallback /> : <App />}
-    </ClerkProvider>
+    {location.pathname === '/sso-callback' ? <AuthCallback /> : <App />}
   </React.StrictMode>,
 );

@@ -2,8 +2,5 @@
   "name": "@openclasp/dashboard",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
-  "dependencies": {
-    "@clerk/react": "^6.14.7"
-  }
+  "type": "module"
 }

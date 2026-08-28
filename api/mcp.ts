@@ -1,10 +1,9 @@
-import { createClerkClient } from '@clerk/backend';
-import { verifyClerkToken } from '@clerk/mcp-tools/next';
 import type { AuthInfo } from '@modelcontextprotocol/server';
 import { createMcpHandler, withMcpAuth } from 'mcp-handler';
 import { MemoryAuditStore, TrustEngine } from '../packages/core/src/index.js';
 import { registerOpenClaspTools } from '../packages/mcp-server/src/server.js';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
+import { verifyAuth0Token } from './auth0.js';
 
 const repository = process.env.DATABASE_URL
   ? new HostedRepository(process.env.DATABASE_URL)
@@ -46,25 +45,26 @@ const mcp = createMcpHandler(
   },
 );
 
-async function verifyToken(request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
-  const secretKey = process.env.CLERK_SECRET_KEY;
-  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  if (!secretKey || !publishableKey || !bearerToken) return undefined;
-  const state = await createClerkClient({ secretKey, publishableKey }).authenticateRequest(
-    request,
-    {
-      acceptsToken: 'oauth_token',
-    },
-  );
-  if (!state.isAuthenticated) return undefined;
-  const authInfo = verifyClerkToken(state.toAuth(), bearerToken);
-  if (!authInfo) return undefined;
-  return { ...authInfo, extra: { ...authInfo.extra, operatorId: state.toAuth().userId } };
+async function verifyToken(_request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
+  if (!bearerToken) return undefined;
+  const authentication = await verifyAuth0Token(bearerToken, {
+    dashboard: false,
+    requiredScopes: ['mcp:access'],
+  });
+  return {
+    token: bearerToken,
+    clientId: authentication.clientId,
+    scopes: authentication.scopes,
+    ...(typeof authentication.payload.exp === 'number'
+      ? { expiresAt: authentication.payload.exp }
+      : {}),
+    extra: { operatorId: authentication.payload.sub },
+  };
 }
 
 const handler = withMcpAuth(mcp, verifyToken, {
   required: true,
-  requiredScopes: ['profile'],
+  requiredScopes: ['mcp:access'],
   resourceMetadataPath: '/.well-known/oauth-protected-resource',
   ...(process.env.OPENCLASP_MCP_URL
     ? { resourceUrl: new URL(process.env.OPENCLASP_MCP_URL).origin }

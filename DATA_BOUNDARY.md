@@ -6,7 +6,7 @@ The future proprietary OpenClasp Network may provide cross-platform behavioural 
 
 The commercial asset is permissioned, evidence-backed derived intelligence. It is not ownership or resale of raw conversations. The open repository contains synthetic fixtures only and no private production data.
 
-Hosted records are partitioned by the authenticated Descope subject in Postgres. Dashboard and
+Hosted records are partitioned by the authenticated Auth0 subject in Postgres. Dashboard and
 settings endpoints require a server-validated session token; browser authentication state is never
 treated as authorization by itself. The hosted schema accepts structured protocol records and
 account settings, not raw conversation bodies.
