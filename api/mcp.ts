@@ -24,6 +24,7 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
     clientId: authentication.token.sub ?? 'unknown-client',
     scopes: descope.getJwtPermissions(bearerToken),
     expiresAt: authentication.token.exp,
+    extra: { operatorId: authentication.token.sub },
   };
 }
 

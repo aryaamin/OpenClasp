@@ -53,8 +53,15 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
         capabilities: z.array(z.string()),
       }),
     },
-    async (input) => {
-      const created = createIdentity(input);
+    async (input, context) => {
+      const authenticatedOperator = context.http?.authInfo?.extra?.operatorId;
+      const created = createIdentity({
+        ...input,
+        operatorRef:
+          typeof authenticatedOperator === 'string'
+            ? `descope:${authenticatedOperator}`
+            : input.operatorRef,
+      });
       keys.set(input.agentId, created.keyPair);
       return text(created);
     },
@@ -65,7 +72,16 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
       description: 'Register and verify a signed agent identity',
       inputSchema: AgentIdentitySchema,
     },
-    async (input) => text(engine.registerAgent(input)),
+    async (input, context) => {
+      const authenticatedOperator = context.http?.authInfo?.extra?.operatorId;
+      if (
+        typeof authenticatedOperator === 'string' &&
+        input.operatorRef !== `descope:${authenticatedOperator}`
+      ) {
+        throw new Error('Agent identity is not owned by the authenticated operator');
+      }
+      return text(engine.registerAgent(input));
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[2],
