@@ -4,16 +4,25 @@ import {
   type InteractionEvent,
   type KeyPair,
   type TrustEnvelope,
+  type FederatedInteraction,
+  type PublicAgentCard,
 } from '../../protocol/src/index.js';
 export { createIdentity } from '../../core/src/index.js';
 export * from '../../protocol/src/index.js';
 
 export class OpenClaspClient {
-  constructor(readonly baseUrl = 'http://localhost:3100/v0.1') {}
+  constructor(
+    readonly baseUrl = 'http://localhost:3100/v0.1',
+    readonly accessToken?: string,
+  ) {}
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
-      headers: { 'content-type': 'application/json', ...init?.headers },
+      headers: {
+        'content-type': 'application/json',
+        ...(this.accessToken ? { authorization: `Bearer ${this.accessToken}` } : {}),
+        ...init?.headers,
+      },
     });
     const body = (await response.json()) as any;
     if (!response.ok) throw new Error(body.error ?? `OpenClasp request failed: ${response.status}`);
@@ -56,6 +65,41 @@ export class OpenClaspClient {
       method: 'POST',
       body: JSON.stringify({ agentId, enabled }),
     });
+  }
+  getPublicAgentCard(agentId: string): Promise<PublicAgentCard> {
+    const root = this.baseUrl.replace(/\/v0\.1\/?$/, '');
+    return fetch(`${root}/agents/${encodeURIComponent(agentId)}/card.json`).then(
+      async (response) => {
+        const body = (await response.json()) as any;
+        if (!response.ok)
+          throw new Error(body.error ?? `OpenClasp request failed: ${response.status}`);
+        return body as PublicAgentCard;
+      },
+    );
+  }
+  createFederatedInteraction(value: FederatedInteraction) {
+    return this.request<FederatedInteraction>('/federated-interactions', {
+      method: 'POST',
+      body: JSON.stringify(value),
+    });
+  }
+  listFederatedInteractions() {
+    return this.request<FederatedInteraction[]>('/federated-interactions');
+  }
+  getFederatedInteraction(interactionId: string) {
+    return this.request<FederatedInteraction>(
+      `/federated-interactions/${encodeURIComponent(interactionId)}`,
+    );
+  }
+  respondToFederatedInteraction(
+    interactionId: string,
+    agentId: string,
+    decision: 'accept' | 'reject',
+  ) {
+    return this.request<FederatedInteraction>(
+      `/federated-interactions/${encodeURIComponent(interactionId)}/respond`,
+      { method: 'POST', body: JSON.stringify({ agentId, decision }) },
+    );
   }
 }
 

@@ -10,7 +10,10 @@ export type AgentProfile = {
   agentId: string;
   projectId: string;
   name: string;
+  description: string;
   framework: string;
+  agentVersion: string;
+  a2aEndpoint?: string;
   capabilities: string[];
   limitations: string[];
   identityMode: 'oauth_installation';
@@ -34,10 +37,13 @@ export type SetupRequest = {
   action: 'connect' | 'switch';
   status: 'pending' | 'approved' | 'rejected';
   agentName?: string;
+  description?: string;
   projectName?: string;
   projectId?: string;
   existingAgentId?: string;
   framework: string;
+  agentVersion: string;
+  a2aEndpoint?: string;
   capabilities: string[];
   limitations: string[];
   requestedAt: string;
@@ -110,6 +116,9 @@ export async function requestAgentSetup(
     projectId?: string | undefined;
     existingAgentId?: string | undefined;
     framework?: string | undefined;
+    description?: string | undefined;
+    agentVersion?: string | undefined;
+    a2aEndpoint?: string | undefined;
     capabilities?: string[] | undefined;
     limitations?: string[] | undefined;
   },
@@ -142,6 +151,9 @@ export async function requestAgentSetup(
     ...(input.projectId ? { projectId: input.projectId } : {}),
     ...(input.existingAgentId ? { existingAgentId: input.existingAgentId } : {}),
     framework: input.framework?.trim() || 'unknown',
+    description: input.description?.trim() || '',
+    agentVersion: input.agentVersion?.trim() || '1.0.0',
+    ...(input.a2aEndpoint?.trim() ? { a2aEndpoint: input.a2aEndpoint.trim() } : {}),
     capabilities: [...new Set(input.capabilities ?? [])],
     limitations: [...new Set(input.limitations ?? [])],
     requestedAt: new Date().toISOString(),
@@ -185,7 +197,10 @@ export async function approveAgentSetup(
       agentId: `agent_${randomUUID()}`,
       projectId: project.projectId,
       name: request.agentName!,
+      description: request.description ?? '',
       framework: request.framework,
+      agentVersion: request.agentVersion,
+      ...(request.a2aEndpoint ? { a2aEndpoint: request.a2aEndpoint } : {}),
       capabilities: request.capabilities,
       limitations: request.limitations,
       identityMode: 'oauth_installation',
@@ -239,7 +254,10 @@ export async function updateAgentProfile(
   clientId: string,
   patch: {
     name?: string | undefined;
+    description?: string | undefined;
     framework?: string | undefined;
+    agentVersion?: string | undefined;
+    a2aEndpoint?: string | undefined;
     capabilities?: string[] | undefined;
     limitations?: string[] | undefined;
   },
@@ -249,11 +267,18 @@ export async function updateAgentProfile(
   const agent: AgentProfile = {
     ...binding.agent,
     ...(patch.name?.trim() ? { name: patch.name.trim() } : {}),
+    ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
     ...(patch.framework?.trim() ? { framework: patch.framework.trim() } : {}),
+    ...(patch.agentVersion?.trim() ? { agentVersion: patch.agentVersion.trim() } : {}),
     ...(patch.capabilities ? { capabilities: [...new Set(patch.capabilities)] } : {}),
     ...(patch.limitations ? { limitations: [...new Set(patch.limitations)] } : {}),
     updatedAt: new Date().toISOString(),
   };
+  if (patch.a2aEndpoint !== undefined) {
+    const endpoint = patch.a2aEndpoint.trim();
+    if (endpoint) agent.a2aEndpoint = endpoint;
+    else delete agent.a2aEndpoint;
+  }
   await store.upsert(operatorId, 'agent_profile', agent.agentId, agent);
   return agent;
 }

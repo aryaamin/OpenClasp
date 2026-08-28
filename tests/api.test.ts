@@ -9,6 +9,9 @@ describe('HTTP API', () => {
     expect((await app.inject({ method: 'GET', url: '/ready' })).json()).toEqual({
       status: 'ready',
     });
+    expect(
+      (await app.inject({ method: 'GET', url: '/extensions/trust/v0.1' })).json(),
+    ).toMatchObject({ version: '0.1', transportsMessages: false });
     const specification = (await app.inject({ method: 'GET', url: '/openapi.json' })).json();
     expect(specification.info.title).toBe('OpenClasp API');
     expect(specification.paths).toHaveProperty('/v0.1/risk/assess');
@@ -27,6 +30,7 @@ describe('HTTP API', () => {
           setupRequests: [],
           publications: [],
           interactions: [],
+          federatedInteractions: [],
           events: [],
           conflicts: [],
           receipts: [],
@@ -94,7 +98,10 @@ describe('HTTP API', () => {
             agentId: 'agent-one',
             projectId: 'secret-project',
             name: 'Research agent',
+            description: 'Finds primary sources',
             framework: 'Codex',
+            agentVersion: '1.0.0',
+            a2aEndpoint: 'https://agent.example/a2a',
             capabilities: ['research'],
             limitations: ['no purchases'],
             identityMode: 'oauth_installation' as const,
@@ -109,7 +116,7 @@ describe('HTTP API', () => {
         return card;
       },
       unpublishAgent: async () => true,
-      getPublishedAgent: async () => undefined,
+      getPublishedAgent: async () => published[0],
       searchPublishedAgents: async () => published,
     };
     const app = buildApi(undefined, undefined, repository);
@@ -128,6 +135,21 @@ describe('HTTP API', () => {
     });
     expect(published[0]).not.toHaveProperty('projectId');
     expect(published[0]).not.toHaveProperty('operatorId');
+    const publicCard = await app.inject({
+      method: 'GET',
+      url: '/agents/agent-one/card.json',
+    });
+    expect(publicCard.statusCode).toBe(200);
+    expect(publicCard.json()).not.toHaveProperty('projectId');
+    const a2aCard = await app.inject({
+      method: 'GET',
+      url: '/agents/agent-one/a2a-agent-card.json',
+    });
+    expect(a2aCard.statusCode).toBe(200);
+    expect(a2aCard.json().supportedInterfaces[0]).toMatchObject({
+      url: 'https://agent.example/a2a',
+      protocolVersion: '1.0',
+    });
     await app.close();
   });
 });

@@ -9,17 +9,16 @@ import {
   InteractionContractSchema,
   InteractionEventSchema,
   ReceiptSchema,
+  FederatedInteractionSchema,
 } from '../../../packages/protocol/src/index.js';
 import {
   FixtureFactCheckProvider,
   MemoryAuditStore,
   TrustEngine,
 } from '../../../packages/core/src/index.js';
-import type {
-  AgentProfile,
-  HostedRepository,
-  PublicAgentCard,
-} from '../../../packages/persistence/src/index.js';
+import { buildPublicAgentCard } from '../../../packages/persistence/src/index.js';
+import type { AgentProfile, HostedRepository } from '../../../packages/persistence/src/index.js';
+import { toA2AAgentCard } from '../../../packages/sidecar/src/index.js';
 import {
   approveAgentSetup,
   getOnboardingState,
@@ -37,21 +36,16 @@ type DashboardRepository = Pick<
   | 'unpublishAgent'
   | 'getPublishedAgent'
   | 'searchPublishedAgents'
->;
-
-function publicCard(agent: AgentProfile, previous?: PublicAgentCard): PublicAgentCard {
-  const now = new Date().toISOString();
-  return {
-    agentId: agent.agentId,
-    name: agent.name,
-    framework: agent.framework,
-    capabilities: agent.capabilities,
-    limitations: agent.limitations,
-    assurance: 'oauth_authenticated',
-    publishedAt: previous?.publishedAt ?? now,
-    updatedAt: now,
-  };
-}
+> &
+  Partial<
+    Pick<
+      HostedRepository,
+      | 'createFederatedInteraction'
+      | 'listFederatedInteractions'
+      | 'getFederatedInteraction'
+      | 'respondToFederatedInteraction'
+    >
+  >;
 
 export function buildApi(
   engine = new TrustEngine(),
@@ -112,6 +106,33 @@ export function buildApi(
     router.get('/health', async () => ({ status: 'ok' }));
     router.get('/ready', async () => ({ status: 'ready' }));
     router.get('/openapi.json', async () => app.swagger());
+    router.get('/extensions/trust/v0.1', async () => ({
+      uri: 'https://openclasp.vercel.app/extensions/trust/v0.1',
+      name: 'OpenClasp A2A assurance extension',
+      version: '0.1',
+      required: false,
+      transportsMessages: false,
+      documentation: 'https://github.com/aryaamin/OpenClasp/blob/main/docs/A2A_EXTENSION.md',
+    }));
+    router.get('/agents/:id/card.json', async (request) => {
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const card = await repository.getPublishedAgent((request.params as { id: string }).id);
+      if (!card) throw new Error('Published agent not found');
+      return card;
+    });
+    router.get('/agents/:id/.well-known/openclasp-agent.json', async (request) => {
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const card = await repository.getPublishedAgent((request.params as { id: string }).id);
+      if (!card) throw new Error('Published agent not found');
+      return card;
+    });
+    router.get('/agents/:id/a2a-agent-card.json', async (request) => {
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const card = await repository.getPublishedAgent((request.params as { id: string }).id);
+      if (!card) throw new Error('Published agent not found');
+      if (!card.transports.length) throw new Error('Agent has not published an A2A endpoint');
+      return toA2AAgentCard(card);
+    });
     router.get('/v0.1/dashboard', async (request) => {
       const owner = operatorId(request);
       if (repository && owner) return repository.dashboard(owner);
@@ -122,6 +143,7 @@ export function buildApi(
         setupRequests: [],
         publications: [],
         interactions: [],
+        federatedInteractions: [],
         events: [...engine.events.values()],
         conflicts: [...engine.conflicts.values()],
         receipts: [...engine.receipts.values()],
@@ -209,7 +231,15 @@ export function buildApi(
         return publication;
       }
       const previous = await repository.getPublishedAgent(id);
-      const card = await repository.publishAgent(owner, publicCard(agent, previous));
+      const forwardedHost = request.headers['x-forwarded-host'];
+      const host = typeof forwardedHost === 'string' ? forwardedHost : request.headers.host;
+      const forwardedProtocol = request.headers['x-forwarded-proto'];
+      const protocol = typeof forwardedProtocol === 'string' ? forwardedProtocol : 'https';
+      const baseUrl = process.env.OPENCLASP_PUBLIC_URL ?? `${protocol}://${host}`;
+      const card = await repository.publishAgent(
+        owner,
+        buildPublicAgentCard(agent, baseUrl, previous),
+      );
       const publication = { agentId: id, published: true, updatedAt: card.updatedAt };
       await repository.upsert(owner, 'publication', id, publication);
       return { ...publication, card };
@@ -232,6 +262,52 @@ export function buildApi(
       const card = await repository.getPublishedAgent((request.params as { id: string }).id);
       if (!card) throw new Error('Published agent not found');
       return card;
+    });
+    router.get('/v0.1/federated-interactions', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listFederatedInteractions || !owner)
+        throw new Error('Federated interactions are not configured');
+      return repository.listFederatedInteractions(owner);
+    });
+    router.get('/v0.1/federated-interactions/:id', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getFederatedInteraction || !owner)
+        throw new Error('Federated interactions are not configured');
+      const interaction = await repository.getFederatedInteraction(
+        owner,
+        (request.params as { id: string }).id,
+      );
+      if (!interaction) throw new Error('Interaction not found');
+      return interaction;
+    });
+    router.post('/v0.1/federated-interactions', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.createFederatedInteraction || !owner)
+        throw new Error('Federated interactions are not configured');
+      const interaction = FederatedInteractionSchema.parse(request.body);
+      const acceptance = interaction.acceptances[interaction.initiatorAgentId];
+      if (!acceptance) throw new Error('Initiator acceptance is required');
+      return repository.createFederatedInteraction(owner, {
+        ...interaction,
+        acceptances: {
+          [interaction.initiatorAgentId]: { ...acceptance, method: 'oauth_account' },
+        },
+      });
+    });
+    router.post('/v0.1/federated-interactions/:id/respond', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.respondToFederatedInteraction || !owner)
+        throw new Error('Federated interactions are not configured');
+      const value = z
+        .object({ agentId: z.string().min(1), decision: z.enum(['accept', 'reject']) })
+        .parse(request.body);
+      return repository.respondToFederatedInteraction(
+        owner,
+        (request.params as { id: string }).id,
+        value.agentId,
+        value.decision,
+        'oauth_account',
+      );
     });
     router.post('/v0.1/delegations', async (request) => {
       const value = DelegationCredentialSchema.parse(request.body);

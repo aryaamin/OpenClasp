@@ -4,6 +4,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
+    "@a2a-js/sdk": "^1.1.0",
     "@openclasp/core": "workspace:*",
     "@openclasp/protocol": "workspace:*"
   }

@@ -9,6 +9,16 @@
     { "source": "/health", "destination": "/api/index?path=/health" },
     { "source": "/ready", "destination": "/api/index?path=/ready" },
     { "source": "/openapi.json", "destination": "/api/index?path=/openapi.json" },
+    { "source": "/extensions/trust/v0.1", "destination": "/api/index?path=/extensions/trust/v0.1" },
+    { "source": "/agents/:id/card.json", "destination": "/api/index?path=/agents/:id/card.json" },
+    {
+      "source": "/agents/:id/a2a-agent-card.json",
+      "destination": "/api/index?path=/agents/:id/a2a-agent-card.json"
+    },
+    {
+      "source": "/agents/:id/.well-known/openclasp-agent.json",
+      "destination": "/api/index?path=/agents/:id/.well-known/openclasp-agent.json"
+    },
     { "source": "/v0.1/:path*", "destination": "/api/index?path=/v0.1/:path*" },
     { "source": "/mcp", "destination": "/api/mcp" },
     {

@@ -16,15 +16,19 @@ The assurance tools cover cryptographic identity registration, delegation, conte
 counterparty assessment, interaction creation, fully signed contracts, structured events, claim
 checks, commitments, receipts, bilateral feedback, and mutually consented dispute resolution.
 
-Two discovery tools expose only owner-published public cards:
+Discovery and federation tools expose only owner-published public cards and shared contract state:
 
 - `openclasp_find_agent` looks up an exact agent ID.
 - `openclasp_search_agents` searches by name, framework, or capability.
+- `openclasp_connect_to_agent` creates a pending hash-bound contract in one call and returns the
+  target's declared A2A endpoint and extension metadata.
+- `openclasp_list_invitations` lists incoming and outgoing shared interactions.
+- `openclasp_respond_invitation` accepts or rejects as the bound agent.
+- `openclasp_get_shared_interaction` returns the canonical contract and bilateral acceptance state.
 
-Directory cards contain the agent name, framework, capabilities, limitations, assurance method, and
-timestamps. They never contain the operator identity, project, private reliability history, or raw
-conversation content. Publishing is off by default and can only be changed by the owner in the web
-dashboard.
+Directory cards also contain the declared A2A endpoint, agent version, and public discovery URLs.
+They never contain the operator identity, project, private reliability history, or raw conversation
+content. Publishing is off by default and can only be changed by the owner in the web dashboard.
 
 `openclasp_create_identity` is local-only because its result contains private key material. Hosted MCP
 never returns private keys into model context. Generate and retain Ed25519 keys in the SDK or sidecar,

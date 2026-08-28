@@ -3,7 +3,7 @@ import { canonicalize } from 'json-canonicalize';
 import { z } from 'zod';
 
 export const PROTOCOL_VERSION = '0.1' as const;
-export const DEFAULT_EXTENSION_URI = 'https://openclasp.example/extensions/trust/v0.1';
+export const DEFAULT_EXTENSION_URI = 'https://openclasp.vercel.app/extensions/trust/v0.1';
 
 export const ProvenanceSchema = z.enum([
   'self_declared',
@@ -104,6 +104,63 @@ export const InteractionContractSchema = z.object({
   completionConditions: z.array(z.string()),
   cancellationConditions: z.array(z.string()),
   signatures: z.record(z.string(), SignatureSchema).default({}),
+});
+
+export const AgentTransportSchema = z.object({
+  protocol: z.literal('A2A/1.0'),
+  protocolBinding: z.string().min(1).default('JSONRPC'),
+  endpoint: z.string().url(),
+});
+
+export const PublicAgentCardSchema = z.object({
+  protocolVersion: z.literal(PROTOCOL_VERSION),
+  agentId: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  framework: z.string().min(1),
+  agentVersion: z.string().min(1),
+  capabilities: z.array(z.string()),
+  limitations: z.array(z.string()),
+  assurance: z.enum(['oauth_authenticated', 'cryptographically_verified']),
+  transports: z.array(AgentTransportSchema),
+  cardUrl: z.string().url(),
+  a2aAgentCardUrl: z.string().url(),
+  extensionUri: z.string().url(),
+  publishedAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const ContractAcceptanceSchema = z.object({
+  agentId: z.string().min(1),
+  method: z.enum(['oauth_installation', 'oauth_account', 'ed25519']),
+  termsHash: z.string().min(1),
+  acceptedAt: z.string().datetime(),
+  signature: SignatureSchema.optional(),
+});
+
+export const FederatedInteractionStatusSchema = z.enum([
+  'pending',
+  'active',
+  'rejected',
+  'expired',
+  'cancelled',
+  'completed',
+]);
+
+export const FederatedInteractionSchema = z.object({
+  protocolVersion: z.literal(PROTOCOL_VERSION),
+  interactionId: z.string().uuid(),
+  initiatorAgentId: z.string().min(1),
+  responderAgentId: z.string().min(1),
+  status: FederatedInteractionStatusSchema,
+  contract: InteractionContractSchema,
+  termsHash: z.string().min(1),
+  acceptances: z.record(z.string(), ContractAcceptanceSchema),
+  initiatorTransport: AgentTransportSchema.optional(),
+  responderTransport: AgentTransportSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
 });
 
 export const TrustEnvelopeSchema = z.object({
@@ -240,6 +297,10 @@ export type Receipt = z.infer<typeof ReceiptSchema>;
 export type RiskDecision = z.infer<typeof RiskDecisionSchema>;
 export type FactCheckResult = z.infer<typeof FactCheckResultSchema>;
 export type ExpectationManifest = z.infer<typeof ExpectationManifestSchema>;
+export type AgentTransport = z.infer<typeof AgentTransportSchema>;
+export type PublicAgentCard = z.infer<typeof PublicAgentCardSchema>;
+export type ContractAcceptance = z.infer<typeof ContractAcceptanceSchema>;
+export type FederatedInteraction = z.infer<typeof FederatedInteractionSchema>;
 
 export interface KeyPair {
   keyId: string;

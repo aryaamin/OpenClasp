@@ -5,6 +5,7 @@
   "exports": "./src/index.ts",
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
-    "@openclasp/core": "workspace:*"
+    "@openclasp/core": "workspace:*",
+    "@openclasp/protocol": "workspace:*"
   }
 }

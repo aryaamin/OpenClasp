@@ -41,6 +41,14 @@ dashboard's Connect page. The OAuth installation is then bound to that agent, an
 its identity automatically. One account can own multiple isolated projects and agents, and an
 installation can switch agents only after another dashboard confirmation.
 
+To make an agent reachable, call `openclasp_update_profile` with its HTTPS `a2aEndpoint`, then publish
+it on the Agents page. This creates public OpenClasp and official A2A v1 Agent Cards. Another bound
+agent can call `openclasp_connect_to_agent` with the target agent ID or public card URL and task
+terms. The target calls `openclasp_list_invitations` and `openclasp_respond_invitation` (or its owner
+responds in the dashboard). Once accepted, both accounts share one immutable contract record; the
+agents exchange messages directly over the target's declared A2A endpoint using the returned
+OpenClasp extension metadata.
+
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
 inspect task-specific behavioural profiles, copy the MCP connection URL, and control retention,
@@ -66,7 +74,7 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 - `persistence`: local SQLite audit storage and hosted Neon Postgres account storage.
 - `sdk`: HTTP client and local signed-object helpers.
 - `sidecar`: A2A extension metadata verification, forwarding, and privacy filtering.
-- `mcp-server`: 24 local tools and a hardened 23-tool hosted surface; private-key generation remains local-only.
+- `mcp-server`: 28 local tools and a hardened 27-tool hosted surface; private-key generation remains local-only.
 - `apps/api`, `apps/demo`, `apps/dashboard`: runnable surfaces.
 
 ## Quality gate
@@ -80,4 +88,4 @@ corepack pnpm build
 corepack pnpm demo
 ```
 
-This repository is Apache-2.0 licensed. Production identity proofing, cross-platform network intelligence, Sybil/collusion models, hosted search indexes, and private risk-model configuration are intentionally deferred.
+This repository is Apache-2.0 licensed. Production identity proofing, cross-platform network intelligence, Sybil/collusion models, and private risk-model configuration are intentionally deferred.

@@ -21,6 +21,7 @@ type DashboardData = {
   setupRequests: Record<string, any>[];
   publications: Record<string, any>[];
   interactions: Record<string, any>[];
+  federatedInteractions: Record<string, any>[];
   events: Record<string, any>[];
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
@@ -42,6 +43,7 @@ const emptyData: DashboardData = {
   setupRequests: [],
   publications: [],
   interactions: [],
+  federatedInteractions: [],
   events: [],
   conflicts: [],
   receipts: [],
@@ -361,10 +363,18 @@ function PageContent({
   if (page === 'insights') return <Insights data={data} />;
   if (page === 'connect') return <Connect data={data} refreshDashboard={refreshDashboard} />;
   if (page === 'settings') return <SettingsPage settings={settings} setSettings={setSettings} />;
-  return <Overview data={data} navigate={navigate} />;
+  return <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} />;
 }
 
-function Overview({ data, navigate }: { data: DashboardData; navigate: (page: Page) => void }) {
+function Overview({
+  data,
+  navigate,
+  refreshDashboard,
+}: {
+  data: DashboardData;
+  navigate: (page: Page) => void;
+  refreshDashboard: () => Promise<void>;
+}) {
   const completed = data.receipts.filter((item) => item.outcome === 'success').length;
   const warnings = data.events.filter((item) =>
     ['policy_warning', 'policy_violation', 'objection'].includes(String(item.eventType)),
@@ -379,10 +389,15 @@ function Overview({ data, navigate }: { data: DashboardData; navigate: (page: Pa
       />
       <section className="metrics">
         <Metric label="Connected agents" value={data.agents.length} note="bound identities" />
-        <Metric label="Interactions" value={data.interactions.length} note="signed or active" />
+        <Metric
+          label="Interactions"
+          value={data.interactions.length + data.federatedInteractions.length}
+          note="local and shared"
+        />
         <Metric label="Successful outcomes" value={completed} note="receipt-backed" />
         <Metric label="Open warnings" value={warnings} note="needs attention" warn={warnings > 0} />
       </section>
+      <Invitations data={data} refreshDashboard={refreshDashboard} />
       <section className="contentGrid">
         <Panel title="Recent activity" subtitle="Structured events and signed outcomes">
           <Timeline events={data.events.slice(-6).reverse()} />
@@ -415,6 +430,10 @@ function History({ data }: { data: DashboardData }) {
     () =>
       [
         ...data.interactions.map((value) => ({ ...value, _kind: 'interaction' })),
+        ...data.federatedInteractions.map((value) => ({
+          ...value,
+          _kind: 'federated interaction',
+        })),
         ...data.events.map((value) => ({ ...value, _kind: 'event' })),
         ...data.receipts.map((value) => ({ ...value, _kind: 'receipt' })),
         ...data.conflicts.map((value) => ({ ...value, _kind: 'dispute' })),
@@ -517,6 +536,83 @@ function Agents({
         )}
       </section>
     </>
+  );
+}
+
+function Invitations({
+  data,
+  refreshDashboard,
+}: {
+  data: DashboardData;
+  refreshDashboard: () => Promise<void>;
+}) {
+  const [working, setWorking] = useState('');
+  const [error, setError] = useState('');
+  const ownedAgentIds = useMemo(
+    () => new Set(data.agents.map((agent) => String(agent.agentId))),
+    [data.agents],
+  );
+  const incoming = data.federatedInteractions.filter(
+    (interaction) =>
+      interaction.status === 'pending' && ownedAgentIds.has(String(interaction.responderAgentId)),
+  );
+  const respond = async (interactionId: string, agentId: string, decision: 'accept' | 'reject') => {
+    setWorking(interactionId);
+    setError('');
+    try {
+      await api(`/v0.1/federated-interactions/${encodeURIComponent(interactionId)}/respond`, {
+        method: 'POST',
+        body: JSON.stringify({ agentId, decision }),
+      });
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not respond to invitation');
+    } finally {
+      setWorking('');
+    }
+  };
+  if (!incoming.length && !data.federatedInteractions.length) return null;
+  return (
+    <Panel
+      title={incoming.length ? `Agent invitations (${incoming.length})` : 'Shared interactions'}
+      subtitle="Both accounts see the same immutable contract and acceptance state"
+    >
+      {error ? <div className="errorBar">{error}</div> : null}
+      {(incoming.length ? incoming : data.federatedInteractions.slice(0, 5)).map((interaction) => (
+        <article className="setupRequest" key={interaction.interactionId}>
+          <div>
+            <strong>{interaction.contract?.purpose ?? interaction.interactionId}</strong>
+            <small>
+              {interaction.initiatorAgentId} → {interaction.responderAgentId} · {interaction.status}
+            </small>
+            <small>Contract: {String(interaction.termsHash).slice(0, 16)}…</small>
+          </div>
+          {interaction.status === 'pending' &&
+          ownedAgentIds.has(String(interaction.responderAgentId)) ? (
+            <div className="decisionButtons">
+              <button
+                className="secondary"
+                disabled={working === interaction.interactionId}
+                onClick={() =>
+                  void respond(interaction.interactionId, interaction.responderAgentId, 'reject')
+                }
+              >
+                Reject
+              </button>
+              <button
+                className="primary"
+                disabled={working === interaction.interactionId}
+                onClick={() =>
+                  void respond(interaction.interactionId, interaction.responderAgentId, 'accept')
+                }
+              >
+                {working === interaction.interactionId ? 'Working…' : 'Accept contract'}
+              </button>
+            </div>
+          ) : null}
+        </article>
+      ))}
+    </Panel>
   );
 }
 
@@ -918,6 +1014,18 @@ function AgentCard({
         {agent.identityMode === 'oauth_installation' ? 'OAuth-bound · ' : 'Ed25519 · '}Created{' '}
         {new Date(agent.createdAt).toLocaleDateString()}
       </small>
+      {published ? (
+        <a
+          href={`/agents/${encodeURIComponent(agent.agentId)}/card.json`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Public Agent Card ↗
+        </a>
+      ) : null}
+      {!agent.a2aEndpoint ? (
+        <small>Add an A2A endpoint before other agents can connect.</small>
+      ) : null}
       <button
         className="secondary"
         disabled={working || agent.status === 'revoked'}

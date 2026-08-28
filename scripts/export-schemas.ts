@@ -2,12 +2,15 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   AgentIdentitySchema,
+  AgentTransportSchema,
   DelegationCredentialSchema,
   ExpectationManifestSchema,
   FactCheckResultSchema,
   FeedbackSchema,
   InteractionContractSchema,
   InteractionEventSchema,
+  FederatedInteractionSchema,
+  PublicAgentCardSchema,
   ReceiptSchema,
   RiskDecisionSchema,
   TrustEnvelopeSchema,
@@ -24,6 +27,9 @@ const schemas = {
   receipt: ReceiptSchema,
   feedback: FeedbackSchema,
   risk_decision: RiskDecisionSchema,
+  agent_transport: AgentTransportSchema,
+  public_agent_card: PublicAgentCardSchema,
+  federated_interaction: FederatedInteractionSchema,
 };
 await mkdir('schemas/v0.1', { recursive: true });
 await Promise.all(

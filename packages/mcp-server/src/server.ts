@@ -3,12 +3,16 @@ import { z } from 'zod';
 import { createIdentity, FixtureFactCheckProvider, TrustEngine } from '../../core/src/index.js';
 import {
   AgentIdentitySchema,
+  DEFAULT_EXTENSION_URI,
   DelegationCredentialSchema,
   FeedbackSchema,
   InteractionContractSchema,
   InteractionEventSchema,
   ReceiptSchema,
   TrustEnvelopeSchema,
+  canonicalHash,
+  type FederatedInteraction,
+  type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import {
   requestAgentSetup,
@@ -16,6 +20,7 @@ import {
   updateAgentProfile,
   type OnboardingStore,
 } from '../../persistence/src/onboarding.js';
+import { buildPublicAgentCard } from '../../persistence/src/hosted.js';
 
 export const OPENCLASP_TOOL_NAMES = [
   'openclasp_create_identity',
@@ -42,6 +47,10 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_resolve_dispute',
   'openclasp_find_agent',
   'openclasp_search_agents',
+  'openclasp_connect_to_agent',
+  'openclasp_list_invitations',
+  'openclasp_respond_invitation',
+  'openclasp_get_shared_interaction',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -64,7 +73,7 @@ const text = (value: unknown) => ({
 });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'First call openclasp_connection_status. If unbound, call openclasp_setup once and ask the owner to confirm at the returned URL. After confirmation, call openclasp_get_identity and treat that bound agent as yourself. Never claim another agent ID, silently switch identities, upload raw conversations, or treat contextual history as a universal trust score. Use OpenClasp alongside A2A or the existing conversation transport; it does not replace transport.';
+  'Call openclasp_connection_status first. If unbound, use openclasp_setup and get owner approval. Treat the bound identity as yourself. Use openclasp_connect_to_agent for a one-call A2A assurance handshake; use list/respond for invitations. Never claim another identity or upload raw conversations. OpenClasp assures A2A; it is not the message transport.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -98,23 +107,30 @@ type ToolContext = {
   };
 };
 type EngineSource = TrustEngine | ((context: ToolContext) => Promise<TrustEngine>);
-type PublicAgentCard = {
-  agentId: string;
-  name: string;
-  framework: string;
-  capabilities: string[];
-  limitations: string[];
-  assurance: 'oauth_authenticated' | 'cryptographically_verified';
-  publishedAt: string;
-  updatedAt: string;
-};
 type AgentDirectory = {
+  publishAgent?(operatorId: string, card: PublicAgentCard): Promise<PublicAgentCard>;
   getPublishedAgent(agentId: string): Promise<PublicAgentCard | undefined>;
   searchPublishedAgents(input: {
     query?: string | undefined;
     capability?: string | undefined;
     limit?: number | undefined;
   }): Promise<PublicAgentCard[]>;
+  createFederatedInteraction(
+    operatorId: string,
+    value: FederatedInteraction,
+  ): Promise<FederatedInteraction>;
+  listFederatedInteractions(operatorId: string): Promise<FederatedInteraction[]>;
+  getFederatedInteraction(
+    operatorId: string,
+    interactionId: string,
+  ): Promise<FederatedInteraction | undefined>;
+  respondToFederatedInteraction(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+    decision: 'accept' | 'reject',
+    method?: 'oauth_installation' | 'oauth_account',
+  ): Promise<FederatedInteraction>;
 };
 
 function installationContext(context: ToolContext) {
@@ -436,6 +452,9 @@ export function registerOpenClaspTools(
           projectName: z.string().trim().min(1).max(100).optional(),
           projectId: z.string().optional(),
           framework: z.string().trim().max(100).optional(),
+          description: z.string().trim().max(500).optional(),
+          agentVersion: z.string().trim().min(1).max(100).optional(),
+          a2aEndpoint: z.string().url().optional(),
           capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
           limitations: z.array(z.string().trim().min(1).max(300)).max(100).optional(),
         })
@@ -516,6 +535,9 @@ export function registerOpenClaspTools(
       inputSchema: z.object({
         name: z.string().trim().min(1).max(100).optional(),
         framework: z.string().trim().min(1).max(100).optional(),
+        description: z.string().trim().max(500).optional(),
+        agentVersion: z.string().trim().min(1).max(100).optional(),
+        a2aEndpoint: z.union([z.string().url(), z.literal('')]).optional(),
         capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
         limitations: z.array(z.string().trim().min(1).max(300)).max(100).optional(),
       }),
@@ -524,14 +546,25 @@ export function registerOpenClaspTools(
     async (input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
       const connection = installationContext(context);
-      return text(
-        await updateAgentProfile(
-          onboardingStore,
-          connection.operatorId,
-          connection.clientId,
-          input,
-        ),
+      const agent = await updateAgentProfile(
+        onboardingStore,
+        connection.operatorId,
+        connection.clientId,
+        input,
       );
+      const published = await agentDirectory?.getPublishedAgent(agent.agentId);
+      if (published && agentDirectory?.publishAgent)
+        await agentDirectory.publishAgent(
+          connection.operatorId,
+          buildPublicAgentCard(
+            agent,
+            process.env.OPENCLASP_PUBLIC_URL ??
+              process.env.OPENCLASP_DASHBOARD_URL ??
+              'https://openclasp.vercel.app',
+            published,
+          ),
+        );
+      return text(agent);
     },
   );
   server.registerTool(
@@ -684,6 +717,191 @@ export function registerOpenClaspTools(
       await requireBoundAgent(context);
       if (!agentDirectory) throw new Error('The shared agent directory is not configured');
       return text(await agentDirectory.searchPublishedAgents(input));
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[24],
+    {
+      title: 'Connect to another agent',
+      description:
+        'Create one immutable cross-account assurance contract and return the responder A2A endpoint and OpenClasp extension metadata.',
+      inputSchema: z
+        .object({
+          targetAgentId: z.string().min(1).optional(),
+          targetAgentCardUrl: z.string().url().optional(),
+          purpose: z.string().trim().min(1).max(500),
+          taskCategory: z.string().trim().min(1).max(100).default('general'),
+          requestedOutcome: z.string().trim().min(1).max(1000),
+          successCriteria: z.array(z.string().trim().min(1)).min(1).max(50),
+          allowedActions: z.array(z.string().trim().min(1)).max(100).default([]),
+          prohibitedActions: z.array(z.string().trim().min(1)).max(100).default([]),
+          allowedData: z.array(z.string().trim().min(1)).max(100).default([]),
+          prohibitedData: z.array(z.string().trim().min(1)).max(100).default([]),
+          evidenceRequirements: z.array(z.string().trim().min(1)).max(100).default([]),
+          deadline: z.string().datetime().optional(),
+          expiresInMinutes: z.number().int().min(5).max(10080).default(60),
+        })
+        .refine((value) => value.targetAgentId || value.targetAgentCardUrl, {
+          message: 'targetAgentId or targetAgentCardUrl is required',
+        }),
+      annotations: { ...WRITE_TOOL, openWorldHint: true },
+    },
+    async (input, context) => {
+      if (!agentDirectory) throw new Error('Federated agent connections are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A hosted, bound MCP installation is required');
+      const connection = installationContext(context);
+      const initiatorCard = await agentDirectory.getPublishedAgent(binding.agent.agentId);
+      if (!initiatorCard)
+        throw new Error('Publish this agent in the OpenClasp dashboard before connecting');
+      let targetAgentId = input.targetAgentId;
+      if (!targetAgentId && input.targetAgentCardUrl) {
+        const cardUrl = new URL(input.targetAgentCardUrl);
+        const trustedOrigin = new URL(
+          process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app',
+        ).origin;
+        const match = cardUrl.pathname.match(/^\/agents\/([^/]+)\/card\.json$/);
+        if (cardUrl.origin !== trustedOrigin || !match?.[1])
+          throw new Error('Only OpenClasp-hosted Agent Card URLs are accepted');
+        targetAgentId = decodeURIComponent(match[1]);
+      }
+      if (!targetAgentId) throw new Error('Target agent is required');
+      const responderCard = await agentDirectory.getPublishedAgent(targetAgentId);
+      if (!responderCard) throw new Error('Target agent is not published on OpenClasp');
+      const responderTransport = responderCard.transports[0];
+      if (!responderTransport) throw new Error('Target agent has not published an A2A endpoint');
+      const now = new Date();
+      const interactionId = crypto.randomUUID();
+      const contract = {
+        protocolVersion: '0.1' as const,
+        interactionId,
+        purpose: input.purpose,
+        parties: [binding.agent.agentId, responderCard.agentId],
+        taskCategory: input.taskCategory,
+        requestedOutcome: input.requestedOutcome,
+        successCriteria: input.successCriteria,
+        allowedActions: input.allowedActions,
+        prohibitedActions: input.prohibitedActions,
+        allowedData: input.allowedData,
+        prohibitedData: input.prohibitedData,
+        ...(input.deadline ? { deadline: input.deadline } : {}),
+        evidenceRequirements: input.evidenceRequirements,
+        delegationRules: ['explicit_contract_scope'],
+        humanApprovalRequirements: [],
+        factCheckingPolicy: 'important_claims',
+        mediationPolicy: 'mutual_consent' as const,
+        retentionDays: 30,
+        completionConditions: input.successCriteria,
+        cancellationConditions: ['either_party_before_completion'],
+        signatures: {},
+      };
+      const termsHash = canonicalHash(contract);
+      const createdAt = now.toISOString();
+      const interaction: FederatedInteraction = {
+        protocolVersion: '0.1',
+        interactionId,
+        initiatorAgentId: binding.agent.agentId,
+        responderAgentId: responderCard.agentId,
+        status: 'pending',
+        contract,
+        termsHash,
+        acceptances: {
+          [binding.agent.agentId]: {
+            agentId: binding.agent.agentId,
+            method: 'oauth_installation',
+            termsHash,
+            acceptedAt: createdAt,
+          },
+        },
+        ...(initiatorCard.transports[0] ? { initiatorTransport: initiatorCard.transports[0] } : {}),
+        responderTransport,
+        createdAt,
+        updatedAt: createdAt,
+        expiresAt: new Date(now.getTime() + input.expiresInMinutes * 60_000).toISOString(),
+      };
+      const stored = await agentDirectory.createFederatedInteraction(
+        connection.operatorId,
+        interaction,
+      );
+      return text({
+        interaction: stored,
+        a2a: {
+          endpoint: responderTransport.endpoint,
+          protocolBinding: responderTransport.protocolBinding,
+          extensions: [DEFAULT_EXTENSION_URI],
+          metadata: {
+            [DEFAULT_EXTENSION_URI]: {
+              interactionId,
+              termsHash,
+              initiatorAgentId: binding.agent.agentId,
+              responderAgentId: responderCard.agentId,
+            },
+          },
+        },
+        next: 'Wait for the responder to accept. Once active, send messages directly to its A2A endpoint with this extension metadata.',
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[25],
+    {
+      title: 'List shared invitations',
+      description: 'List incoming and outgoing cross-account interaction invitations and status.',
+      inputSchema: z.object({}),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (_input, context) => {
+      if (!agentDirectory) throw new Error('Federated agent connections are not configured');
+      await requireBoundAgent(context);
+      const connection = installationContext(context);
+      return text(await agentDirectory.listFederatedInteractions(connection.operatorId));
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[26],
+    {
+      title: 'Respond to agent invitation',
+      description: 'Accept or reject an invitation as the agent bound to this MCP installation.',
+      inputSchema: z.object({
+        interactionId: z.string().uuid(),
+        decision: z.enum(['accept', 'reject']),
+      }),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory) throw new Error('Federated agent connections are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A hosted, bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.respondToFederatedInteraction(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+          input.decision,
+          'oauth_installation',
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[27],
+    {
+      title: 'Get shared interaction',
+      description: 'Get the canonical contract and bilateral acceptance state for one interaction.',
+      inputSchema: z.object({ interactionId: z.string().uuid() }),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory) throw new Error('Federated agent connections are not configured');
+      await requireBoundAgent(context);
+      const connection = installationContext(context);
+      const value = await agentDirectory.getFederatedInteraction(
+        connection.operatorId,
+        input.interactionId,
+      );
+      if (!value) throw new Error('Interaction not found');
+      return text(value);
     },
   );
   return server;

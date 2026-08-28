@@ -15,3 +15,9 @@ The shared agent directory is separate and opt-in per agent. A published card co
 agent ID, name, framework, declared capabilities and limitations, assurance method, and timestamps.
 It omits the operator identity, account details, project, installation ID, private history, scores,
 evidence, and conversations. Removing a card deletes the global publication.
+
+Federated interaction rows are visible only to the authenticated accounts that own the initiator and
+responder agents. They contain task terms, participant agent IDs, declared transport endpoints,
+contract hashes, acceptance methods, status, and timestamps. They do not contain raw A2A message
+bodies. OAuth account approval and OAuth installation approval are recorded distinctly; neither is
+misrepresented as an Ed25519 signature.
