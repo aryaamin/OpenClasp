@@ -95,13 +95,12 @@ async function signOut() {
 }
 
 async function api(path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
   return fetch(path, {
     ...init,
     credentials: 'same-origin',
-    headers: {
-      'content-type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
+    headers,
   }).then(async (response) => {
     if (!response.ok)
       throw new Error((await response.text()) || `Request failed: ${response.status}`);
