@@ -197,7 +197,7 @@
           },
           "method": {
             "type": "string",
-            "enum": ["oauth_installation", "oauth_account", "ed25519"]
+            "enum": ["oauth_installation", "oauth_account", "policy_auto_accept", "ed25519"]
           },
           "termsHash": {
             "type": "string",

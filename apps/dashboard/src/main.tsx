@@ -173,6 +173,19 @@ function App() {
       .finally(() => setLoading(false));
   }, [session]);
 
+  useEffect(() => {
+    if (!session) return;
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void refreshDashboard().catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 10_000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [session, refreshDashboard]);
+
   const navigate = (next: Page) => {
     history.pushState({}, '', `/${next}`);
     setPage(next);
@@ -379,6 +392,17 @@ function Overview({
   const warnings = data.events.filter((item) =>
     ['policy_warning', 'policy_violation', 'objection'].includes(String(item.eventType)),
   ).length;
+  const publishedIds = new Set(
+    data.publications
+      .filter((publication) => publication.published)
+      .map((publication) => String(publication.agentId)),
+  );
+  const readyAgents = data.agents.filter(
+    (agent) => agent.a2aEndpoint && publishedIds.has(String(agent.agentId)),
+  ).length;
+  const pendingInvitations = data.federatedInteractions.filter(
+    (interaction) => interaction.status === 'pending',
+  ).length;
   return (
     <>
       <PageHead
@@ -387,6 +411,26 @@ function Overview({
         action="Connect agent"
         onAction={() => navigate('connect')}
       />
+      <section
+        className={`readiness ${readyAgents === data.agents.length && readyAgents ? 'ready' : ''}`}
+      >
+        <div>
+          <span className="statusOrb">{readyAgents ? '✓' : '!'}</span>
+          <div>
+            <strong>
+              {readyAgents === data.agents.length && readyAgents
+                ? 'Your agent network is ready'
+                : `${readyAgents} of ${data.agents.length} agents can receive A2A work`}
+            </strong>
+            <small>
+              Safe matching requests activate automatically. Everything else waits for approval.
+            </small>
+          </div>
+        </div>
+        <button className="secondary" onClick={() => navigate('agents')}>
+          Manage automation
+        </button>
+      </section>
       <section className="metrics">
         <Metric label="Connected agents" value={data.agents.length} note="bound identities" />
         <Metric
@@ -395,7 +439,12 @@ function Overview({
           note="local and shared"
         />
         <Metric label="Successful outcomes" value={completed} note="receipt-backed" />
-        <Metric label="Open warnings" value={warnings} note="needs attention" warn={warnings > 0} />
+        <Metric
+          label="Needs review"
+          value={warnings + pendingInvitations}
+          note="warnings or approvals"
+          warn={warnings + pendingInvitations > 0}
+        />
       </section>
       <Invitations data={data} refreshDashboard={refreshDashboard} />
       <section className="contentGrid">
@@ -481,13 +530,21 @@ function Agents({
 }) {
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
-  const setPublication = async (agentId: string, published: boolean) => {
+  const saveAutomation = async (
+    agentId: string,
+    value: {
+      a2aEndpoint: string;
+      autoPublish: boolean;
+      autoAcceptPolicy: 'off' | 'safe_matching';
+      autoAcceptTaskCategories: string[];
+    },
+  ) => {
     setWorking(agentId);
     setError('');
     try {
-      await api(`/v0.1/agents/${encodeURIComponent(agentId)}/publication`, {
-        method: 'POST',
-        body: JSON.stringify({ published }),
+      await api(`/v0.1/agents/${encodeURIComponent(agentId)}/automation`, {
+        method: 'PUT',
+        body: JSON.stringify(value),
       });
       await refreshDashboard();
     } catch (reason) {
@@ -505,9 +562,9 @@ function Agents({
         onAction={() => navigate('connect')}
       />
       <div className="notice">
-        <strong>Private by default.</strong> Publishing shares only this agent's name, framework,
-        capabilities, limitations, and assurance method. It never shares your identity, project,
-        scores, or conversations.
+        <strong>One approval, then automatic.</strong> A public A2A endpoint makes the agent
+        discoverable. Safe matching tasks can be accepted automatically; sensitive or mismatched
+        requests still require review.
       </div>
       {error && <div className="errorBar">{error}</div>}
       <section className="agentGrid">
@@ -523,7 +580,7 @@ function Agents({
                 (publication) => publication.agentId === agent.agentId && publication.published,
               )}
               working={working === agent.agentId}
-              onPublication={(published) => setPublication(agent.agentId, published)}
+              onSave={(value) => saveAutomation(agent.agentId, value)}
             />
           ))
         ) : (
@@ -586,6 +643,11 @@ function Invitations({
               {interaction.initiatorAgentId} → {interaction.responderAgentId} · {interaction.status}
             </small>
             <small>Contract: {String(interaction.termsHash).slice(0, 16)}…</small>
+            {interaction.status === 'active' &&
+            interaction.acceptances?.[interaction.responderAgentId]?.method ===
+              'policy_auto_accept' ? (
+              <small className="autoAccepted">✓ Auto-approved by the responder's safe policy</small>
+            ) : null}
           </div>
           {interaction.status === 'pending' &&
           ownedAgentIds.has(String(interaction.responderAgentId)) ? (
@@ -707,6 +769,14 @@ function Connect({
                 {!!request.limitations?.length && (
                   <small>Limitations: {request.limitations.join(' · ')}</small>
                 )}
+                <div className="automationPreview">
+                  <span>{request.autoPublish ? 'Public after approval' : 'Private'}</span>
+                  <span>
+                    {request.autoAcceptPolicy === 'safe_matching'
+                      ? 'Auto-accept safe matches'
+                      : 'Review every request'}
+                  </span>
+                </div>
               </div>
               <div className="decisionButtons">
                 <button
@@ -721,7 +791,7 @@ function Connect({
                   disabled={working === request.requestId}
                   onClick={() => void decide(request.requestId, 'approve')}
                 >
-                  {working === request.requestId ? 'Working…' : 'Confirm agent'}
+                  {working === request.requestId ? 'Working…' : 'Approve & automate'}
                 </button>
               </div>
             </article>
@@ -730,7 +800,7 @@ function Connect({
         </section>
       )}
       <section className="connectLayout">
-        <Panel title="Remote MCP endpoint" subtitle="For OAuth-capable MCP clients">
+        <Panel title="Connect once" subtitle="OpenClasp handles the routine steps afterward">
           <div className="endpoint">
             <code>{endpoint}</code>
             <button
@@ -743,27 +813,26 @@ function Connect({
             </button>
           </div>
           <ol>
-            <li>Add the URL as a remote MCP server in your agent or framework.</li>
-            <li>The client discovers OAuth and opens the Auth0 login page.</li>
-            <li>Sign in with this account and approve access.</li>
+            <li>Add this MCP URL and complete the OAuth sign-in.</li>
             <li>
-              Ask the agent to call <code>openclasp_setup</code>.
+              Tell the agent: <code>Set yourself up on OpenClasp</code>.
             </li>
             <li>
-              Confirm the proposed identity on this page. The installation stays bound afterward.
+              Approve its identity and automation policy here once. That is the last routine manual
+              step.
             </li>
           </ol>
         </Panel>
         <Panel
-          title="What the agent receives"
-          subtitle="Assurance tools, not a replacement transport"
+          title="What becomes automatic"
+          subtitle="Safe defaults with deterministic approval boundaries"
         >
           <ul className="checkList">
-            <li>Identity and delegation verification</li>
-            <li>Counterparty-specific reliability clues</li>
-            <li>Signed contracts, events, feedback, and receipts</li>
-            <li>Policy challenges and consented mediation</li>
-            <li>No hidden rewriting or raw-message upload</li>
+            <li>Agent Card publication and discovery</li>
+            <li>Contract defaults inferred from the task</li>
+            <li>Safe matching invitations accepted immediately</li>
+            <li>Ready-to-send A2A endpoint, headers, and metadata</li>
+            <li>Risky requests routed to human review</li>
           </ul>
         </Panel>
       </section>
@@ -983,14 +1052,32 @@ function AgentCard({
   projectName,
   published,
   working,
-  onPublication,
+  onSave,
 }: {
   agent: Record<string, any>;
   projectName?: string;
   published: boolean;
   working: boolean;
-  onPublication: (published: boolean) => void;
+  onSave: (value: {
+    a2aEndpoint: string;
+    autoPublish: boolean;
+    autoAcceptPolicy: 'off' | 'safe_matching';
+    autoAcceptTaskCategories: string[];
+  }) => void;
 }) {
+  const [editing, setEditing] = useState(!agent.a2aEndpoint);
+  const [endpoint, setEndpoint] = useState(String(agent.a2aEndpoint ?? ''));
+  const [autoPublish, setAutoPublish] = useState(Boolean(agent.autoPublish ?? published));
+  const [autoAcceptPolicy, setAutoAcceptPolicy] = useState<'off' | 'safe_matching'>(
+    agent.autoAcceptPolicy === 'safe_matching' ? 'safe_matching' : 'off',
+  );
+  const [categories, setCategories] = useState<string>(
+    (agent.autoAcceptTaskCategories?.length
+      ? agent.autoAcceptTaskCategories
+      : (agent.capabilities ?? [])
+    ).join(', '),
+  );
+  const ready = published && Boolean(agent.a2aEndpoint);
   const identityLabel = agent.revoked
     ? 'REVOKED'
     : agent.identityMode === 'oauth_installation'
@@ -1000,7 +1087,10 @@ function AgentCard({
     <article className="agentCard">
       <div className="agentTop">
         <span className="agentGlyph">◇</span>
-        <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
+        <div className="agentBadges">
+          <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
+          <b className={ready ? 'readyBadge' : 'needsBadge'}>{ready ? 'READY' : 'SETUP NEEDED'}</b>
+        </div>
       </div>
       <h2>{agent.name ?? agent.agentId}</h2>
       <p>{projectName ?? `Version ${agent.agentVersion ?? '1.0.0'}`}</p>
@@ -1014,7 +1104,7 @@ function AgentCard({
         {agent.identityMode === 'oauth_installation' ? 'OAuth-bound · ' : 'Ed25519 · '}Created{' '}
         {new Date(agent.createdAt).toLocaleDateString()}
       </small>
-      {published ? (
+      {published && agent.a2aEndpoint ? (
         <a
           href={`/agents/${encodeURIComponent(agent.agentId)}/card.json`}
           target="_blank"
@@ -1023,16 +1113,85 @@ function AgentCard({
           Public Agent Card ↗
         </a>
       ) : null}
-      {!agent.a2aEndpoint ? (
-        <small>Add an A2A endpoint before other agents can connect.</small>
-      ) : null}
-      <button
-        className="secondary"
-        disabled={working || agent.status === 'revoked'}
-        onClick={() => onPublication(!published)}
-      >
-        {working ? 'Updating…' : published ? 'Remove from directory' : 'Publish to directory'}
-      </button>
+      <div className="automationSummary">
+        <span>{published ? '● Public discovery' : '○ Private'}</span>
+        <span>
+          {agent.autoAcceptPolicy === 'safe_matching'
+            ? '⚡ Safe tasks automatic'
+            : '◷ Manual approval'}
+        </span>
+      </div>
+      {editing ? (
+        <div className="automationForm">
+          <label>
+            <span>Public A2A endpoint</span>
+            <input
+              type="url"
+              value={endpoint}
+              onChange={(event) => setEndpoint(event.target.value)}
+              placeholder="https://your-agent.example/a2a"
+            />
+          </label>
+          <label>
+            <span>Invitation policy</span>
+            <select
+              value={autoAcceptPolicy}
+              onChange={(event) =>
+                setAutoAcceptPolicy(event.target.value as 'off' | 'safe_matching')
+              }
+            >
+              <option value="safe_matching">Auto-accept safe matches</option>
+              <option value="off">Review every request</option>
+            </select>
+          </label>
+          <label>
+            <span>Safe task categories</span>
+            <input
+              value={categories}
+              onChange={(event) => setCategories(event.target.value)}
+              placeholder="research, planning, coding"
+            />
+          </label>
+          <label className="checkControl">
+            <input
+              type="checkbox"
+              checked={autoPublish}
+              onChange={(event) => setAutoPublish(event.target.checked)}
+            />
+            <span>Publish and keep Agent Card updated</span>
+          </label>
+          <div className="agentActions">
+            <button className="secondary" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+            <button
+              className="primary"
+              disabled={working || agent.status === 'revoked'}
+              onClick={() =>
+                onSave({
+                  a2aEndpoint: endpoint.trim(),
+                  autoPublish,
+                  autoAcceptPolicy,
+                  autoAcceptTaskCategories: categories
+                    .split(',')
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                })
+              }
+            >
+              {working ? 'Saving…' : 'Save automation'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          className="secondary"
+          disabled={working || agent.status === 'revoked'}
+          onClick={() => setEditing(true)}
+        >
+          Configure automation
+        </button>
+      )}
     </article>
   );
 }

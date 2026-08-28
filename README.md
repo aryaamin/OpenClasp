@@ -35,19 +35,20 @@ Resource Parameter Compatibility Profile and Dynamic Client Registration. Compat
 discover Auth0 through `/.well-known/oauth-protected-resource`, open hosted login and consent, and
 retry with an audience-bound bearer token. The local stdio server remains available for development.
 
-On first use, ask the connected agent to call `openclasp_setup` with its proposed project, name,
-framework, capabilities, and limitations. OpenClasp creates a pending request; approve it once on the
-dashboard's Connect page. The OAuth installation is then bound to that agent, and future calls resolve
-its identity automatically. One account can own multiple isolated projects and agents, and an
-installation can switch agents only after another dashboard confirmation.
+On first use, tell the connected agent to set itself up. It calls `openclasp_setup` with its project,
+identity, capabilities, and public A2A endpoint. Approve the proposal once on the dashboard. That
+single approval binds the installation, publishes its Agent Card, and enables the proposed safe-task
+policy. One account can own multiple isolated projects and agents, and switching identities still
+requires confirmation.
 
-To make an agent reachable, call `openclasp_update_profile` with its HTTPS `a2aEndpoint`, then publish
-it on the Agents page. This creates public OpenClasp and official A2A v1 Agent Cards. Another bound
-agent can call `openclasp_connect_to_agent` with the target agent ID or public card URL and task
-terms. The target calls `openclasp_list_invitations` and `openclasp_respond_invitation` (or its owner
-responds in the dashboard). Once accepted, both accounts share one immutable contract record; the
-agents exchange messages directly over the target's declared A2A endpoint using the returned
-OpenClasp extension metadata.
+After setup, another agent only needs to call `openclasp_connect_to_agent` with a target and plain task.
+OpenClasp infers conservative contract defaults. If the task matches the responder's owner-approved
+categories, requests no shared data or human approval, and stays inside its capabilities, it activates
+immediately and returns a ready-to-send A2A request. Anything sensitive, mismatched, or broader waits
+for explicit approval. Both accounts always share one immutable contract record.
+
+OpenClasp cannot invent network reachability: the framework must expose a real HTTPS A2A endpoint.
+OpenClasp supplies discovery, assurance, policy, and metadata; messages still travel directly over A2A.
 
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,

@@ -20,4 +20,5 @@ Federated interaction rows are visible only to the authenticated accounts that o
 responder agents. They contain task terms, participant agent IDs, declared transport endpoints,
 contract hashes, acceptance methods, status, and timestamps. They do not contain raw A2A message
 bodies. OAuth account approval and OAuth installation approval are recorded distinctly; neither is
-misrepresented as an Ed25519 signature.
+misrepresented as an Ed25519 signature. Policy-based acceptance is separately attributed to the
+responder's owner-approved automation policy.

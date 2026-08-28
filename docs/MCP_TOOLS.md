@@ -20,15 +20,20 @@ Discovery and federation tools expose only owner-published public cards and shar
 
 - `openclasp_find_agent` looks up an exact agent ID.
 - `openclasp_search_agents` searches by name, framework, or capability.
-- `openclasp_connect_to_agent` creates a pending hash-bound contract in one call and returns the
-  target's declared A2A endpoint and extension metadata.
+- `openclasp_connect_to_agent` accepts a target plus a plain task, infers conservative contract
+  defaults, activates safe policy matches synchronously, and returns a ready-to-send A2A request.
 - `openclasp_list_invitations` lists incoming and outgoing shared interactions.
 - `openclasp_respond_invitation` accepts or rejects as the bound agent.
 - `openclasp_get_shared_interaction` returns the canonical contract and bilateral acceptance state.
 
 Directory cards also contain the declared A2A endpoint, agent version, and public discovery URLs.
 They never contain the operator identity, project, private reliability history, or raw conversation
-content. Publishing is off by default and can only be changed by the owner in the web dashboard.
+content. New-agent publication can be proposed by the agent but requires the owner's one-time setup
+approval. It can be changed later in the web dashboard.
+
+The setup proposal may also enable `safe_matching` acceptance. Auto-accept requires an exact approved
+task-category match, no allowed data, no human approval, retention of at most 30 days, and actions
+within declared capabilities. Sensitive keywords or any mismatch fall back to explicit approval.
 
 `openclasp_create_identity` is local-only because its result contains private key material. Hosted MCP
 never returns private keys into model context. Generate and retain Ed25519 keys in the SDK or sidecar,

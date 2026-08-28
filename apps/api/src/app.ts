@@ -103,6 +103,13 @@ export function buildApi(
       const owner = operatorId(request);
       if (repository && owner) await repository.upsert(owner, kind, id, value);
     };
+    const publicBaseUrl = (request: { headers: Record<string, unknown> }) => {
+      const forwardedHost = request.headers['x-forwarded-host'];
+      const host = typeof forwardedHost === 'string' ? forwardedHost : request.headers.host;
+      const forwardedProtocol = request.headers['x-forwarded-proto'];
+      const protocol = typeof forwardedProtocol === 'string' ? forwardedProtocol : 'https';
+      return process.env.OPENCLASP_PUBLIC_URL ?? `${protocol}://${String(host ?? 'localhost')}`;
+    };
     router.get('/health', async () => ({ status: 'ok' }));
     router.get('/ready', async () => ({ status: 'ready' }));
     router.get('/openapi.json', async () => app.swagger());
@@ -178,7 +185,23 @@ export function buildApi(
     router.post('/v0.1/onboarding/:id/approve', async (request) => {
       const owner = operatorId(request);
       if (!repository || !owner) throw new Error('Hosted persistence is not configured');
-      return approveAgentSetup(repository, owner, (request.params as { id: string }).id);
+      const requestId = (request.params as { id: string }).id;
+      const state = await getOnboardingState(repository, owner);
+      const setup = state.setupRequests.find((item) => item.requestId === requestId);
+      const result = await approveAgentSetup(repository, owner, requestId);
+      if (result.status === 'connected' && setup?.autoPublish && result.agent.a2aEndpoint) {
+        const previous = await repository.getPublishedAgent(result.agent.agentId);
+        const card = await repository.publishAgent(
+          owner,
+          buildPublicAgentCard(result.agent, publicBaseUrl(request), previous),
+        );
+        await repository.upsert(owner, 'publication', result.agent.agentId, {
+          agentId: result.agent.agentId,
+          published: true,
+          updatedAt: card.updatedAt,
+        });
+      }
+      return result;
     });
     router.post('/v0.1/onboarding/:id/reject', async (request) => {
       const owner = operatorId(request);
@@ -231,18 +254,64 @@ export function buildApi(
         return publication;
       }
       const previous = await repository.getPublishedAgent(id);
-      const forwardedHost = request.headers['x-forwarded-host'];
-      const host = typeof forwardedHost === 'string' ? forwardedHost : request.headers.host;
-      const forwardedProtocol = request.headers['x-forwarded-proto'];
-      const protocol = typeof forwardedProtocol === 'string' ? forwardedProtocol : 'https';
-      const baseUrl = process.env.OPENCLASP_PUBLIC_URL ?? `${protocol}://${host}`;
       const card = await repository.publishAgent(
         owner,
-        buildPublicAgentCard(agent, baseUrl, previous),
+        buildPublicAgentCard(agent, publicBaseUrl(request), previous),
       );
       const publication = { agentId: id, published: true, updatedAt: card.updatedAt };
       await repository.upsert(owner, 'publication', id, publication);
       return { ...publication, card };
+    });
+    router.put('/v0.1/agents/:id/automation', async (request) => {
+      const owner = operatorId(request);
+      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
+      const { id } = request.params as { id: string };
+      const value = z
+        .object({
+          a2aEndpoint: z.union([z.string().url(), z.literal('')]),
+          autoPublish: z.boolean(),
+          autoAcceptPolicy: z.enum(['off', 'safe_matching']),
+          autoAcceptTaskCategories: z.array(z.string().trim().min(1).max(100)).max(100),
+        })
+        .parse(request.body);
+      const rows = await repository.list(owner);
+      const current = rows.find((row) => row.kind === 'agent_profile' && row.recordId === id)
+        ?.payload as AgentProfile | undefined;
+      if (!current) throw new Error('Owned agent not found');
+      if (value.autoPublish && !value.a2aEndpoint)
+        throw new Error('A public A2A endpoint is required for automatic discovery');
+      const agent: AgentProfile = {
+        ...current,
+        description: current.description ?? '',
+        agentVersion: current.agentVersion ?? '1.0.0',
+        autoPublish: value.autoPublish,
+        autoAcceptPolicy: value.autoAcceptPolicy,
+        autoAcceptTaskCategories: [...new Set(value.autoAcceptTaskCategories)],
+        updatedAt: new Date().toISOString(),
+      };
+      if (value.a2aEndpoint) agent.a2aEndpoint = value.a2aEndpoint;
+      else delete agent.a2aEndpoint;
+      await repository.upsert(owner, 'agent_profile', id, agent);
+      if (value.autoPublish) {
+        const previous = await repository.getPublishedAgent(id);
+        const card = await repository.publishAgent(
+          owner,
+          buildPublicAgentCard(agent, publicBaseUrl(request), previous),
+        );
+        await repository.upsert(owner, 'publication', id, {
+          agentId: id,
+          published: true,
+          updatedAt: card.updatedAt,
+        });
+      } else {
+        await repository.unpublishAgent(owner, id);
+        await repository.upsert(owner, 'publication', id, {
+          agentId: id,
+          published: false,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      return agent;
     });
     router.get('/v0.1/directory', async (request) => {
       operatorId(request);

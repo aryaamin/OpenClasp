@@ -73,7 +73,7 @@ const text = (value: unknown) => ({
 });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Call openclasp_connection_status first. If unbound, use openclasp_setup and get owner approval. Treat the bound identity as yourself. Use openclasp_connect_to_agent for a one-call A2A assurance handshake; use list/respond for invitations. Never claim another identity or upload raw conversations. OpenClasp assures A2A; it is not the message transport.';
+  'Call openclasp_connection_status first. If unbound, call openclasp_setup with your known public A2A endpoint; one owner approval binds and publishes you. Use openclasp_connect_to_agent with a target and task: safe matching requests activate automatically and return a ready A2A request. Risky requests require approval. Never claim another identity or upload raw conversations. OpenClasp assures A2A; it is not transport.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -129,7 +129,7 @@ type AgentDirectory = {
     interactionId: string,
     agentId: string,
     decision: 'accept' | 'reject',
-    method?: 'oauth_installation' | 'oauth_account',
+    method?: 'oauth_installation' | 'oauth_account' | 'policy_auto_accept',
   ): Promise<FederatedInteraction>;
 };
 
@@ -445,7 +445,7 @@ export function registerOpenClaspTools(
     {
       title: 'Set up this agent',
       description:
-        'Propose this MCP installation as a new OpenClasp agent. The owner must confirm it in the dashboard before the identity is bound.',
+        'Propose this installation, public endpoint, and safe automation policy. One owner approval binds and optionally publishes the agent.',
       inputSchema: z
         .object({
           agentName: z.string().trim().min(1).max(100),
@@ -455,6 +455,9 @@ export function registerOpenClaspTools(
           description: z.string().trim().max(500).optional(),
           agentVersion: z.string().trim().min(1).max(100).optional(),
           a2aEndpoint: z.string().url().optional(),
+          autoPublish: z.boolean().optional(),
+          autoAcceptPolicy: z.enum(['off', 'safe_matching']).optional(),
+          autoAcceptTaskCategories: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
           capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
           limitations: z.array(z.string().trim().min(1).max(300)).max(100).optional(),
         })
@@ -538,6 +541,9 @@ export function registerOpenClaspTools(
         description: z.string().trim().max(500).optional(),
         agentVersion: z.string().trim().min(1).max(100).optional(),
         a2aEndpoint: z.union([z.string().url(), z.literal('')]).optional(),
+        autoPublish: z.boolean().optional(),
+        autoAcceptPolicy: z.enum(['off', 'safe_matching']).optional(),
+        autoAcceptTaskCategories: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
         capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
         limitations: z.array(z.string().trim().min(1).max(300)).max(100).optional(),
       }),
@@ -722,17 +728,18 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[24],
     {
-      title: 'Connect to another agent',
+      title: 'Automatically connect to another agent',
       description:
-        'Create one immutable cross-account assurance contract and return the responder A2A endpoint and OpenClasp extension metadata.',
+        'Infer safe contract defaults, auto-activate when the responder policy permits, and return a ready-to-send A2A request.',
       inputSchema: z
         .object({
           targetAgentId: z.string().min(1).optional(),
           targetAgentCardUrl: z.string().url().optional(),
-          purpose: z.string().trim().min(1).max(500),
-          taskCategory: z.string().trim().min(1).max(100).default('general'),
-          requestedOutcome: z.string().trim().min(1).max(1000),
-          successCriteria: z.array(z.string().trim().min(1)).min(1).max(50),
+          task: z.string().trim().min(1).max(2000).optional(),
+          purpose: z.string().trim().min(1).max(500).optional(),
+          taskCategory: z.string().trim().min(1).max(100).optional(),
+          requestedOutcome: z.string().trim().min(1).max(1000).optional(),
+          successCriteria: z.array(z.string().trim().min(1)).min(1).max(50).optional(),
           allowedActions: z.array(z.string().trim().min(1)).max(100).default([]),
           prohibitedActions: z.array(z.string().trim().min(1)).max(100).default([]),
           allowedData: z.array(z.string().trim().min(1)).max(100).default([]),
@@ -741,8 +748,14 @@ export function registerOpenClaspTools(
           deadline: z.string().datetime().optional(),
           expiresInMinutes: z.number().int().min(5).max(10080).default(60),
         })
-        .refine((value) => value.targetAgentId || value.targetAgentCardUrl, {
-          message: 'targetAgentId or targetAgentCardUrl is required',
+        .superRefine((value, context) => {
+          if (!value.targetAgentId && !value.targetAgentCardUrl)
+            context.addIssue({
+              code: 'custom',
+              message: 'targetAgentId or targetAgentCardUrl is required',
+            });
+          if (!value.task && !value.purpose)
+            context.addIssue({ code: 'custom', message: 'task or purpose is required' });
         }),
       annotations: { ...WRITE_TOOL, openWorldHint: true },
     },
@@ -751,9 +764,26 @@ export function registerOpenClaspTools(
       const binding = await requireBoundAgent(context);
       if (!binding) throw new Error('A hosted, bound MCP installation is required');
       const connection = installationContext(context);
-      const initiatorCard = await agentDirectory.getPublishedAgent(binding.agent.agentId);
+      let initiatorCard = await agentDirectory.getPublishedAgent(binding.agent.agentId);
+      if (
+        !initiatorCard &&
+        binding.agent.autoPublish &&
+        binding.agent.a2aEndpoint &&
+        agentDirectory.publishAgent
+      )
+        initiatorCard = await agentDirectory.publishAgent(
+          connection.operatorId,
+          buildPublicAgentCard(
+            binding.agent,
+            process.env.OPENCLASP_PUBLIC_URL ??
+              process.env.OPENCLASP_DASHBOARD_URL ??
+              'https://openclasp.vercel.app',
+          ),
+        );
       if (!initiatorCard)
-        throw new Error('Publish this agent in the OpenClasp dashboard before connecting');
+        throw new Error(
+          'This agent is private. Enable automatic publishing once in its dashboard settings.',
+        );
       let targetAgentId = input.targetAgentId;
       if (!targetAgentId && input.targetAgentCardUrl) {
         const cardUrl = new URL(input.targetAgentCardUrl);
@@ -770,16 +800,43 @@ export function registerOpenClaspTools(
       if (!responderCard) throw new Error('Target agent is not published on OpenClasp');
       const responderTransport = responderCard.transports[0];
       if (!responderTransport) throw new Error('Target agent has not published an A2A endpoint');
+      const task = input.task ?? input.purpose!;
+      const purpose = input.purpose ?? task.slice(0, 500);
+      const taskCategory = input.taskCategory ?? responderCard.capabilities[0] ?? 'general';
+      const requestedOutcome = input.requestedOutcome ?? task.slice(0, 1000);
+      const successCriteria = input.successCriteria ?? [
+        'Return a clear result that directly addresses the requested task',
+      ];
+      const existing = (await agentDirectory.listFederatedInteractions(connection.operatorId)).find(
+        (candidate) =>
+          candidate.initiatorAgentId === binding.agent.agentId &&
+          candidate.responderAgentId === responderCard.agentId &&
+          ['pending', 'active'].includes(candidate.status) &&
+          candidate.contract.purpose === purpose &&
+          candidate.contract.taskCategory === taskCategory &&
+          candidate.contract.requestedOutcome === requestedOutcome &&
+          JSON.stringify(candidate.contract.successCriteria) === JSON.stringify(successCriteria) &&
+          JSON.stringify(candidate.contract.allowedActions) ===
+            JSON.stringify(input.allowedActions) &&
+          JSON.stringify(candidate.contract.prohibitedActions) ===
+            JSON.stringify(input.prohibitedActions) &&
+          JSON.stringify(candidate.contract.allowedData) === JSON.stringify(input.allowedData) &&
+          JSON.stringify(candidate.contract.prohibitedData) ===
+            JSON.stringify(input.prohibitedData) &&
+          JSON.stringify(candidate.contract.evidenceRequirements) ===
+            JSON.stringify(input.evidenceRequirements) &&
+          candidate.contract.deadline === input.deadline,
+      );
       const now = new Date();
-      const interactionId = crypto.randomUUID();
+      const interactionId = existing?.interactionId ?? crypto.randomUUID();
       const contract = {
         protocolVersion: '0.1' as const,
         interactionId,
-        purpose: input.purpose,
+        purpose,
         parties: [binding.agent.agentId, responderCard.agentId],
-        taskCategory: input.taskCategory,
-        requestedOutcome: input.requestedOutcome,
-        successCriteria: input.successCriteria,
+        taskCategory,
+        requestedOutcome,
+        successCriteria,
         allowedActions: input.allowedActions,
         prohibitedActions: input.prohibitedActions,
         allowedData: input.allowedData,
@@ -791,11 +848,11 @@ export function registerOpenClaspTools(
         factCheckingPolicy: 'important_claims',
         mediationPolicy: 'mutual_consent' as const,
         retentionDays: 30,
-        completionConditions: input.successCriteria,
+        completionConditions: successCriteria,
         cancellationConditions: ['either_party_before_completion'],
         signatures: {},
       };
-      const termsHash = canonicalHash(contract);
+      const termsHash = existing?.termsHash ?? canonicalHash(contract);
       const createdAt = now.toISOString();
       const interaction: FederatedInteraction = {
         protocolVersion: '0.1',
@@ -819,26 +876,45 @@ export function registerOpenClaspTools(
         updatedAt: createdAt,
         expiresAt: new Date(now.getTime() + input.expiresInMinutes * 60_000).toISOString(),
       };
-      const stored = await agentDirectory.createFederatedInteraction(
-        connection.operatorId,
-        interaction,
-      );
+      const stored =
+        existing ??
+        (await agentDirectory.createFederatedInteraction(connection.operatorId, interaction));
       return text({
+        ready: stored.status === 'active',
         interaction: stored,
         a2a: {
-          endpoint: responderTransport.endpoint,
-          protocolBinding: responderTransport.protocolBinding,
+          endpoint: stored.responderTransport.endpoint,
+          protocolBinding: stored.responderTransport.protocolBinding,
           extensions: [DEFAULT_EXTENSION_URI],
           metadata: {
             [DEFAULT_EXTENSION_URI]: {
-              interactionId,
-              termsHash,
-              initiatorAgentId: binding.agent.agentId,
-              responderAgentId: responderCard.agentId,
+              interactionId: stored.interactionId,
+              termsHash: stored.termsHash,
+              initiatorAgentId: stored.initiatorAgentId,
+              responderAgentId: stored.responderAgentId,
+            },
+          },
+          requestTemplate: {
+            method: 'message/send',
+            headers: { 'A2A-Extensions': DEFAULT_EXTENSION_URI },
+            message: {
+              role: 'user',
+              parts: [{ kind: 'text', text: task }],
+              metadata: {
+                [DEFAULT_EXTENSION_URI]: {
+                  interactionId: stored.interactionId,
+                  termsHash: stored.termsHash,
+                  initiatorAgentId: stored.initiatorAgentId,
+                  responderAgentId: stored.responderAgentId,
+                },
+              },
             },
           },
         },
-        next: 'Wait for the responder to accept. Once active, send messages directly to its A2A endpoint with this extension metadata.',
+        next:
+          stored.status === 'active'
+            ? 'Send the request directly to the returned A2A endpoint.'
+            : `The task needs responder approval. OpenClasp will expose it at ${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/dashboard; retry this interaction after approval.`,
       });
     },
   );

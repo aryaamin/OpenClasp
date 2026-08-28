@@ -14,6 +14,9 @@ export type AgentProfile = {
   framework: string;
   agentVersion: string;
   a2aEndpoint?: string;
+  autoPublish: boolean;
+  autoAcceptPolicy: 'off' | 'safe_matching';
+  autoAcceptTaskCategories: string[];
   capabilities: string[];
   limitations: string[];
   identityMode: 'oauth_installation';
@@ -44,6 +47,9 @@ export type SetupRequest = {
   framework: string;
   agentVersion: string;
   a2aEndpoint?: string;
+  autoPublish: boolean;
+  autoAcceptPolicy: 'off' | 'safe_matching';
+  autoAcceptTaskCategories: string[];
   capabilities: string[];
   limitations: string[];
   requestedAt: string;
@@ -85,7 +91,14 @@ export async function getOnboardingState(
     rows.filter((row) => row.kind === kind).map((row) => row.payload as T);
   return {
     projects: values<Project>('project'),
-    agentProfiles: values<AgentProfile>('agent_profile'),
+    agentProfiles: values<AgentProfile>('agent_profile').map((agent) => ({
+      ...agent,
+      description: agent.description ?? '',
+      agentVersion: agent.agentVersion ?? '1.0.0',
+      autoPublish: agent.autoPublish ?? false,
+      autoAcceptPolicy: agent.autoAcceptPolicy ?? 'off',
+      autoAcceptTaskCategories: agent.autoAcceptTaskCategories ?? [],
+    })),
     installations: values<AgentInstallation>('installation'),
     setupRequests: values<SetupRequest>('setup_request'),
   };
@@ -119,6 +132,9 @@ export async function requestAgentSetup(
     description?: string | undefined;
     agentVersion?: string | undefined;
     a2aEndpoint?: string | undefined;
+    autoPublish?: boolean | undefined;
+    autoAcceptPolicy?: 'off' | 'safe_matching' | undefined;
+    autoAcceptTaskCategories?: string[] | undefined;
     capabilities?: string[] | undefined;
     limitations?: string[] | undefined;
   },
@@ -154,6 +170,12 @@ export async function requestAgentSetup(
     description: input.description?.trim() || '',
     agentVersion: input.agentVersion?.trim() || '1.0.0',
     ...(input.a2aEndpoint?.trim() ? { a2aEndpoint: input.a2aEndpoint.trim() } : {}),
+    autoPublish: input.autoPublish ?? Boolean(input.a2aEndpoint?.trim()),
+    autoAcceptPolicy:
+      input.autoAcceptPolicy ?? (input.a2aEndpoint?.trim() ? 'safe_matching' : 'off'),
+    autoAcceptTaskCategories: [
+      ...new Set(input.autoAcceptTaskCategories ?? input.capabilities ?? []),
+    ],
     capabilities: [...new Set(input.capabilities ?? [])],
     limitations: [...new Set(input.limitations ?? [])],
     requestedAt: new Date().toISOString(),
@@ -201,6 +223,9 @@ export async function approveAgentSetup(
       framework: request.framework,
       agentVersion: request.agentVersion,
       ...(request.a2aEndpoint ? { a2aEndpoint: request.a2aEndpoint } : {}),
+      autoPublish: request.autoPublish ?? false,
+      autoAcceptPolicy: request.autoAcceptPolicy ?? 'off',
+      autoAcceptTaskCategories: request.autoAcceptTaskCategories ?? [],
       capabilities: request.capabilities,
       limitations: request.limitations,
       identityMode: 'oauth_installation',
@@ -258,6 +283,9 @@ export async function updateAgentProfile(
     framework?: string | undefined;
     agentVersion?: string | undefined;
     a2aEndpoint?: string | undefined;
+    autoPublish?: boolean | undefined;
+    autoAcceptPolicy?: 'off' | 'safe_matching' | undefined;
+    autoAcceptTaskCategories?: string[] | undefined;
     capabilities?: string[] | undefined;
     limitations?: string[] | undefined;
   },
@@ -270,6 +298,11 @@ export async function updateAgentProfile(
     ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
     ...(patch.framework?.trim() ? { framework: patch.framework.trim() } : {}),
     ...(patch.agentVersion?.trim() ? { agentVersion: patch.agentVersion.trim() } : {}),
+    ...(patch.autoPublish !== undefined ? { autoPublish: patch.autoPublish } : {}),
+    ...(patch.autoAcceptPolicy ? { autoAcceptPolicy: patch.autoAcceptPolicy } : {}),
+    ...(patch.autoAcceptTaskCategories
+      ? { autoAcceptTaskCategories: [...new Set(patch.autoAcceptTaskCategories)] }
+      : {}),
     ...(patch.capabilities ? { capabilities: [...new Set(patch.capabilities)] } : {}),
     ...(patch.limitations ? { limitations: [...new Set(patch.limitations)] } : {}),
     updatedAt: new Date().toISOString(),

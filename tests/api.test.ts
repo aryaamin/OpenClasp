@@ -150,6 +150,22 @@ describe('HTTP API', () => {
       url: 'https://agent.example/a2a',
       protocolVersion: '1.0',
     });
+    const automation = await app.inject({
+      method: 'PUT',
+      url: '/v0.1/agents/agent-one/automation',
+      headers: { 'x-openclasp-operator': 'owner-one' },
+      payload: {
+        a2aEndpoint: 'https://agent.example/a2a',
+        autoPublish: true,
+        autoAcceptPolicy: 'safe_matching',
+        autoAcceptTaskCategories: ['research'],
+      },
+    });
+    expect(automation.statusCode).toBe(200);
+    expect(automation.json()).toMatchObject({
+      autoPublish: true,
+      autoAcceptPolicy: 'safe_matching',
+    });
     await app.close();
   });
 });

@@ -39,6 +39,11 @@ describe('agent self-onboarding', () => {
     });
 
     expect(request.status).toBe('pending');
+    expect(request).toMatchObject({
+      autoPublish: true,
+      autoAcceptPolicy: 'safe_matching',
+      autoAcceptTaskCategories: ['research'],
+    });
     await expect(resolveInstallation(store, 'owner-a', 'codex-installation-a')).resolves.toEqual({
       status: 'unbound',
     });

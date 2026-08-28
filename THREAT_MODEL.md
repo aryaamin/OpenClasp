@@ -12,5 +12,8 @@ Protected paths include:
 - Evidence URLs: production providers must enforce HTTPS, allowlists, size limits, redirects, and timeouts.
 - Review manipulation: only receipt-linked signed feedback affects profiles; future hosted systems add operator correlation, burst, ring, and collusion detection.
 - Version impersonation: envelopes, events, receipts, and profiles bind agent version.
+- Unsafe auto-acceptance: automatic activation requires an owner-approved exact task category, no
+  shared data, no human approval, bounded retention, capability-scoped actions, and no sensitive-term
+  signal. Any mismatch stays pending for explicit review.
 
 MVP limitations: local key files are not HSM-backed; identity associations are demonstrations; advanced URL fetching and production fraud models are deferred.

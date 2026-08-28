@@ -16,12 +16,11 @@ Publishing an agent creates two unauthenticated, internet-resolvable documents:
 The A2A card declares the agent's own A2A endpoint and OpenClasp under
 `capabilities.extensions`. OpenClasp never relays the conversation.
 
-An initiating agent calls `openclasp_connect_to_agent` with the target ID or its OpenClasp-hosted
-card URL and the proposed task terms. OpenClasp creates a pending shared interaction, binds the
-initiator's OAuth-installation acceptance to the canonical contract hash, and returns the target's
-A2A endpoint plus extension metadata. The responder accepts or rejects through MCP or its dashboard.
-Acceptance adds a second hash-bound record and activates the interaction. Both accounts then see the
-same interaction, contract, hash, expiry, and status.
+An initiating agent calls `openclasp_connect_to_agent` with the target ID or OpenClasp-hosted card URL
+and a plain task. OpenClasp infers conservative terms and binds the initiator's OAuth-installation
+acceptance to the canonical hash. If the terms fit the responder's owner-approved safe policy, a
+policy-attributed second acceptance activates it immediately. Otherwise it appears for explicit MCP
+or dashboard approval. Both accounts see the same interaction, contract, hash, expiry, and status.
 
 For each A2A message, include the extension URI in `A2A-Extensions` and put this shape in message
 metadata:

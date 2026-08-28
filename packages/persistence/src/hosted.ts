@@ -85,6 +85,41 @@ export function buildPublicAgentCard(
   });
 }
 
+const normalized = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_');
+
+export function canAutoAcceptInteraction(
+  agent: AgentProfile,
+  interaction: FederatedInteraction,
+): boolean {
+  if (agent.autoAcceptPolicy !== 'safe_matching' || agent.status !== 'active') return false;
+  const categories = new Set(
+    [...(agent.autoAcceptTaskCategories ?? []), ...(agent.capabilities ?? [])].map(normalized),
+  );
+  const taskCategory = normalized(interaction.contract.taskCategory);
+  if (!taskCategory || !categories.has(taskCategory)) return false;
+  if (interaction.contract.allowedData.length > 0) return false;
+  if (
+    /\b(password|secret|api[_ -]?key|access[_ -]?token|credential|bank|payment|medical|health|ssn|personal[_ -]?data|customer[_ -]?record)\b/i.test(
+      `${interaction.contract.purpose} ${interaction.contract.requestedOutcome}`,
+    )
+  )
+    return false;
+  if (interaction.contract.humanApprovalRequirements.length > 0) return false;
+  if (interaction.contract.retentionDays > 30) return false;
+  if (interaction.contract.allowedActions.length > 0) {
+    const capabilities = new Set((agent.capabilities ?? []).map(normalized));
+    if (
+      !interaction.contract.allowedActions.every((action) => capabilities.has(normalized(action)))
+    )
+      return false;
+  }
+  return true;
+}
+
 export type AccountSettings = {
   displayName: string;
   contributionEnabled: boolean;
@@ -344,7 +379,24 @@ export class HostedRepository {
       )
       RETURNING payload
     `;
-    return FederatedInteractionSchema.parse(rows[0]?.payload);
+    const stored = FederatedInteractionSchema.parse(rows[0]?.payload);
+    const profiles = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${responder.operator_id}
+        AND kind = 'agent_profile'
+        AND record_id = ${interaction.responderAgentId}
+      LIMIT 1
+    `;
+    const responderProfile = profiles[0]?.payload as AgentProfile | undefined;
+    if (responderProfile && canAutoAcceptInteraction(responderProfile, stored))
+      return this.respondToFederatedInteraction(
+        String(responder.operator_id),
+        stored.interactionId,
+        stored.responderAgentId,
+        'accept',
+        'policy_auto_accept',
+      );
+    return stored;
   }
 
   async listFederatedInteractions(operatorId: string): Promise<FederatedInteraction[]> {
@@ -375,7 +427,7 @@ export class HostedRepository {
     interactionId: string,
     agentId: string,
     decision: 'accept' | 'reject',
-    method: 'oauth_installation' | 'oauth_account' = 'oauth_account',
+    method: 'oauth_installation' | 'oauth_account' | 'policy_auto_accept' = 'oauth_account',
   ): Promise<FederatedInteraction> {
     await this.ensureSchema();
     const rows = await this.sql`

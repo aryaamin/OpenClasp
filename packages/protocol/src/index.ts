@@ -132,7 +132,7 @@ export const PublicAgentCardSchema = z.object({
 
 export const ContractAcceptanceSchema = z.object({
   agentId: z.string().min(1),
-  method: z.enum(['oauth_installation', 'oauth_account', 'ed25519']),
+  method: z.enum(['oauth_installation', 'oauth_account', 'policy_auto_accept', 'ed25519']),
   termsHash: z.string().min(1),
   acceptedAt: z.string().datetime(),
   signature: SignatureSchema.optional(),
