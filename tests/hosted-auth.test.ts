@@ -1,0 +1,37 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { POST as mcpHandler } from '../api/mcp.js';
+import { GET as metadataHandler } from '../api/oauth-protected-resource.js';
+
+describe('hosted MCP authorization', () => {
+  const originalIssuer = process.env.DESCOPE_MCP_ISSUER;
+  const originalIntegrationIssuer = process.env.DESCOPE_ISSUER;
+  afterEach(() => {
+    if (originalIssuer === undefined) delete process.env.DESCOPE_MCP_ISSUER;
+    else process.env.DESCOPE_MCP_ISSUER = originalIssuer;
+    if (originalIntegrationIssuer === undefined) delete process.env.DESCOPE_ISSUER;
+    else process.env.DESCOPE_ISSUER = originalIntegrationIssuer;
+  });
+
+  it('challenges unauthenticated remote MCP requests', async () => {
+    const response = await mcpHandler(
+      new Request('https://openclasp.example/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toContain(
+      'resource_metadata="https://openclasp.example/.well-known/oauth-protected-resource"',
+    );
+  });
+
+  it('fails closed when the OAuth issuer is not configured', () => {
+    delete process.env.DESCOPE_MCP_ISSUER;
+    delete process.env.DESCOPE_ISSUER;
+    const response = metadataHandler(
+      new Request('https://openclasp.example/.well-known/oauth-protected-resource'),
+    );
+    expect(response.status).toBe(503);
+  });
+});

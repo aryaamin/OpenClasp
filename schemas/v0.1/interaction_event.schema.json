@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "interactionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "claim",
+        "evidence",
+        "constraint",
+        "commitment",
+        "proposal",
+        "objection",
+        "policy_warning",
+        "policy_violation",
+        "private_suggestion",
+        "shared_intervention",
+        "delegation",
+        "task_result",
+        "resolution",
+        "receipt",
+        "feedback",
+        "dispute"
+      ]
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "agentVersion": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "local_only",
+        "private_requester",
+        "private_responder",
+        "shared_participants",
+        "network_aggregate"
+      ]
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "self_declared",
+        "operator_attested",
+        "cryptographically_verified",
+        "domain_verified",
+        "third_party_verified",
+        "observed",
+        "disputed"
+      ]
+    },
+    "payloadHash": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "signature": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["algorithm", "keyId", "value"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "eventId",
+    "interactionId",
+    "eventType",
+    "agentId",
+    "agentVersion",
+    "timestamp",
+    "visibility",
+    "provenance",
+    "payloadHash",
+    "payload"
+  ],
+  "additionalProperties": false
+}

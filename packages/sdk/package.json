@@ -1,0 +1,10 @@
+{
+  "name": "@openclasp/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@openclasp/core": "workspace:*",
+    "@openclasp/protocol": "workspace:*"
+  }
+}

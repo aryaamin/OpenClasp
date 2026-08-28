@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["ALLOW", "CHALLENGE", "DENY"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "taskCategory": {
+      "type": "string"
+    },
+    "sampleSize": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "dimensions": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "dataFreshness": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "requiredChallenges": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "decision",
+    "confidence",
+    "taskCategory",
+    "sampleSize",
+    "dimensions",
+    "reasons",
+    "warnings",
+    "dataFreshness",
+    "requiredChallenges"
+  ],
+  "additionalProperties": false
+}

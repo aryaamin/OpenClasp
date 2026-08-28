@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "corepack pnpm build",
+  "outputDirectory": "apps/dashboard/dist",
+  "functions": {
+    "api/*.ts": { "maxDuration": 30 }
+  },
+  "rewrites": [
+    { "source": "/health", "destination": "/api/index?path=/health" },
+    { "source": "/ready", "destination": "/api/index?path=/ready" },
+    { "source": "/openapi.json", "destination": "/api/index?path=/openapi.json" },
+    { "source": "/v0.1/:path*", "destination": "/api/index?path=/v0.1/:path*" },
+    { "source": "/mcp", "destination": "/api/mcp" },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/api/oauth-protected-resource"
+    }
+  ]
+}

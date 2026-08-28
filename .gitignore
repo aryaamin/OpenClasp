@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+*.db
+*.db-shm
+*.db-wal
+.env
+apps/dashboard/dist
+.vercel
+.env*

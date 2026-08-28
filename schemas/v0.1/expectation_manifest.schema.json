@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requiredInputs": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supportedTaskCategories": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "responseTimeMs": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "dataRequirements": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prohibitedData": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "humanApprovalThresholds": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "delegationPolicy": {
+      "default": "explicit",
+      "type": "string"
+    },
+    "evidenceRequirements": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "factCheckingPreference": {
+      "default": "important_claims",
+      "type": "string",
+      "enum": ["none", "important_claims", "all_objective_claims"]
+    },
+    "mediationPreference": {
+      "default": "mutual_consent",
+      "type": "string",
+      "enum": ["never", "mutual_consent"]
+    },
+    "retentionDays": {
+      "default": 30,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "communicationFormats": {
+      "default": ["text/plain"],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cancellationPolicy": {
+      "default": "either_party",
+      "type": "string"
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "self_declared",
+        "operator_attested",
+        "cryptographically_verified",
+        "domain_verified",
+        "third_party_verified",
+        "observed",
+        "disputed"
+      ]
+    }
+  },
+  "required": [
+    "requiredInputs",
+    "supportedTaskCategories",
+    "dataRequirements",
+    "prohibitedData",
+    "humanApprovalThresholds",
+    "delegationPolicy",
+    "evidenceRequirements",
+    "factCheckingPreference",
+    "mediationPreference",
+    "retentionDays",
+    "communicationFormats",
+    "cancellationPolicy",
+    "provenance"
+  ],
+  "additionalProperties": false
+}

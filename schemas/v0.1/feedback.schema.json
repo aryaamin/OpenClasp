@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "feedbackId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "interactionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "receiptId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "reviewerAgentId": {
+      "type": "string"
+    },
+    "subjectAgentId": {
+      "type": "string"
+    },
+    "taskCompleted": {
+      "type": "boolean"
+    },
+    "outputAccepted": {
+      "type": "boolean"
+    },
+    "specificationMatched": {
+      "type": "boolean"
+    },
+    "deadlineMet": {
+      "type": "boolean"
+    },
+    "communicationQuality": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidenceProvided": {
+      "type": "boolean"
+    },
+    "scopeRespected": {
+      "type": "boolean"
+    },
+    "disputeRaised": {
+      "type": "boolean"
+    },
+    "comment": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "submittedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "signature": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["algorithm", "keyId", "value"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "feedbackId",
+    "interactionId",
+    "receiptId",
+    "reviewerAgentId",
+    "subjectAgentId",
+    "taskCompleted",
+    "outputAccepted",
+    "specificationMatched",
+    "deadlineMet",
+    "communicationQuality",
+    "evidenceProvided",
+    "scopeRespected",
+    "disputeRaised",
+    "submittedAt"
+  ],
+  "additionalProperties": false
+}

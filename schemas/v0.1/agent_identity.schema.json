@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "agentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publicKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "keyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operatorRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assurance": {
+      "type": "string",
+      "enum": ["pseudonymous", "domain_associated", "organization_associated"]
+    },
+    "agentVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supportedProtocols": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "parentAgentId": {
+      "type": "string"
+    },
+    "rootControllerId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "revoked": {
+      "default": false,
+      "type": "boolean"
+    },
+    "provenance": {
+      "type": "string",
+      "enum": [
+        "self_declared",
+        "operator_attested",
+        "cryptographically_verified",
+        "domain_verified",
+        "third_party_verified",
+        "observed",
+        "disputed"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "signature": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["algorithm", "keyId", "value"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "agentId",
+    "publicKey",
+    "keyId",
+    "operatorRef",
+    "assurance",
+    "agentVersion",
+    "capabilities",
+    "supportedProtocols",
+    "rootControllerId",
+    "revoked",
+    "provenance",
+    "createdAt"
+  ],
+  "additionalProperties": false
+}
