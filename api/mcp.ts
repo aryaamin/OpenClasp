@@ -53,7 +53,6 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
   if (!bearerToken) return undefined;
   const authentication = await verifyAuth0Token(bearerToken, {
     dashboard: false,
-    requiredScopes: ['mcp:access'],
   });
   return {
     token: bearerToken,
@@ -68,7 +67,6 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
 
 const handler = withMcpAuth(mcp, verifyToken, {
   required: true,
-  requiredScopes: ['mcp:access'],
   resourceMetadataPath: '/.well-known/oauth-protected-resource',
   ...(process.env.OPENCLASP_MCP_URL
     ? { resourceUrl: new URL(process.env.OPENCLASP_MCP_URL).origin }

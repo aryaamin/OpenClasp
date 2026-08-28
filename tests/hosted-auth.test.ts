@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { POST as mcpHandler } from '../api/mcp.js';
 import { GET as metadataHandler } from '../api/oauth-protected-resource.js';
+import { dashboardTokenFromCookie } from '../api/auth0.js';
 
 describe('hosted MCP authorization', () => {
+  it('reads only the named dashboard session cookie', () => {
+    expect(dashboardTokenFromCookie('other=x; openclasp_session=token%2Evalue; last=y')).toBe(
+      'token.value',
+    );
+    expect(dashboardTokenFromCookie('other=x')).toBeUndefined();
+  });
   it('challenges unauthenticated remote MCP requests', async () => {
     const response = await mcpHandler(
       new Request('https://openclasp.example/mcp', {
@@ -25,7 +32,7 @@ describe('hosted MCP authorization', () => {
     await expect(response.json()).resolves.toMatchObject({
       resource: 'https://openclasp.example/mcp',
       authorization_servers: ['https://icfg-0ua6bab8d4omtfolx72mrhzo.us.auth0.com/'],
-      scopes_supported: ['mcp:access'],
+      scopes_supported: ['openid', 'profile', 'email'],
     });
   });
 });

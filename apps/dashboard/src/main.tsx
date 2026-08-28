@@ -7,10 +7,9 @@ declare const __AUTH0_CLIENT_ID__: string;
 declare const __AUTH0_AUDIENCE__: string;
 
 type Auth0User = { sub: string; name?: string; email?: string; picture?: string };
-type AuthSession = { accessToken: string; expiresAt: number; user: Auth0User };
+type AuthSession = { user: Auth0User };
 type AuthTransaction = { state: string; nonce: string; verifier: string };
 
-const authSessionKey = 'openclasp.auth0.session';
 const authTransactionKey = 'openclasp.auth0.transaction';
 
 type DashboardData = {
@@ -56,8 +55,6 @@ const defaultSettings: Settings = {
 const pages = ['dashboard', 'history', 'agents', 'insights', 'connect', 'settings'] as const;
 type Page = (typeof pages)[number];
 
-let getAuthToken: () => Promise<string | null> = async () => null;
-
 function base64Url(bytes: Uint8Array) {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -66,22 +63,6 @@ function base64Url(bytes: Uint8Array) {
 
 function randomValue(size = 32) {
   return base64Url(crypto.getRandomValues(new Uint8Array(size)));
-}
-
-function readAuthSession(): AuthSession | null {
-  try {
-    const raw = sessionStorage.getItem(authSessionKey);
-    if (!raw) return null;
-    const session = JSON.parse(raw) as AuthSession;
-    if (!session.accessToken || session.expiresAt <= Date.now()) {
-      sessionStorage.removeItem(authSessionKey);
-      return null;
-    }
-    return session;
-  } catch {
-    sessionStorage.removeItem(authSessionKey);
-    return null;
-  }
 }
 
 async function beginAuth(provider: 'google' | 'github') {
@@ -93,7 +74,7 @@ async function beginAuth(provider: 'google' | 'github') {
     client_id: __AUTH0_CLIENT_ID__,
     redirect_uri: `${location.origin}/sso-callback`,
     response_type: 'code',
-    scope: 'openid profile email mcp:access',
+    scope: 'openid profile email',
     audience: __AUTH0_AUDIENCE__,
     state: transaction.state,
     nonce: transaction.nonce,
@@ -104,8 +85,8 @@ async function beginAuth(provider: 'google' | 'github') {
   location.assign(`https://${__AUTH0_DOMAIN__}/authorize?${parameters}`);
 }
 
-function signOut() {
-  sessionStorage.removeItem(authSessionKey);
+async function signOut() {
+  await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin' });
   const parameters = new URLSearchParams({
     client_id: __AUTH0_CLIENT_ID__,
     returnTo: `${location.origin}/login`,
@@ -114,13 +95,12 @@ function signOut() {
 }
 
 async function api(path: string, init?: RequestInit) {
-  const token = await getAuthToken();
   return fetch(path, {
     ...init,
+    credentials: 'same-origin',
     headers: {
       'content-type': 'application/json',
       ...(init?.headers ?? {}),
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
   }).then(async (response) => {
     if (!response.ok)
@@ -135,7 +115,7 @@ function route(): Page {
 }
 
 function App() {
-  const [session] = useState(readAuthSession);
+  const [session, setSession] = useState<AuthSession | null>();
   const [page, setPage] = useState<Page>(route());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -146,13 +126,23 @@ function App() {
   }, []);
 
   useEffect(() => {
+    fetch('/api/session', { credentials: 'same-origin' })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as AuthSession;
+      })
+      .then(setSession)
+      .catch(() => setSession(null));
+  }, []);
+
+  useEffect(() => {
     const onPopState = () => setPage(route());
     addEventListener('popstate', onPopState);
     return () => removeEventListener('popstate', onPopState);
   }, []);
 
   useEffect(() => {
-    getAuthToken = async () => session?.accessToken ?? null;
+    if (session === undefined) return;
     if (!session && location.pathname !== '/login') history.replaceState({}, '', '/login');
     if (!session) return;
     if (location.pathname === '/login') history.replaceState({}, '', '/dashboard');
@@ -173,6 +163,7 @@ function App() {
     setPage(next);
   };
 
+  if (session === undefined) return <Loading />;
   if (!session) return <Login />;
 
   return (
@@ -200,7 +191,7 @@ function App() {
             <small>Raw conversations stay local</small>
           </div>
         </div>
-        <button className="account" onClick={signOut}>
+        <button className="account" onClick={() => void signOut()}>
           <span>{initials(session.user.name || session.user.email || 'OC')}</span>
           <div>
             <strong>{session.user.name || 'OpenClasp user'}</strong>
@@ -301,32 +292,16 @@ function AuthCallback() {
       const transaction = JSON.parse(rawTransaction) as AuthTransaction;
       sessionStorage.removeItem(authTransactionKey);
       if (returnedState !== transaction.state) throw new Error('OAuth state mismatch');
-      const response = await fetch(`https://${__AUTH0_DOMAIN__}/oauth/token`, {
+      const response = await fetch('/api/session', {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: __AUTH0_CLIENT_ID__,
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
           code,
-          code_verifier: transaction.verifier,
-          redirect_uri: `${location.origin}/sso-callback`,
+          codeVerifier: transaction.verifier,
         }),
       });
       if (!response.ok) throw new Error('Auth0 token exchange failed');
-      const tokens = (await response.json()) as { access_token: string; expires_in: number };
-      const profileResponse = await fetch(`https://${__AUTH0_DOMAIN__}/userinfo`, {
-        headers: { authorization: `Bearer ${tokens.access_token}` },
-      });
-      if (!profileResponse.ok) throw new Error('Auth0 profile request failed');
-      const user = (await profileResponse.json()) as Auth0User;
-      sessionStorage.setItem(
-        authSessionKey,
-        JSON.stringify({
-          accessToken: tokens.access_token,
-          expiresAt: Date.now() + Math.max(tokens.expires_in - 30, 1) * 1000,
-          user,
-        } satisfies AuthSession),
-      );
       location.replace('/dashboard');
     };
     void finish().catch((reason: unknown) =>

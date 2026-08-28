@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 export const defaultAuth0Domain = 'icfg-0ua6bab8d4omtfolx72mrhzo.us.auth0.com';
 export const defaultAuth0ClientId = 'vGxzZd4LiO7TqH4U61QblwH96YcimpcA';
 export const defaultAudience = 'https://openclasp.vercel.app/mcp';
+export const dashboardSessionCookie = 'openclasp_session';
 
 const jwks = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -72,5 +73,21 @@ export async function loadAuth0Profile(token: string) {
     headers: { authorization: `Bearer ${token}` },
   });
   if (!response.ok) return {};
-  return (await response.json()) as { email?: string; name?: string };
+  return (await response.json()) as {
+    sub?: string;
+    email?: string;
+    name?: string;
+    picture?: string;
+  };
+}
+
+export function dashboardTokenFromCookie(header?: string): string | undefined {
+  if (!header) return undefined;
+  for (const entry of header.split(';')) {
+    const separator = entry.indexOf('=');
+    if (separator < 0) continue;
+    if (entry.slice(0, separator).trim() === dashboardSessionCookie)
+      return decodeURIComponent(entry.slice(separator + 1).trim());
+  }
+  return undefined;
 }

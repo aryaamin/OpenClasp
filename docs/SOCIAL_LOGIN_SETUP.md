@@ -23,13 +23,15 @@ The app starts each provider directly and returns through `/sso-callback` to `/d
 ## MCP OAuth
 
 1. Create an Auth0 API with identifier `https://openclasp.vercel.app/mcp`.
-2. Add `mcp:access`, enable RBAC, and include permissions in access tokens.
+2. Keep standard OIDC scopes enabled. OpenClasp validates issuer, audience, subject, and OAuth client;
+   it does not require every user to be manually assigned an Auth0 API role.
 3. Enable Dynamic Client Registration and the Resource Parameter Compatibility Profile.
 4. Keep `https://openclasp.vercel.app/mcp` as `OPENCLASP_MCP_URL` in Vercel.
 5. Connect an MCP client to `https://openclasp.vercel.app/mcp`. It discovers Auth0, opens consent,
    and sends an OAuth access token. Dashboard session tokens are rejected at this endpoint.
 
-Before public beta, define narrower OpenClasp permissions and replace the broad `mcp:access` requirement.
+Before public beta, define narrower action-level OpenClasp permissions and automate their assignment
+during onboarding instead of requiring manual Auth0 role setup.
 
 ## Smoke test
 

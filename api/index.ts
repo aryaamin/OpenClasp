@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { buildApi } from '../apps/api/src/app.js';
 import { TrustEngine } from '../packages/core/src/index.js';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
-import { loadAuth0Profile, verifyAuth0Token } from './auth0.js';
+import { dashboardTokenFromCookie, loadAuth0Profile, verifyAuth0Token } from './auth0.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const repository = databaseUrl ? new HostedRepository(databaseUrl) : undefined;
@@ -15,7 +15,9 @@ export default async function handler(request: IncomingMessage, response: Server
   if (target) request.url = target;
   if ((request.url ?? '').startsWith('/v0.1/')) {
     const authorization = request.headers.authorization;
-    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
+    const token = authorization?.startsWith('Bearer ')
+      ? authorization.slice(7)
+      : dashboardTokenFromCookie(request.headers.cookie);
     if (!token) {
       response.statusCode = 401;
       response.setHeader('content-type', 'application/json');
