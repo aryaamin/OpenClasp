@@ -30,7 +30,7 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
 
 const handler = withMcpAuth(mcp, verifyToken, {
   required: true,
-  requiredScopes: ['profile:read'],
+  requiredScopes: ['full-access'],
   resourceMetadataPath: '/.well-known/oauth-protected-resource',
   ...(process.env.OPENCLASP_MCP_URL
     ? { resourceUrl: new URL(process.env.OPENCLASP_MCP_URL).origin }

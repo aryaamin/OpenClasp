@@ -35,6 +35,10 @@ authorization server through `/.well-known/oauth-protected-resource`, open the h
 consent page, and retry with an audience-bound bearer token. The local stdio server remains for
 development and obtains credentials through its host environment.
 
+The provisioned Descope project initially issues `full-access`. Before a public beta, configure and
+enforce separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
+`network:contribute` scopes in Descope.
+
 ## What the demo proves
 
 The deterministic demo creates requester/provider/subagent identities, verifies scoped delegation, signs a contract, sends an A2A-shaped message with the OpenClasp extension, keeps its raw body local, challenges a contradicted claim, blocks a deterministic violation, mediates with mutual consent, verifies bilateral feedback and receipts, updates task-specific history, and reduces confidence for a new agent version. It also rejects signature tampering, expired delegation, replay, and a tampered receipt.
