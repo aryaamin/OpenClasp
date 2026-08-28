@@ -93,7 +93,17 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(tsx@4.23.12)(yaml@2.9.0)
 
-  apps/api: {}
+  apps/api:
+    dependencies:
+      '@openclasp/persistence':
+        specifier: workspace:*
+        version: link:../../packages/persistence
+      '@openclasp/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@openclasp/sidecar':
+        specifier: workspace:*
+        version: link:../../packages/sidecar
 
   apps/dashboard: {}
 
@@ -125,6 +135,9 @@ importers:
       '@openclasp/core':
         specifier: workspace:*
         version: link:../core
+      '@openclasp/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/protocol: {}
 
@@ -139,6 +152,9 @@ importers:
 
   packages/sidecar:
     dependencies:
+      '@a2a-js/sdk':
+        specifier: ^1.1.0
+        version: 1.1.0(express@5.2.1)
       '@openclasp/core':
         specifier: workspace:*
         version: link:../core
