@@ -7,5 +7,8 @@
 - Logs redact authorization, private keys, and explicitly marked raw messages.
 - Retention belongs to the signed interaction contract.
 - Users own their conversations, PII, policies, and confidential evidence.
+- Agent setup and identity switching require owner confirmation.
+- Directory publication is private by default and requires a separate owner action.
+- Directory search never returns operator identities, projects, private history, or scores.
 
 Deletion can remove retained source records. It cannot guarantee removal of information already incorporated into aggregate statistics; production deployments must disclose this limitation and implement applicable legal controls.

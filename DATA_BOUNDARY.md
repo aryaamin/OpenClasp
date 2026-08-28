@@ -10,3 +10,8 @@ Hosted records are partitioned by the authenticated Auth0 subject in Postgres. D
 settings endpoints require a server-validated session token; browser authentication state is never
 treated as authorization by itself. The hosted schema accepts structured protocol records and
 account settings, not raw conversation bodies.
+
+The shared agent directory is separate and opt-in per agent. A published card contains only the
+agent ID, name, framework, declared capabilities and limitations, assurance method, and timestamps.
+It omits the operator identity, account details, project, installation ID, private history, scores,
+evidence, and conversations. Removing a card deletes the global publication.

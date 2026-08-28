@@ -1,13 +1,100 @@
 import { describe, expect, it } from 'vitest';
 import { createIdentity, FixtureFactCheckProvider, TrustEngine } from '@openclasp/core';
+import { signNamed, type InteractionContract, type Receipt } from '@openclasp/protocol';
 import { createSignedEvent } from '@openclasp/sdk';
 
 describe('general assurance behavior', () => {
+  it('requires every contract party to sign before the agreement is active', () => {
+    const engine = new TrustEngine();
+    const first = createIdentity({
+      agentId: 'agent:first',
+      operatorRef: 'operator:a',
+      capabilities: ['coordinate'],
+    });
+    const second = createIdentity({
+      agentId: 'agent:second',
+      operatorRef: 'operator:b',
+      capabilities: ['coordinate'],
+    });
+    engine.registerAgent(first.identity);
+    engine.registerAgent(second.identity);
+    const unsigned: InteractionContract = {
+      protocolVersion: '0.1',
+      interactionId: crypto.randomUUID(),
+      purpose: 'Coordinate a task',
+      parties: [first.identity.agentId, second.identity.agentId],
+      taskCategory: 'coordination',
+      requestedOutcome: 'Agreed plan',
+      successCriteria: ['Plan accepted'],
+      allowedActions: ['coordinate'],
+      prohibitedActions: [],
+      allowedData: ['public'],
+      prohibitedData: ['private'],
+      evidenceRequirements: [],
+      delegationRules: [],
+      humanApprovalRequirements: [],
+      factCheckingPolicy: 'important_claims',
+      mediationPolicy: 'mutual_consent',
+      retentionDays: 30,
+      completionConditions: ['plan_delivered'],
+      cancellationConditions: ['either_party'],
+      signatures: {},
+    };
+    const oneSignature = signNamed(
+      unsigned as unknown as Record<string, unknown>,
+      first.identity.agentId,
+      first.keyPair,
+    ) as unknown as InteractionContract;
+    expect(() => engine.saveContract(oneSignature)).toThrow('every party');
+    const complete = signNamed(
+      oneSignature as unknown as Record<string, unknown>,
+      second.identity.agentId,
+      second.keyPair,
+    ) as unknown as InteractionContract;
+    expect(engine.saveContract(complete).interactionId).toBe(unsigned.interactionId);
+  });
+
   it('does not fact-check opinions as objective truth', async () => {
     const provider = new FixtureFactCheckProvider();
     expect((await provider.check('I think green is the best color')).status).toBe(
       'not_fact_checkable',
     );
+  });
+
+  it('verifies a receipt without recording it', () => {
+    const engine = new TrustEngine();
+    const agent = createIdentity({
+      agentId: 'agent:receipt',
+      operatorRef: 'operator:a',
+      capabilities: ['work'],
+    });
+    engine.registerAgent(agent.identity);
+    const base: Receipt = {
+      receiptId: crypto.randomUUID(),
+      interactionId: crypto.randomUUID(),
+      participants: [agent.identity.agentId],
+      agentVersions: { [agent.identity.agentId]: '1.0.0' },
+      contractHash: 'contract',
+      startedAt: new Date(Date.now() - 1000).toISOString(),
+      completedAt: new Date().toISOString(),
+      outcome: 'success',
+      commitmentsFulfilled: ['done'],
+      commitmentsMissed: [],
+      evidenceHashes: [],
+      policyWarnings: [],
+      policyViolations: [],
+      disputeStatus: 'none',
+      delegationChainHash: 'none',
+      unilateral: false,
+      signatures: {},
+    };
+    const signed = signNamed(
+      base as unknown as Record<string, unknown>,
+      agent.identity.agentId,
+      agent.keyPair,
+    ) as unknown as Receipt;
+    expect(engine.verifyReceipt(signed).receiptId).toBe(base.receiptId);
+    expect(engine.receipts.size).toBe(0);
   });
 
   it('requires opt-in and strips payloads from network contributions', () => {

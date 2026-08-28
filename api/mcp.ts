@@ -1,7 +1,10 @@
 import type { AuthInfo } from '@modelcontextprotocol/server';
 import { createMcpHandler, withMcpAuth } from 'mcp-handler';
 import { MemoryAuditStore, TrustEngine } from '../packages/core/src/index.js';
-import { registerOpenClaspTools } from '../packages/mcp-server/src/server.js';
+import {
+  OPENCLASP_MCP_INSTRUCTIONS,
+  registerOpenClaspTools,
+} from '../packages/mcp-server/src/server.js';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
 import { verifyAuth0Token } from './auth0.js';
 
@@ -38,11 +41,11 @@ const mcp = createMcpHandler(
             repository.upsert(operatorId, kind, recordId, value)
         : undefined,
       repository,
+      repository,
     ),
   {
     serverInfo: { name: 'openclasp', version: '0.1.0' },
-    instructions:
-      'OpenClasp provides identity, interaction assurance, private clues, receipts, and contextual behavioural history. Never submit raw private conversations.',
+    instructions: OPENCLASP_MCP_INSTRUCTIONS,
   },
 );
 

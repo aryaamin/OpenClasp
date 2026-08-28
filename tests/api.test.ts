@@ -25,6 +25,7 @@ describe('HTTP API', () => {
           projects: [],
           installations: [],
           setupRequests: [],
+          publications: [],
           interactions: [],
           events: [],
           conflicts: [],
@@ -48,6 +49,10 @@ describe('HTTP API', () => {
       },
       upsert: async () => undefined,
       list: async () => [],
+      publishAgent: async (_operatorId: string, card: any) => card,
+      unpublishAgent: async () => true,
+      getPublishedAgent: async () => undefined,
+      searchPublishedAgents: async () => [],
     };
     const app = buildApi(undefined, undefined, repository);
     await app.ready();
@@ -71,6 +76,58 @@ describe('HTTP API', () => {
       ).statusCode,
     ).toBe(200);
     expect(calls).toEqual(['dashboard:user-a', 'settings:user-b']);
+    await app.close();
+  });
+
+  it('publishes only an owned agent public card', async () => {
+    const published: any[] = [];
+    const repository = {
+      dashboard: async () => ({}) as any,
+      getSettings: async () => ({}) as any,
+      saveSettings: async () => ({}) as any,
+      upsert: async () => undefined,
+      list: async () => [
+        {
+          kind: 'agent_profile' as const,
+          recordId: 'agent-one',
+          payload: {
+            agentId: 'agent-one',
+            projectId: 'secret-project',
+            name: 'Research agent',
+            framework: 'Codex',
+            capabilities: ['research'],
+            limitations: ['no purchases'],
+            identityMode: 'oauth_installation' as const,
+            status: 'active' as const,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      ],
+      publishAgent: async (_operatorId: string, card: any) => {
+        published.push(card);
+        return card;
+      },
+      unpublishAgent: async () => true,
+      getPublishedAgent: async () => undefined,
+      searchPublishedAgents: async () => published,
+    };
+    const app = buildApi(undefined, undefined, repository);
+    await app.ready();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v0.1/agents/agent-one/publication',
+      headers: { 'x-openclasp-operator': 'owner-one' },
+      payload: { published: true },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(published[0]).toMatchObject({
+      agentId: 'agent-one',
+      capabilities: ['research'],
+      assurance: 'oauth_authenticated',
+    });
+    expect(published[0]).not.toHaveProperty('projectId');
+    expect(published[0]).not.toHaveProperty('operatorId');
     await app.close();
   });
 });

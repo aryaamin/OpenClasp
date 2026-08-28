@@ -25,9 +25,11 @@ export default async function handler(request: IncomingMessage, response: Server
     try {
       const authentication = await verifyAuth0Token(token, { dashboard: true });
       request.headers['x-openclasp-operator'] = authentication.payload.sub!;
-      const user = await loadAuth0Profile(token);
-      request.headers['x-openclasp-email'] = encodeURIComponent(user.email ?? '');
-      request.headers['x-openclasp-name'] = encodeURIComponent(user.name ?? '');
+      if ((request.url ?? '').startsWith('/v0.1/account')) {
+        const user = await loadAuth0Profile(token);
+        request.headers['x-openclasp-email'] = encodeURIComponent(user.email ?? '');
+        request.headers['x-openclasp-name'] = encodeURIComponent(user.name ?? '');
+      }
     } catch {
       response.statusCode = 401;
       response.setHeader('content-type', 'application/json');

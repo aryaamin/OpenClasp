@@ -239,6 +239,8 @@ export class TrustEngine {
 
   saveContract(contract: InteractionContract): InteractionContract {
     const parsed = InteractionContractSchema.parse(contract);
+    if (parsed.parties.some((party) => !(party in parsed.signatures)))
+      throw new Error('Contract requires every party signature');
     for (const party of Object.keys(parsed.signatures)) {
       const agent = this.requireAgent(party);
       if (!verifyNamed(parsed as unknown as Record<string, unknown>, party, agent.publicKey))
@@ -350,6 +352,13 @@ export class TrustEngine {
   }
 
   submitReceipt(receipt: Receipt): Receipt {
+    const parsed = this.verifyReceipt(receipt);
+    this.receipts.set(parsed.receiptId, parsed);
+    this.store.append('receipt', parsed.receiptId, parsed);
+    return parsed;
+  }
+
+  verifyReceipt(receipt: Receipt): Receipt {
     const parsed = ReceiptSchema.parse(receipt);
     const required = parsed.unilateral
       ? Object.keys(parsed.signatures).slice(0, 1)
@@ -365,8 +374,6 @@ export class TrustEngine {
       })
     )
       throw new Error('Receipt signature verification failed');
-    this.receipts.set(parsed.receiptId, parsed);
-    this.store.append('receipt', parsed.receiptId, parsed);
     return parsed;
   }
 

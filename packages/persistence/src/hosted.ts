@@ -15,7 +15,19 @@ export type HostedRecordKind =
   | 'project'
   | 'agent_profile'
   | 'installation'
-  | 'setup_request';
+  | 'setup_request'
+  | 'publication';
+
+export type PublicAgentCard = {
+  agentId: string;
+  name: string;
+  framework: string;
+  capabilities: string[];
+  limitations: string[];
+  assurance: 'oauth_authenticated' | 'cryptographically_verified';
+  publishedAt: string;
+  updatedAt: string;
+};
 
 export type AccountSettings = {
   displayName: string;
@@ -69,6 +81,19 @@ export class HostedRepository {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `;
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_public_agents (
+          agent_id TEXT PRIMARY KEY,
+          operator_id TEXT NOT NULL,
+          card JSONB NOT NULL,
+          published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await this.sql`
+        CREATE INDEX IF NOT EXISTS openclasp_public_agents_updated
+        ON openclasp_public_agents(updated_at DESC)
+      `;
     })());
   }
 
@@ -114,12 +139,72 @@ export class HostedRepository {
       projects: ofKind('project'),
       installations: ofKind('installation'),
       setupRequests: ofKind('setup_request'),
+      publications: ofKind('publication'),
       interactions: ofKind('interaction'),
       events: ofKind('event'),
       conflicts: ofKind('conflict'),
       receipts: ofKind('receipt'),
       profiles: ofKind('profile'),
     };
+  }
+
+  async publishAgent(operatorId: string, card: PublicAgentCard): Promise<PublicAgentCard> {
+    await this.ensureSchema();
+    const encoded = JSON.stringify(card);
+    const rows = await this.sql`
+      INSERT INTO openclasp_public_agents(agent_id, operator_id, card, published_at, updated_at)
+      VALUES (${card.agentId}, ${operatorId}, ${encoded}::jsonb, NOW(), NOW())
+      ON CONFLICT (agent_id) DO UPDATE SET
+        card = EXCLUDED.card,
+        updated_at = NOW()
+      WHERE openclasp_public_agents.operator_id = ${operatorId}
+      RETURNING card
+    `;
+    const published = rows[0]?.card as PublicAgentCard | undefined;
+    if (!published) throw new Error('Agent ID is already owned by another operator');
+    return published;
+  }
+
+  async unpublishAgent(operatorId: string, agentId: string): Promise<boolean> {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      DELETE FROM openclasp_public_agents
+      WHERE agent_id = ${agentId} AND operator_id = ${operatorId}
+      RETURNING agent_id
+    `;
+    return rows.length > 0;
+  }
+
+  async getPublishedAgent(agentId: string): Promise<PublicAgentCard | undefined> {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT card FROM openclasp_public_agents WHERE agent_id = ${agentId}
+    `;
+    return rows[0]?.card as PublicAgentCard | undefined;
+  }
+
+  async searchPublishedAgents(input: {
+    query?: string | undefined;
+    capability?: string | undefined;
+    limit?: number | undefined;
+  }): Promise<PublicAgentCard[]> {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT card FROM openclasp_public_agents ORDER BY updated_at DESC LIMIT 100
+    `;
+    const query = input.query?.trim().toLowerCase();
+    const capability = input.capability?.trim().toLowerCase();
+    return rows
+      .map((row) => row.card as PublicAgentCard)
+      .filter(
+        (card) =>
+          (!query ||
+            card.name.toLowerCase().includes(query) ||
+            card.framework.toLowerCase().includes(query)) &&
+          (!capability ||
+            card.capabilities.some((value) => value.toLowerCase().includes(capability))),
+      )
+      .slice(0, Math.min(Math.max(input.limit ?? 20, 1), 50));
   }
 
   async getSettings(operatorId: string): Promise<AccountSettings> {

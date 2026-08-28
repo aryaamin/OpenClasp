@@ -66,7 +66,7 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 - `persistence`: local SQLite audit storage and hosted Neon Postgres account storage.
 - `sdk`: HTTP client and local signed-object helpers.
 - `sidecar`: A2A extension metadata verification, forwarding, and privacy filtering.
-- `mcp-server`: 18 OpenClasp assurance and self-onboarding tools.
+- `mcp-server`: 24 local tools and a hardened 23-tool hosted surface; private-key generation remains local-only.
 - `apps/api`, `apps/demo`, `apps/dashboard`: runnable surfaces.
 
 ## Quality gate

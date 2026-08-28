@@ -18,6 +18,7 @@ type DashboardData = {
   projects: Record<string, any>[];
   installations: Record<string, any>[];
   setupRequests: Record<string, any>[];
+  publications: Record<string, any>[];
   interactions: Record<string, any>[];
   events: Record<string, any>[];
   conflicts: Record<string, any>[];
@@ -38,6 +39,7 @@ const emptyData: DashboardData = {
   projects: [],
   installations: [],
   setupRequests: [],
+  publications: [],
   interactions: [],
   events: [],
   conflicts: [],
@@ -358,7 +360,8 @@ function PageContent({
   refreshDashboard: () => Promise<void>;
 }) {
   if (page === 'history') return <History data={data} />;
-  if (page === 'agents') return <Agents data={data} navigate={navigate} />;
+  if (page === 'agents')
+    return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} />;
   if (page === 'insights') return <Insights data={data} />;
   if (page === 'connect') return <Connect data={data} refreshDashboard={refreshDashboard} />;
   if (page === 'settings') return <SettingsPage settings={settings} setSettings={setSettings} />;
@@ -379,7 +382,7 @@ function Overview({ data, navigate }: { data: DashboardData; navigate: (page: Pa
         onAction={() => navigate('connect')}
       />
       <section className="metrics">
-        <Metric label="Connected agents" value={data.agents.length} note="verified identities" />
+        <Metric label="Connected agents" value={data.agents.length} note="bound identities" />
         <Metric label="Interactions" value={data.interactions.length} note="signed or active" />
         <Metric label="Successful outcomes" value={completed} note="receipt-backed" />
         <Metric label="Open warnings" value={warnings} note="needs attention" warn={warnings > 0} />
@@ -452,7 +455,32 @@ function History({ data }: { data: DashboardData }) {
   );
 }
 
-function Agents({ data, navigate }: { data: DashboardData; navigate: (page: Page) => void }) {
+function Agents({
+  data,
+  navigate,
+  refreshDashboard,
+}: {
+  data: DashboardData;
+  navigate: (page: Page) => void;
+  refreshDashboard: () => Promise<void>;
+}) {
+  const [working, setWorking] = useState('');
+  const [error, setError] = useState('');
+  const setPublication = async (agentId: string, published: boolean) => {
+    setWorking(agentId);
+    setError('');
+    try {
+      await api(`/v0.1/agents/${encodeURIComponent(agentId)}/publication`, {
+        method: 'POST',
+        body: JSON.stringify({ published }),
+      });
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Directory update failed');
+    } finally {
+      setWorking('');
+    }
+  };
   return (
     <>
       <PageHead
@@ -461,6 +489,12 @@ function Agents({ data, navigate }: { data: DashboardData; navigate: (page: Page
         action="Connect agent"
         onAction={() => navigate('connect')}
       />
+      <div className="notice">
+        <strong>Private by default.</strong> Publishing shares only this agent's name, framework,
+        capabilities, limitations, and assurance method. It never shares your identity, project,
+        scores, or conversations.
+      </div>
+      {error && <div className="errorBar">{error}</div>}
       <section className="agentGrid">
         {data.agents.length ? (
           data.agents.map((agent) => (
@@ -470,6 +504,11 @@ function Agents({ data, navigate }: { data: DashboardData; navigate: (page: Page
               projectName={
                 data.projects.find((project) => project.projectId === agent.projectId)?.name
               }
+              published={data.publications.some(
+                (publication) => publication.agentId === agent.agentId && publication.published,
+              )}
+              working={working === agent.agentId}
+              onPublication={(published) => setPublication(agent.agentId, published)}
             />
           ))
         ) : (
@@ -847,12 +886,29 @@ function HistoryRow({ item }: { item: Record<string, any> }) {
     </article>
   );
 }
-function AgentCard({ agent, projectName }: { agent: Record<string, any>; projectName?: string }) {
+function AgentCard({
+  agent,
+  projectName,
+  published,
+  working,
+  onPublication,
+}: {
+  agent: Record<string, any>;
+  projectName?: string;
+  published: boolean;
+  working: boolean;
+  onPublication: (published: boolean) => void;
+}) {
+  const identityLabel = agent.revoked
+    ? 'REVOKED'
+    : agent.identityMode === 'oauth_installation'
+      ? 'AUTHENTICATED'
+      : 'VERIFIED';
   return (
     <article className="agentCard">
       <div className="agentTop">
         <span className="agentGlyph">◇</span>
-        <b className={agent.revoked ? 'bad' : ''}>{agent.revoked ? 'REVOKED' : 'VERIFIED'}</b>
+        <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
       </div>
       <h2>{agent.name ?? agent.agentId}</h2>
       <p>{projectName ?? `Version ${agent.agentVersion ?? '1.0.0'}`}</p>
@@ -862,9 +918,17 @@ function AgentCard({ agent, projectName }: { agent: Record<string, any>; project
         ))}
       </div>
       <small>
-        {agent.framework ? `${agent.framework} · ` : ''}Created{' '}
+        {agent.framework ? `${agent.framework} · ` : ''}
+        {agent.identityMode === 'oauth_installation' ? 'OAuth-bound · ' : 'Ed25519 · '}Created{' '}
         {new Date(agent.createdAt).toLocaleDateString()}
       </small>
+      <button
+        className="secondary"
+        disabled={working || agent.status === 'revoked'}
+        onClick={() => onPublication(!published)}
+      >
+        {working ? 'Updating…' : published ? 'Remove from directory' : 'Publish to directory'}
+      </button>
     </article>
   );
 }

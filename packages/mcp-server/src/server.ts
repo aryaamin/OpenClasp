@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { createIdentity, FixtureFactCheckProvider, TrustEngine } from '../../core/src/index.js';
 import {
   AgentIdentitySchema,
+  DelegationCredentialSchema,
   FeedbackSchema,
+  InteractionContractSchema,
   InteractionEventSchema,
   ReceiptSchema,
+  TrustEnvelopeSchema,
 } from '../../protocol/src/index.js';
 import {
   requestAgentSetup,
@@ -33,18 +36,41 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_switch_agent',
   'openclasp_update_profile',
   'openclasp_connection_status',
+  'openclasp_register_delegation',
+  'openclasp_save_contract',
+  'openclasp_permit_mediation',
+  'openclasp_resolve_dispute',
+  'openclasp_find_agent',
+  'openclasp_search_agents',
 ] as const;
+
+export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
+  (name) => name !== 'openclasp_create_identity',
+);
+
+const READ_ONLY_TOOL = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+} as const;
+const WRITE_TOOL = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+} as const;
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
 });
 
+export const OPENCLASP_MCP_INSTRUCTIONS =
+  'First call openclasp_connection_status. If unbound, call openclasp_setup once and ask the owner to confirm at the returned URL. After confirmation, call openclasp_get_identity and treat that bound agent as yourself. Never claim another agent ID, silently switch identities, upload raw conversations, or treat contextual history as a universal trust score. Use OpenClasp alongside A2A or the existing conversation transport; it does not replace transport.';
+
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
     { name: 'openclasp', version: '0.1.0' },
     {
-      instructions:
-        'Use OpenClasp to verify counterparties, record signed structured events, and request contextual risk decisions. Never send raw private conversations.',
+      instructions: OPENCLASP_MCP_INSTRUCTIONS,
     },
   );
   return registerOpenClaspTools(server, engine);
@@ -52,7 +78,16 @@ export function buildMcpServer(engine = new TrustEngine()) {
 
 type HostedRecord = (
   operatorId: string,
-  kind: 'agent' | 'interaction' | 'event' | 'receipt' | 'feedback' | 'conflict' | 'profile',
+  kind:
+    | 'agent'
+    | 'delegation'
+    | 'contract'
+    | 'interaction'
+    | 'event'
+    | 'receipt'
+    | 'feedback'
+    | 'conflict'
+    | 'profile',
   recordId: string,
   value: unknown,
 ) => Promise<void>;
@@ -63,6 +98,24 @@ type ToolContext = {
   };
 };
 type EngineSource = TrustEngine | ((context: ToolContext) => Promise<TrustEngine>);
+type PublicAgentCard = {
+  agentId: string;
+  name: string;
+  framework: string;
+  capabilities: string[];
+  limitations: string[];
+  assurance: 'oauth_authenticated' | 'cryptographically_verified';
+  publishedAt: string;
+  updatedAt: string;
+};
+type AgentDirectory = {
+  getPublishedAgent(agentId: string): Promise<PublicAgentCard | undefined>;
+  searchPublishedAgents(input: {
+    query?: string | undefined;
+    capability?: string | undefined;
+    limit?: number | undefined;
+  }): Promise<PublicAgentCard[]>;
+};
 
 function installationContext(context: ToolContext) {
   const operatorId = context.http?.authInfo?.extra?.operatorId;
@@ -77,6 +130,7 @@ export function registerOpenClaspTools(
   engineSource: EngineSource = new TrustEngine(),
   recordHosted?: HostedRecord,
   onboardingStore?: OnboardingStore,
+  agentDirectory?: AgentDirectory,
 ) {
   const factChecker = new FixtureFactCheckProvider();
   const resolveEngine = (context: ToolContext) =>
@@ -92,33 +146,54 @@ export function registerOpenClaspTools(
       await recordHosted(operatorId, kind, id, value);
   };
 
-  server.registerTool(
-    OPENCLASP_TOOL_NAMES[0],
-    {
-      description: 'Create a local Ed25519 agent identity',
-      inputSchema: z.object({
-        agentId: z.string(),
-        operatorRef: z.string(),
-        capabilities: z.array(z.string()),
-      }),
-    },
-    async (input, context) => {
-      const authenticatedOperator = context.http?.authInfo?.extra?.operatorId;
-      const created = createIdentity({
-        ...input,
-        operatorRef:
-          typeof authenticatedOperator === 'string'
-            ? `auth0:${authenticatedOperator}`
-            : input.operatorRef,
-      });
-      return text(created);
-    },
-  );
+  const requireBoundAgent = async (context: ToolContext, claimedAgentId?: string) => {
+    if (!onboardingStore) return undefined;
+    const connection = installationContext(context);
+    const binding = await resolveInstallation(
+      onboardingStore,
+      connection.operatorId,
+      connection.clientId,
+    );
+    if (binding.status !== 'connected')
+      throw new Error('Call openclasp_setup and obtain owner confirmation before using this tool');
+    if (claimedAgentId && binding.agent.agentId !== claimedAgentId)
+      throw new Error('The claimed agent does not match this MCP installation');
+    return binding;
+  };
+
+  if (!onboardingStore)
+    server.registerTool(
+      OPENCLASP_TOOL_NAMES[0],
+      {
+        title: 'Create local cryptographic identity',
+        description:
+          'Create an Ed25519 identity for local development. This returns private key material and is intentionally unavailable on hosted MCP.',
+        inputSchema: z.object({
+          agentId: z.string(),
+          operatorRef: z.string(),
+          capabilities: z.array(z.string()),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+      },
+      async (input, context) => {
+        const authenticatedOperator = context.http?.authInfo?.extra?.operatorId;
+        const created = createIdentity({
+          ...input,
+          operatorRef:
+            typeof authenticatedOperator === 'string'
+              ? `auth0:${authenticatedOperator}`
+              : input.operatorRef,
+        });
+        return text(created);
+      },
+    );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[1],
     {
+      title: 'Register cryptographic identity',
       description: 'Register and verify a signed agent identity',
       inputSchema: AgentIdentitySchema,
+      annotations: { ...WRITE_TOOL, idempotentHint: true },
     },
     async (input, context) => {
       const authenticatedOperator = context.http?.authInfo?.extra?.operatorId;
@@ -128,6 +203,7 @@ export function registerOpenClaspTools(
       ) {
         throw new Error('Agent identity is not owned by the authenticated operator');
       }
+      await requireBoundAgent(context, input.agentId);
       const engine = await resolveEngine(context);
       const registered = engine.registerAgent(input);
       await persist(context, 'agent', registered.agentId, registered);
@@ -137,10 +213,13 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[2],
     {
+      title: 'Get contextual reliability',
       description: 'Get a task-specific behavioural profile',
       inputSchema: z.object({ agentId: z.string(), version: z.string(), taskCategory: z.string() }),
+      annotations: READ_ONLY_TOOL,
     },
     async (input, context) => {
+      await requireBoundAgent(context);
       const engine = await resolveEngine(context);
       return text(engine.getRisk(input.agentId, input.version, input.taskCategory));
     },
@@ -148,15 +227,18 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[3],
     {
+      title: 'Assess counterparty',
       description: 'Assess a counterparty in context',
       inputSchema: z.object({
-        envelope: z.any(),
+        envelope: TrustEnvelopeSchema,
         action: z.string(),
         dataClasses: z.array(z.string()).optional(),
         humanApproved: z.boolean().optional(),
       }),
+      annotations: READ_ONLY_TOOL,
     },
     async (input, context) => {
+      await requireBoundAgent(context);
       const engine = await resolveEngine(context);
       return text(engine.assess(input as any));
     },
@@ -164,14 +246,19 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[4],
     {
+      title: 'Begin assured interaction',
       description: 'Begin an interaction and return its identifier',
       inputSchema: z.object({
         purpose: z.string(),
         parties: z.array(z.string()),
         taskCategory: z.string(),
       }),
+      annotations: WRITE_TOOL,
     },
     async (input, context) => {
+      const binding = await requireBoundAgent(context);
+      if (binding && !input.parties.includes(binding.agent.agentId))
+        throw new Error('Interaction parties must include the agent bound to this installation');
       const interaction = {
         interactionId: crypto.randomUUID(),
         status: 'contract_required',
@@ -185,10 +272,13 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[5],
     {
+      title: 'Record signed event',
       description: 'Validate and record a signed structured event',
       inputSchema: InteractionEventSchema,
+      annotations: { ...WRITE_TOOL, idempotentHint: true },
     },
     async (input, context) => {
+      await requireBoundAgent(context, input.agentId);
       const engine = await resolveEngine(context);
       const event = engine.recordEvent(input);
       await persist(context, 'event', event.eventId, event);
@@ -198,18 +288,23 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[6],
     {
+      title: 'Check factual claim',
       description: 'Check an objective factual claim',
       inputSchema: z.object({ claim: z.string(), permission: z.boolean().optional() }),
+      annotations: { ...READ_ONLY_TOOL, openWorldHint: true },
     },
     async (input) => text(await factChecker.check(input.claim, input.permission)),
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[7],
     {
+      title: 'Validate commitment',
       description: 'Check whether a commitment is represented by a signed event',
       inputSchema: z.object({ interactionId: z.string().uuid(), commitment: z.string() }),
+      annotations: READ_ONLY_TOOL,
     },
     async (input, context) => {
+      await requireBoundAgent(context);
       const engine = await resolveEngine(context);
       return text({
         valid: [...engine.events.values()].some(
@@ -224,18 +319,32 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[8],
     {
+      title: 'Suggest dispute resolution',
       description: 'Suggest attributable resolutions for a consented conflict',
       inputSchema: z.object({ conflictId: z.string() }),
+      annotations: READ_ONLY_TOOL,
     },
     async (input, context) => {
+      const binding = await requireBoundAgent(context);
       const engine = await resolveEngine(context);
+      const conflict = engine.conflicts.get(input.conflictId);
+      if (binding && (!conflict || !(binding.agent.agentId in conflict.permissions)))
+        throw new Error('The bound agent is not a participant in this dispute');
       return text(engine.conflicts.get(input.conflictId)?.possibleResolutions ?? []);
     },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[9],
-    { description: 'Submit a signed completion receipt', inputSchema: ReceiptSchema },
+    {
+      title: 'Complete interaction',
+      description: 'Submit a signed completion receipt',
+      inputSchema: ReceiptSchema,
+      annotations: { ...WRITE_TOOL, idempotentHint: true },
+    },
     async (input, context) => {
+      const binding = await requireBoundAgent(context);
+      if (binding && !input.participants.includes(binding.agent.agentId))
+        throw new Error('Receipt participants must include the bound agent');
       const engine = await resolveEngine(context);
       const receipt = engine.submitReceipt(input);
       await persist(context, 'receipt', receipt.receiptId, receipt);
@@ -244,8 +353,14 @@ export function registerOpenClaspTools(
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[10],
-    { description: 'Submit receipt-backed structured feedback', inputSchema: FeedbackSchema },
+    {
+      title: 'Submit bilateral feedback',
+      description: 'Submit receipt-backed structured feedback',
+      inputSchema: FeedbackSchema,
+      annotations: { ...WRITE_TOOL, idempotentHint: true },
+    },
     async (input, context) => {
+      await requireBoundAgent(context, input.reviewerAgentId);
       const engine = await resolveEngine(context);
       const result = engine.submitFeedback(input);
       await persist(context, 'feedback', input.feedbackId, input);
@@ -262,14 +377,19 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[11],
     {
+      title: 'Raise dispute',
       description: 'Create a mutually consented dispute',
       inputSchema: z.object({
         interactionId: z.string().uuid(),
         issue: z.string(),
         participants: z.array(z.string()).min(2),
       }),
+      annotations: WRITE_TOOL,
     },
     async (input, context) => {
+      const binding = await requireBoundAgent(context);
+      if (binding && !input.participants.includes(binding.agent.agentId))
+        throw new Error('Dispute participants must include the bound agent');
       const engine = await resolveEngine(context);
       const conflict = engine.createConflict({
         interactionId: input.interactionId,
@@ -287,11 +407,17 @@ export function registerOpenClaspTools(
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[12],
-    { description: 'Verify a signed interaction receipt', inputSchema: ReceiptSchema },
+    {
+      title: 'Verify receipt',
+      description: 'Verify a signed interaction receipt',
+      inputSchema: ReceiptSchema,
+      annotations: READ_ONLY_TOOL,
+    },
     async (input, context) => {
+      await requireBoundAgent(context);
       const engine = await resolveEngine(context);
       try {
-        engine.submitReceipt(input);
+        engine.verifyReceipt(input);
         return text({ valid: true });
       } catch {
         return text({ valid: false });
@@ -301,6 +427,7 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[13],
     {
+      title: 'Set up this agent',
       description:
         'Propose this MCP installation as a new OpenClasp agent. The owner must confirm it in the dashboard before the identity is bound.',
       inputSchema: z
@@ -315,6 +442,7 @@ export function registerOpenClaspTools(
         .refine((input) => input.projectName || input.projectId, {
           message: 'projectName or projectId is required',
         }),
+      annotations: WRITE_TOOL,
     },
     async (input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
@@ -341,9 +469,11 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[14],
     {
+      title: 'Get my agent identity',
       description:
         'Return the agent identity automatically bound to this authenticated MCP installation.',
       inputSchema: z.object({}),
+      annotations: READ_ONLY_TOOL,
     },
     async (_input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
@@ -356,9 +486,11 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[15],
     {
+      title: 'Switch agent identity',
       description:
         'Request that this MCP installation switch to another existing agent. Dashboard confirmation is required.',
       inputSchema: z.object({ existingAgentId: z.string().min(1) }),
+      annotations: WRITE_TOOL,
     },
     async (input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
@@ -379,6 +511,7 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[16],
     {
+      title: 'Update my agent profile',
       description: 'Update the profile of the agent bound to this MCP installation.',
       inputSchema: z.object({
         name: z.string().trim().min(1).max(100).optional(),
@@ -386,6 +519,7 @@ export function registerOpenClaspTools(
         capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
         limitations: z.array(z.string().trim().min(1).max(300)).max(100).optional(),
       }),
+      annotations: WRITE_TOOL,
     },
     async (input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
@@ -403,9 +537,11 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[17],
     {
+      title: 'Check OpenClasp connection',
       description:
         'Check whether this MCP installation is unbound, awaiting confirmation, or connected.',
       inputSchema: z.object({}),
+      annotations: READ_ONLY_TOOL,
     },
     async (_input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
@@ -431,6 +567,123 @@ export function registerOpenClaspTools(
             }
           : binding,
       );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[18],
+    {
+      title: 'Register delegation',
+      description: 'Register and verify a signed, scoped delegation between two known agents.',
+      inputSchema: DelegationCredentialSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async (input, context) => {
+      const binding = await requireBoundAgent(context);
+      if (
+        binding &&
+        input.parentAgentId !== binding.agent.agentId &&
+        input.childAgentId !== binding.agent.agentId
+      )
+        throw new Error('The bound agent is not a party to this delegation');
+      const engine = await resolveEngine(context);
+      engine.delegations.set(input.delegationId, input);
+      if (!engine.verifyDelegation(input.delegationId)) {
+        engine.delegations.delete(input.delegationId);
+        throw new Error('Delegation verification failed');
+      }
+      await persist(context, 'delegation', input.delegationId, input);
+      return text({ valid: true, delegation: input });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[19],
+    {
+      title: 'Save signed agreement',
+      description:
+        'Verify and save a complete interaction contract signed by every participating agent.',
+      inputSchema: InteractionContractSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async (input, context) => {
+      const binding = await requireBoundAgent(context);
+      if (binding && !input.parties.includes(binding.agent.agentId))
+        throw new Error('Contract parties must include the bound agent');
+      const contract = (await resolveEngine(context)).saveContract(input);
+      await persist(context, 'contract', contract.interactionId, contract);
+      return text(contract);
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[20],
+    {
+      title: 'Consent to mediation',
+      description:
+        "Record the bound agent's explicit consent to mediation for a dispute it participates in.",
+      inputSchema: z.object({ conflictId: z.string(), agentId: z.string().optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async (input, context) => {
+      const binding = await requireBoundAgent(context);
+      const agentId = binding?.agent.agentId ?? input.agentId;
+      if (!agentId) throw new Error('agentId is required for local MCP');
+      const engine = await resolveEngine(context);
+      const conflict = engine.permitMediation(input.conflictId, agentId);
+      await persist(context, 'conflict', conflict.conflictId, conflict);
+      return text(conflict);
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[21],
+    {
+      title: 'Resolve mediated dispute',
+      description:
+        'Save an agreed resolution only after every dispute participant has consented to mediation.',
+      inputSchema: z.object({ conflictId: z.string(), resolution: z.string().trim().min(1) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+    },
+    async (input, context) => {
+      const binding = await requireBoundAgent(context);
+      const engine = await resolveEngine(context);
+      const existing = engine.conflicts.get(input.conflictId);
+      if (binding && (!existing || !(binding.agent.agentId in existing.permissions)))
+        throw new Error('The bound agent is not a participant in this dispute');
+      const conflict = engine.resolveConflict(input.conflictId, input.resolution);
+      await persist(context, 'conflict', conflict.conflictId, conflict);
+      return text(conflict);
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[22],
+    {
+      title: 'Find published agent',
+      description:
+        'Find an exact owner-published agent card. Returns capabilities and limitations, never owner or conversation data.',
+      inputSchema: z.object({ agentId: z.string().min(1) }),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      await requireBoundAgent(context);
+      if (!agentDirectory) throw new Error('The shared agent directory is not configured');
+      return text((await agentDirectory.getPublishedAgent(input.agentId)) ?? { found: false });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[23],
+    {
+      title: 'Search published agents',
+      description:
+        'Search owner-published agent cards by name, framework, or capability without exposing owner identities or projects.',
+      inputSchema: z.object({
+        query: z.string().trim().max(100).optional(),
+        capability: z.string().trim().max(100).optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      await requireBoundAgent(context);
+      if (!agentDirectory) throw new Error('The shared agent directory is not configured');
+      return text(await agentDirectory.searchPublishedAgents(input));
     },
   );
   return server;

@@ -12,6 +12,23 @@ The hosted server exposes five onboarding tools in addition to the assurance too
 
 Creating or switching a binding is never silent. It creates a pending request that the authenticated owner must approve at `/connect`. The binding key is the Auth0 subject plus the OAuth client ID, so the agent does not need to store or repeatedly send its `agentId`.
 
-The remaining tools are `openclasp_create_identity`, `openclasp_register_agent`, `openclasp_get_profile`, `openclasp_assess_counterparty`, `openclasp_begin_interaction`, `openclasp_record_event`, `openclasp_check_claim`, `openclasp_validate_commitment`, `openclasp_suggest_resolution`, `openclasp_complete_interaction`, `openclasp_submit_feedback`, `openclasp_raise_dispute`, and `openclasp_verify_receipt`.
+The assurance tools cover cryptographic identity registration, delegation, contextual profiles,
+counterparty assessment, interaction creation, fully signed contracts, structured events, claim
+checks, commitments, receipts, bilateral feedback, and mutually consented dispute resolution.
+
+Two discovery tools expose only owner-published public cards:
+
+- `openclasp_find_agent` looks up an exact agent ID.
+- `openclasp_search_agents` searches by name, framework, or capability.
+
+Directory cards contain the agent name, framework, capabilities, limitations, assurance method, and
+timestamps. They never contain the operator identity, project, private reliability history, or raw
+conversation content. Publishing is off by default and can only be changed by the owner in the web
+dashboard.
+
+`openclasp_create_identity` is local-only because its result contains private key material. Hosted MCP
+never returns private keys into model context. Generate and retain Ed25519 keys in the SDK or sidecar,
+then register only the signed public identity. Hosted write operations reject claimed agent IDs that
+do not match the agent bound to the authenticated OAuth installation.
 
 Tool inputs use the same Zod schemas as REST and the SDK. Do not place raw private conversations in structured-event payloads.

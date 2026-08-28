@@ -15,7 +15,11 @@ import {
   MemoryAuditStore,
   TrustEngine,
 } from '../../../packages/core/src/index.js';
-import type { HostedRepository } from '../../../packages/persistence/src/index.js';
+import type {
+  AgentProfile,
+  HostedRepository,
+  PublicAgentCard,
+} from '../../../packages/persistence/src/index.js';
 import {
   approveAgentSetup,
   getOnboardingState,
@@ -24,8 +28,30 @@ import {
 
 type DashboardRepository = Pick<
   HostedRepository,
-  'dashboard' | 'getSettings' | 'saveSettings' | 'upsert' | 'list'
+  | 'dashboard'
+  | 'getSettings'
+  | 'saveSettings'
+  | 'upsert'
+  | 'list'
+  | 'publishAgent'
+  | 'unpublishAgent'
+  | 'getPublishedAgent'
+  | 'searchPublishedAgents'
 >;
+
+function publicCard(agent: AgentProfile, previous?: PublicAgentCard): PublicAgentCard {
+  const now = new Date().toISOString();
+  return {
+    agentId: agent.agentId,
+    name: agent.name,
+    framework: agent.framework,
+    capabilities: agent.capabilities,
+    limitations: agent.limitations,
+    assurance: 'oauth_authenticated',
+    publishedAt: previous?.publishedAt ?? now,
+    updatedAt: now,
+  };
+}
 
 export function buildApi(
   engine = new TrustEngine(),
@@ -91,6 +117,10 @@ export function buildApi(
       if (repository && owner) return repository.dashboard(owner);
       return {
         agents: [...engine.agents.values()],
+        projects: [],
+        installations: [],
+        setupRequests: [],
+        publications: [],
         interactions: [],
         events: [...engine.events.values()],
         conflicts: [...engine.conflicts.values()],
@@ -162,6 +192,47 @@ export function buildApi(
       if (!value) throw new Error('Agent not found');
       return value;
     });
+    router.post('/v0.1/agents/:id/publication', async (request) => {
+      const owner = operatorId(request);
+      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
+      const { id } = request.params as { id: string };
+      const { published } = z.object({ published: z.boolean() }).parse(request.body);
+      const rows = await repository.list(owner);
+      const agent = rows.find((row) => row.kind === 'agent_profile' && row.recordId === id)
+        ?.payload as AgentProfile | undefined;
+      if (!agent) throw new Error('Owned agent not found');
+      if (agent.status !== 'active') throw new Error('Revoked agents cannot be published');
+      if (!published) {
+        await repository.unpublishAgent(owner, id);
+        const publication = { agentId: id, published: false, updatedAt: new Date().toISOString() };
+        await repository.upsert(owner, 'publication', id, publication);
+        return publication;
+      }
+      const previous = await repository.getPublishedAgent(id);
+      const card = await repository.publishAgent(owner, publicCard(agent, previous));
+      const publication = { agentId: id, published: true, updatedAt: card.updatedAt };
+      await repository.upsert(owner, 'publication', id, publication);
+      return { ...publication, card };
+    });
+    router.get('/v0.1/directory', async (request) => {
+      operatorId(request);
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const query = z
+        .object({
+          query: z.string().trim().max(100).optional(),
+          capability: z.string().trim().max(100).optional(),
+          limit: z.coerce.number().int().min(1).max(50).optional(),
+        })
+        .parse(request.query);
+      return repository.searchPublishedAgents(query);
+    });
+    router.get('/v0.1/directory/:id', async (request) => {
+      operatorId(request);
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const card = await repository.getPublishedAgent((request.params as { id: string }).id);
+      if (!card) throw new Error('Published agent not found');
+      return card;
+    });
     router.post('/v0.1/delegations', async (request) => {
       const value = DelegationCredentialSchema.parse(request.body);
       const current = await scopedEngine(request);
@@ -212,7 +283,7 @@ export function buildApi(
     });
     router.post('/v0.1/receipts/verify', async (request) => {
       try {
-        (await scopedEngine(request)).submitReceipt(ReceiptSchema.parse(request.body));
+        (await scopedEngine(request)).verifyReceipt(ReceiptSchema.parse(request.body));
         return { valid: true };
       } catch {
         return { valid: false };
