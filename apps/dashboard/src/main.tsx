@@ -1,11 +1,4 @@
-import {
-  AuthProvider,
-  Descope,
-  getSessionToken,
-  useDescope,
-  useSession,
-  useUser,
-} from '@descope/react-sdk';
+import { AuthProvider, getSessionToken, useDescope, useSession, useUser } from '@descope/react-sdk';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -71,7 +64,7 @@ function route(): Page {
 function App() {
   const { isAuthenticated, isSessionLoading } = useSession();
   const { user, isUserLoading } = useUser();
-  const { logout } = useDescope();
+  const { logout, oauth } = useDescope();
   const [page, setPage] = useState<Page>(route());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -85,7 +78,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isSessionLoading && !isAuthenticated && location.pathname !== '/login')
+    const code = new URLSearchParams(location.search).get('code');
+    if (!isSessionLoading && !isAuthenticated && !code && location.pathname !== '/login')
       history.replaceState({}, '', '/login');
     if (!isAuthenticated) return;
     if (location.pathname === '/login') history.replaceState({}, '', '/dashboard');
@@ -100,6 +94,18 @@ function App() {
       )
       .finally(() => setLoading(false));
   }, [isAuthenticated, isSessionLoading]);
+
+  useEffect(() => {
+    const code = new URLSearchParams(location.search).get('code');
+    if (!code || isAuthenticated) return;
+    oauth
+      .exchange(code)
+      .then(() => {
+        history.replaceState({}, '', '/dashboard');
+        location.reload();
+      })
+      .catch(() => setError('Social sign-in could not be completed. Please try again.'));
+  }, [isAuthenticated, oauth]);
 
   const navigate = (next: Page) => {
     history.pushState({}, '', `/${next}`);
@@ -162,6 +168,19 @@ function App() {
 }
 
 function Login() {
+  const { oauth } = useDescope();
+  const [error, setError] = useState('');
+  const continueWith = async (provider: 'google' | 'github') => {
+    setError('');
+    try {
+      const result = await oauth.start(provider, `${location.origin}/dashboard`);
+      const url = result.data?.url;
+      if (!url) throw new Error('OAuth provider did not return a redirect URL');
+      location.assign(url);
+    } catch {
+      setError(`${provider === 'google' ? 'Google' : 'GitHub'} sign-in is not configured yet.`);
+    }
+  };
   return (
     <div className="loginPage">
       <section className="loginPitch">
@@ -191,8 +210,18 @@ function Login() {
             network.
           </p>
         </div>
-        <Descope flowId="sign-up-or-in" theme="dark" />
-        <small>Authentication is handled by Descope. OpenClasp never receives your password.</small>
+        <div className="socialButtons">
+          <button onClick={() => void continueWith('google')}>
+            <span className="google">G</span> Continue with Google
+          </button>
+          <button onClick={() => void continueWith('github')}>
+            <span>◉</span> Continue with GitHub
+          </button>
+        </div>
+        {error && <div className="loginError">{error}</div>}
+        <small>
+          Google and GitHub handle authentication. OpenClasp never receives your password.
+        </small>
       </section>
     </div>
   );

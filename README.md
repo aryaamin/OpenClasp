@@ -42,6 +42,9 @@ evidence sharing, and network-contribution consent. Hosted account records are i
 validated Descope subject and stored in Neon Postgres. Raw conversation bodies are not part of the
 hosted record schema.
 
+OpenClasp's web login presents only Google and GitHub. Complete the one-time provider setup in
+[`docs/SOCIAL_LOGIN_SETUP.md`](docs/SOCIAL_LOGIN_SETUP.md) before using it outside of testing.
+
 The provisioned Descope project initially issues `full-access`. Before a public beta, configure and
 enforce separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
 `network:contribute` scopes in Descope.
