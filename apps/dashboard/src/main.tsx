@@ -9,8 +9,10 @@ declare const __AUTH0_AUDIENCE__: string;
 type Auth0User = { sub: string; name?: string; email?: string; picture?: string };
 type AuthSession = { user: Auth0User };
 type AuthTransaction = { state: string; nonce: string; verifier: string };
+type Theme = 'dark' | 'light';
 
 const authTransactionKey = 'openclasp.auth0.transaction';
+const themeKey = 'openclasp.theme.v1';
 
 type DashboardData = {
   agents: Record<string, any>[];
@@ -113,8 +115,15 @@ function route(): Page {
   return pages.includes(value as Page) ? (value as Page) : 'dashboard';
 }
 
+function initialTheme(): Theme {
+  const saved = localStorage.getItem(themeKey);
+  if (saved === 'dark' || saved === 'light') return saved;
+  return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
 function App() {
   const [session, setSession] = useState<AuthSession | null>();
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<Page>(route());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -133,6 +142,11 @@ function App() {
       .then(setSession)
       .catch(() => setSession(null));
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(themeKey, theme);
+  }, [theme]);
 
   useEffect(() => {
     const onPopState = () => setPage(route());
@@ -183,6 +197,14 @@ function App() {
           <Nav page="connect" active={page} onClick={navigate} label="Connect" glyph="+" />
           <Nav page="settings" active={page} onClick={navigate} label="Settings" glyph="⚙" />
         </nav>
+        <button
+          className="themeSwitch"
+          onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+        >
+          <span>{theme === 'dark' ? '☼' : '◐'}</span>
+          {theme === 'dark' ? 'Light theme' : 'Dark theme'}
+        </button>
         <div className="privacyStamp">
           <span className="liveDot" />
           <div>

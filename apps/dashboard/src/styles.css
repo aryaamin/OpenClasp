@@ -5,6 +5,10 @@
   background: #0b0d0b;
   font-synthesis: none;
 }
+:root[data-theme='light'] {
+  color: #192019;
+  background: #f5f7f2;
+}
 * {
   box-sizing: border-box;
 }
@@ -12,6 +16,9 @@ body {
   margin: 0;
   min-width: 320px;
   background: #0b0d0b;
+}
+:root[data-theme='light'] body {
+  background: #f5f7f2;
 }
 button,
 input,
@@ -100,6 +107,27 @@ select {
 }
 .appShell nav button.active span {
   color: #b9f27c;
+}
+.themeSwitch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid #303630;
+  border-radius: 5px;
+  color: #b9f27c;
+  background: #151815;
+  font-size: 10px;
+  cursor: pointer;
+}
+.themeSwitch:hover {
+  background: #1d211d;
+}
+.themeSwitch span {
+  width: 17px;
+  font-size: 15px;
+  text-align: center;
 }
 .privacyStamp {
   display: flex;
@@ -801,6 +829,99 @@ select {
   background: #261513;
   font-size: 10px;
 }
+:root[data-theme='light'] .appShell aside {
+  border-color: #dbe1d8;
+  background: #ffffff;
+}
+:root[data-theme='light'] .brand small,
+:root[data-theme='light'] .eyebrow,
+:root[data-theme='light'] .appShell nav button,
+:root[data-theme='light'] .metric > span,
+:root[data-theme='light'] .metric > small,
+:root[data-theme='light'] .panelHead p,
+:root[data-theme='light'] .historyRow small,
+:root[data-theme='light'] .agentCard p,
+:root[data-theme='light'] .agentCard > small,
+:root[data-theme='light'] .setting p,
+:root[data-theme='light'] .empty p,
+:root[data-theme='light'] .loginCard > small,
+:root[data-theme='light'] .loginCard > div > p:last-child {
+  color: #5c675d;
+}
+:root[data-theme='light'] .appShell nav button:hover,
+:root[data-theme='light'] .appShell nav button.active,
+:root[data-theme='light'] .account:hover {
+  color: #172117;
+  background: #edf2e9;
+}
+:root[data-theme='light'] .privacyStamp,
+:root[data-theme='light'] .themeSwitch,
+:root[data-theme='light'] .secondary,
+:root[data-theme='light'] .endpoint button,
+:root[data-theme='light'] .toggle {
+  border-color: #d2dbcf;
+  color: #243024;
+  background: #f0f4ed;
+}
+:root[data-theme='light'] .themeSwitch:hover,
+:root[data-theme='light'] .secondary:hover,
+:root[data-theme='light'] .endpoint button:hover {
+  background: #e4ece0;
+}
+:root[data-theme='light'] .pageHead,
+:root[data-theme='light'] .metric,
+:root[data-theme='light'] .panel,
+:root[data-theme='light'] .agentCard,
+:root[data-theme='light'] .agentGrid > .empty,
+:root[data-theme='light'] .settingsCard,
+:root[data-theme='light'] .setting,
+:root[data-theme='light'] .historyRow,
+:root[data-theme='light'] .profile,
+:root[data-theme='light'] .panelHead,
+:root[data-theme='light'] .checkList li {
+  border-color: #dbe1d8;
+}
+:root[data-theme='light'] .metric,
+:root[data-theme='light'] .panel,
+:root[data-theme='light'] .agentCard,
+:root[data-theme='light'] .agentGrid > .empty,
+:root[data-theme='light'] .settingsCard,
+:root[data-theme='light'] .setupRequest {
+  background: #ffffff;
+}
+:root[data-theme='light'] .setupRequests {
+  border-color: #b8d69d;
+  background: #f1f8eb;
+}
+:root[data-theme='light'] .notice {
+  color: #405040;
+  background: #eef6e8;
+}
+:root[data-theme='light'] .notice strong {
+  color: #1b291b;
+}
+:root[data-theme='light'] .tags span,
+:root[data-theme='light'] .agentGlyph,
+:root[data-theme='light'] .account > span,
+:root[data-theme='light'] .endpoint code,
+:root[data-theme='light'] .setting input,
+:root[data-theme='light'] .setting select {
+  border-color: #d2dbcf;
+  color: #294029;
+  background: #f8faf6;
+}
+:root[data-theme='light'] .loginPitch {
+  background: radial-gradient(circle at 10% 90%, #d9ebcc 0, transparent 36rem), #f5f7f2;
+}
+:root[data-theme='light'] .loginCard {
+  border-color: #dbe1d8;
+  background: #ffffff;
+}
+:root[data-theme='light'] .socialButtons button {
+  border-color: #d2dbcf;
+  color: #1d281d;
+  background: #f4f7f1;
+}
 @media (max-width: 900px) {
   .agentGrid {
     grid-template-columns: 1fr 1fr;
@@ -839,6 +960,11 @@ select {
   .account > div,
   .account > b {
     display: none;
+  }
+  .themeSwitch {
+    justify-content: center;
+    padding: 10px;
+    font-size: 0;
   }
   .account {
     justify-content: center;
@@ -886,7 +1012,8 @@ select {
   }
   .appShell aside > .brand,
   .privacyStamp,
-  .account {
+  .account,
+  .themeSwitch {
     display: none;
   }
   .appShell nav {
