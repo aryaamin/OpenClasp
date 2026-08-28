@@ -110,6 +110,9 @@ importers:
       '@openclasp/core':
         specifier: workspace:*
         version: link:../core
+      '@openclasp/persistence':
+        specifier: workspace:*
+        version: link:../persistence
       '@openclasp/protocol':
         specifier: workspace:*
         version: link:../protocol

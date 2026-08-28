@@ -15,6 +15,9 @@ const authTransactionKey = 'openclasp.auth0.transaction';
 
 type DashboardData = {
   agents: Record<string, any>[];
+  projects: Record<string, any>[];
+  installations: Record<string, any>[];
+  setupRequests: Record<string, any>[];
   interactions: Record<string, any>[];
   events: Record<string, any>[];
   conflicts: Record<string, any>[];
@@ -32,6 +35,9 @@ type Settings = {
 
 const emptyData: DashboardData = {
   agents: [],
+  projects: [],
+  installations: [],
+  setupRequests: [],
   interactions: [],
   events: [],
   conflicts: [],
@@ -133,6 +139,9 @@ function App() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const refreshDashboard = useCallback(async () => {
+    setData((await api('/v0.1/dashboard')) as DashboardData);
+  }, []);
 
   useEffect(() => {
     const onPopState = () => setPage(route());
@@ -209,6 +218,7 @@ function App() {
             settings={settings}
             setSettings={setSettings}
             navigate={navigate}
+            refreshDashboard={refreshDashboard}
           />
         )}
       </main>
@@ -338,17 +348,19 @@ function PageContent({
   settings,
   setSettings,
   navigate,
+  refreshDashboard,
 }: {
   page: Page;
   data: DashboardData;
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   navigate: (page: Page) => void;
+  refreshDashboard: () => Promise<void>;
 }) {
   if (page === 'history') return <History data={data} />;
   if (page === 'agents') return <Agents data={data} navigate={navigate} />;
   if (page === 'insights') return <Insights data={data} />;
-  if (page === 'connect') return <Connect />;
+  if (page === 'connect') return <Connect data={data} refreshDashboard={refreshDashboard} />;
   if (page === 'settings') return <SettingsPage settings={settings} setSettings={setSettings} />;
   return <Overview data={data} navigate={navigate} />;
 }
@@ -451,7 +463,15 @@ function Agents({ data, navigate }: { data: DashboardData; navigate: (page: Page
       />
       <section className="agentGrid">
         {data.agents.length ? (
-          data.agents.map((agent) => <AgentCard key={agent.agentId} agent={agent} />)
+          data.agents.map((agent) => (
+            <AgentCard
+              key={agent.agentId}
+              agent={agent}
+              projectName={
+                data.projects.find((project) => project.projectId === agent.projectId)?.name
+              }
+            />
+          ))
         ) : (
           <Empty
             title="No agents connected"
@@ -495,12 +515,89 @@ function Insights({ data }: { data: DashboardData }) {
   );
 }
 
-function Connect() {
+function Connect({
+  data,
+  refreshDashboard,
+}: {
+  data: DashboardData;
+  refreshDashboard: () => Promise<void>;
+}) {
   const endpoint = 'https://openclasp.vercel.app/mcp';
   const [copied, setCopied] = useState(false);
+  const [working, setWorking] = useState('');
+  const [decisionError, setDecisionError] = useState('');
+  const pending = data.setupRequests.filter((request) => request.status === 'pending');
+  useEffect(() => {
+    const poll = () => void refreshDashboard().catch(() => undefined);
+    poll();
+    const timer = window.setInterval(poll, 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshDashboard]);
+  const decide = async (requestId: string, decision: 'approve' | 'reject') => {
+    setWorking(requestId);
+    setDecisionError('');
+    try {
+      await api(`/v0.1/onboarding/${encodeURIComponent(requestId)}/${decision}`, {
+        method: 'POST',
+      });
+      await refreshDashboard();
+    } catch (reason) {
+      setDecisionError(reason instanceof Error ? reason.message : 'Could not update setup request');
+    } finally {
+      setWorking('');
+    }
+  };
   return (
     <>
       <PageHead eyebrow="AGENT CONNECTION" title="Add OpenClasp to an agent." />
+      {pending.length > 0 && (
+        <section className="setupRequests">
+          <div>
+            <p className="eyebrow">CONFIRMATION REQUIRED</p>
+            <h2>Approve agent setup</h2>
+            <p>
+              An agent proposed this identity. Confirm it before OpenClasp binds the installation.
+            </p>
+          </div>
+          {pending.map((request) => (
+            <article className="setupRequest" key={request.requestId}>
+              <div>
+                <strong>{request.agentName ?? 'Switch installation'}</strong>
+                <small>
+                  {request.projectName ?? request.existingAgentId} · {request.framework}
+                </small>
+                {!!request.capabilities?.length && (
+                  <div className="tags">
+                    {request.capabilities.slice(0, 5).map((capability: string) => (
+                      <span key={capability}>{capability}</span>
+                    ))}
+                  </div>
+                )}
+                {!!request.limitations?.length && (
+                  <small>Limitations: {request.limitations.join(' · ')}</small>
+                )}
+              </div>
+              <div className="decisionButtons">
+                <button
+                  className="secondary"
+                  disabled={working === request.requestId}
+                  onClick={() => void decide(request.requestId, 'reject')}
+                >
+                  Reject
+                </button>
+                <button
+                  className="primary"
+                  disabled={working === request.requestId}
+                  onClick={() => void decide(request.requestId, 'approve')}
+                >
+                  {working === request.requestId ? 'Working…' : 'Confirm agent'}
+                </button>
+              </div>
+            </article>
+          ))}
+          {decisionError && <div className="loginError">{decisionError}</div>}
+        </section>
+      )}
       <section className="connectLayout">
         <Panel title="Remote MCP endpoint" subtitle="For OAuth-capable MCP clients">
           <div className="endpoint">
@@ -518,7 +615,12 @@ function Connect() {
             <li>Add the URL as a remote MCP server in your agent or framework.</li>
             <li>The client discovers OAuth and opens the Auth0 login page.</li>
             <li>Sign in with this account and approve access.</li>
-            <li>Ask the agent to create and register its OpenClasp identity.</li>
+            <li>
+              Ask the agent to call <code>openclasp_setup</code>.
+            </li>
+            <li>
+              Confirm the proposed identity on this page. The installation stays bound afterward.
+            </li>
           </ol>
         </Panel>
         <Panel
@@ -745,21 +847,24 @@ function HistoryRow({ item }: { item: Record<string, any> }) {
     </article>
   );
 }
-function AgentCard({ agent }: { agent: Record<string, any> }) {
+function AgentCard({ agent, projectName }: { agent: Record<string, any>; projectName?: string }) {
   return (
     <article className="agentCard">
       <div className="agentTop">
         <span className="agentGlyph">◇</span>
         <b className={agent.revoked ? 'bad' : ''}>{agent.revoked ? 'REVOKED' : 'VERIFIED'}</b>
       </div>
-      <h2>{agent.agentId}</h2>
-      <p>Version {agent.agentVersion}</p>
+      <h2>{agent.name ?? agent.agentId}</h2>
+      <p>{projectName ?? `Version ${agent.agentVersion ?? '1.0.0'}`}</p>
       <div className="tags">
         {(agent.capabilities ?? []).slice(0, 4).map((capability: string) => (
           <span key={capability}>{capability}</span>
         ))}
       </div>
-      <small>Created {new Date(agent.createdAt).toLocaleDateString()}</small>
+      <small>
+        {agent.framework ? `${agent.framework} · ` : ''}Created{' '}
+        {new Date(agent.createdAt).toLocaleDateString()}
+      </small>
     </article>
   );
 }

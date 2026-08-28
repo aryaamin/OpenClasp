@@ -22,6 +22,9 @@ describe('HTTP API', () => {
         calls.push(`dashboard:${operatorId}`);
         return {
           agents: [],
+          projects: [],
+          installations: [],
+          setupRequests: [],
           interactions: [],
           events: [],
           conflicts: [],

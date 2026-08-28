@@ -11,7 +11,11 @@ export type HostedRecordKind =
   | 'conflict'
   | 'profile'
   | 'consent'
-  | 'revocation';
+  | 'revocation'
+  | 'project'
+  | 'agent_profile'
+  | 'installation'
+  | 'setup_request';
 
 export type AccountSettings = {
   displayName: string;
@@ -106,7 +110,10 @@ export class HostedRepository {
     const ofKind = (kind: HostedRecordKind) =>
       rows.filter((row) => row.kind === kind).map((row) => row.payload);
     return {
-      agents: ofKind('agent'),
+      agents: [...ofKind('agent_profile'), ...ofKind('agent')],
+      projects: ofKind('project'),
+      installations: ofKind('installation'),
+      setupRequests: ofKind('setup_request'),
       interactions: ofKind('interaction'),
       events: ofKind('event'),
       conflicts: ofKind('conflict'),

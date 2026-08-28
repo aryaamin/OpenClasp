@@ -37,6 +37,7 @@ const mcp = createMcpHandler(
         ? (operatorId, kind, recordId, value) =>
             repository.upsert(operatorId, kind, recordId, value)
         : undefined,
+      repository,
     ),
   {
     serverInfo: { name: 'openclasp', version: '0.1.0' },

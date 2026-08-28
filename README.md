@@ -35,6 +35,12 @@ Resource Parameter Compatibility Profile and Dynamic Client Registration. Compat
 discover Auth0 through `/.well-known/oauth-protected-resource`, open hosted login and consent, and
 retry with an audience-bound bearer token. The local stdio server remains available for development.
 
+On first use, ask the connected agent to call `openclasp_setup` with its proposed project, name,
+framework, capabilities, and limitations. OpenClasp creates a pending request; approve it once on the
+dashboard's Connect page. The OAuth installation is then bound to that agent, and future calls resolve
+its identity automatically. One account can own multiple isolated projects and agents, and an
+installation can switch agents only after another dashboard confirmation.
+
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
 inspect task-specific behavioural profiles, copy the MCP connection URL, and control retention,
@@ -60,7 +66,7 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 - `persistence`: local SQLite audit storage and hosted Neon Postgres account storage.
 - `sdk`: HTTP client and local signed-object helpers.
 - `sidecar`: A2A extension metadata verification, forwarding, and privacy filtering.
-- `mcp-server`: the 13 documented OpenClasp MCP tools.
+- `mcp-server`: 18 OpenClasp assurance and self-onboarding tools.
 - `apps/api`, `apps/demo`, `apps/dashboard`: runnable surfaces.
 
 ## Quality gate

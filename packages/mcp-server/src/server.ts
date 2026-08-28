@@ -7,6 +7,12 @@ import {
   InteractionEventSchema,
   ReceiptSchema,
 } from '../../protocol/src/index.js';
+import {
+  requestAgentSetup,
+  resolveInstallation,
+  updateAgentProfile,
+  type OnboardingStore,
+} from '../../persistence/src/onboarding.js';
 
 export const OPENCLASP_TOOL_NAMES = [
   'openclasp_create_identity',
@@ -22,6 +28,11 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_submit_feedback',
   'openclasp_raise_dispute',
   'openclasp_verify_receipt',
+  'openclasp_setup',
+  'openclasp_get_identity',
+  'openclasp_switch_agent',
+  'openclasp_update_profile',
+  'openclasp_connection_status',
 ] as const;
 
 const text = (value: unknown) => ({
@@ -46,13 +57,26 @@ type HostedRecord = (
   value: unknown,
 ) => Promise<void>;
 
-type ToolContext = { http?: { authInfo?: { extra?: Record<string, unknown> } } };
+type ToolContext = {
+  http?: {
+    authInfo?: { clientId?: string; extra?: Record<string, unknown> };
+  };
+};
 type EngineSource = TrustEngine | ((context: ToolContext) => Promise<TrustEngine>);
+
+function installationContext(context: ToolContext) {
+  const operatorId = context.http?.authInfo?.extra?.operatorId;
+  const clientId = context.http?.authInfo?.clientId;
+  if (typeof operatorId !== 'string' || typeof clientId !== 'string')
+    throw new Error('Authenticated MCP installation context is required');
+  return { operatorId, clientId };
+}
 
 export function registerOpenClaspTools(
   server: McpServer,
   engineSource: EngineSource = new TrustEngine(),
   recordHosted?: HostedRecord,
+  onboardingStore?: OnboardingStore,
 ) {
   const factChecker = new FixtureFactCheckProvider();
   const resolveEngine = (context: ToolContext) =>
@@ -272,6 +296,141 @@ export function registerOpenClaspTools(
       } catch {
         return text({ valid: false });
       }
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[13],
+    {
+      description:
+        'Propose this MCP installation as a new OpenClasp agent. The owner must confirm it in the dashboard before the identity is bound.',
+      inputSchema: z
+        .object({
+          agentName: z.string().trim().min(1).max(100),
+          projectName: z.string().trim().min(1).max(100).optional(),
+          projectId: z.string().optional(),
+          framework: z.string().trim().max(100).optional(),
+          capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
+          limitations: z.array(z.string().trim().min(1).max(300)).max(100).optional(),
+        })
+        .refine((input) => input.projectName || input.projectId, {
+          message: 'projectName or projectId is required',
+        }),
+    },
+    async (input, context) => {
+      if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
+      const connection = installationContext(context);
+      const current = await resolveInstallation(
+        onboardingStore,
+        connection.operatorId,
+        connection.clientId,
+      );
+      if (current.status === 'connected') return text(current);
+      const request = await requestAgentSetup(onboardingStore, connection.operatorId, {
+        clientId: connection.clientId,
+        ...input,
+      });
+      return text({
+        status: 'pending_confirmation',
+        confirmationRequired: true,
+        request,
+        confirmationUrl: `${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/connect`,
+        next: 'Ask the owner to confirm this setup request in the OpenClasp dashboard, then call openclasp_get_identity.',
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[14],
+    {
+      description:
+        'Return the agent identity automatically bound to this authenticated MCP installation.',
+      inputSchema: z.object({}),
+    },
+    async (_input, context) => {
+      if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
+      const connection = installationContext(context);
+      return text(
+        await resolveInstallation(onboardingStore, connection.operatorId, connection.clientId),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[15],
+    {
+      description:
+        'Request that this MCP installation switch to another existing agent. Dashboard confirmation is required.',
+      inputSchema: z.object({ existingAgentId: z.string().min(1) }),
+    },
+    async (input, context) => {
+      if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
+      const connection = installationContext(context);
+      const request = await requestAgentSetup(onboardingStore, connection.operatorId, {
+        clientId: connection.clientId,
+        action: 'switch',
+        existingAgentId: input.existingAgentId,
+      });
+      return text({
+        status: 'pending_confirmation',
+        confirmationRequired: true,
+        request,
+        confirmationUrl: `${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/connect`,
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[16],
+    {
+      description: 'Update the profile of the agent bound to this MCP installation.',
+      inputSchema: z.object({
+        name: z.string().trim().min(1).max(100).optional(),
+        framework: z.string().trim().min(1).max(100).optional(),
+        capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
+        limitations: z.array(z.string().trim().min(1).max(300)).max(100).optional(),
+      }),
+    },
+    async (input, context) => {
+      if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
+      const connection = installationContext(context);
+      return text(
+        await updateAgentProfile(
+          onboardingStore,
+          connection.operatorId,
+          connection.clientId,
+          input,
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[17],
+    {
+      description:
+        'Check whether this MCP installation is unbound, awaiting confirmation, or connected.',
+      inputSchema: z.object({}),
+    },
+    async (_input, context) => {
+      if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
+      const connection = installationContext(context);
+      const binding = await resolveInstallation(
+        onboardingStore,
+        connection.operatorId,
+        connection.clientId,
+      );
+      if (binding.status === 'connected') return text(binding);
+      const state = await onboardingStore.list(connection.operatorId);
+      const pending = state
+        .filter((row) => row.kind === 'setup_request')
+        .map((row) => row.payload as { clientId?: string; status?: string })
+        .find(
+          (request) => request.clientId === connection.clientId && request.status === 'pending',
+        );
+      return text(
+        pending
+          ? {
+              status: 'pending_confirmation',
+              confirmationUrl: `${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/connect`,
+            }
+          : binding,
+      );
     },
   );
   return server;

@@ -5,6 +5,7 @@
   "exports": "./src/index.ts",
   "dependencies": {
     "@openclasp/core": "workspace:*",
+    "@openclasp/persistence": "workspace:*",
     "@openclasp/protocol": "workspace:*"
   }
 }

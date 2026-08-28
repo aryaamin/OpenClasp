@@ -16,6 +16,11 @@ import {
   TrustEngine,
 } from '../../../packages/core/src/index.js';
 import type { HostedRepository } from '../../../packages/persistence/src/index.js';
+import {
+  approveAgentSetup,
+  getOnboardingState,
+  rejectAgentSetup,
+} from '../../../packages/persistence/src/onboarding.js';
 
 type DashboardRepository = Pick<
   HostedRepository,
@@ -112,6 +117,21 @@ export function buildApi(
           rawConversationsStored: false,
         };
       return repository.getSettings(owner);
+    });
+    router.get('/v0.1/onboarding', async (request) => {
+      const owner = operatorId(request);
+      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
+      return getOnboardingState(repository, owner);
+    });
+    router.post('/v0.1/onboarding/:id/approve', async (request) => {
+      const owner = operatorId(request);
+      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
+      return approveAgentSetup(repository, owner, (request.params as { id: string }).id);
+    });
+    router.post('/v0.1/onboarding/:id/reject', async (request) => {
+      const owner = operatorId(request);
+      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
+      return rejectAgentSetup(repository, owner, (request.params as { id: string }).id);
     });
     router.put('/v0.1/settings', async (request) => {
       const owner = operatorId(request);
