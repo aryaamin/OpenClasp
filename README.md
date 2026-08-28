@@ -29,25 +29,25 @@ corepack pnpm dev
 - MCP stdio server: `corepack pnpm mcp`
 - Remote MCP after deployment: `https://<deployment>/mcp`
 
-The remote MCP endpoint requires Descope OAuth. Configure `DESCOPE_PROJECT_ID`,
-`DESCOPE_ISSUER` (or `DESCOPE_MCP_ISSUER`), and `OPENCLASP_MCP_URL`. Compatible MCP clients discover the
-authorization server through `/.well-known/oauth-protected-resource`, open the hosted login and
-consent page, and retry with an audience-bound bearer token. The local stdio server remains for
-development and obtains credentials through its host environment.
+The remote MCP endpoint uses Clerk OAuth. Install Clerk through the Vercel Marketplace so Vercel
+injects `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, then set `OPENCLASP_MCP_URL`.
+Compatible MCP clients discover Clerk through `/.well-known/oauth-protected-resource`, open the
+hosted login and consent page, and retry with an OAuth bearer token. The local stdio server remains
+available for development.
 
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
 inspect task-specific behavioural profiles, copy the MCP connection URL, and control retention,
 evidence sharing, and network-contribution consent. Hosted account records are isolated by the
-validated Descope subject and stored in Neon Postgres. Raw conversation bodies are not part of the
+validated Clerk user ID and stored in Neon Postgres. Raw conversation bodies are not part of the
 hosted record schema.
 
 OpenClasp's web login presents only Google and GitHub. Complete the one-time provider setup in
 [`docs/SOCIAL_LOGIN_SETUP.md`](docs/SOCIAL_LOGIN_SETUP.md) before using it outside of testing.
 
-The provisioned Descope project initially issues `full-access`. Before a public beta, configure and
-enforce separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
-`network:contribute` scopes in Descope.
+The MCP server currently requires Clerk's `profile` scope. Before a public beta, add and enforce
+separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
+`network:contribute` scopes in Clerk.
 
 ## What the demo proves
 

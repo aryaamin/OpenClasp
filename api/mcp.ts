@@ -1,4 +1,5 @@
-import descopeSdk from '@descope/node-sdk';
+import { createClerkClient } from '@clerk/backend';
+import { verifyClerkToken } from '@clerk/mcp-tools/next';
 import type { AuthInfo } from '@modelcontextprotocol/server';
 import { createMcpHandler, withMcpAuth } from 'mcp-handler';
 import { MemoryAuditStore, TrustEngine } from '../packages/core/src/index.js';
@@ -11,7 +12,8 @@ const repository = process.env.DATABASE_URL
 const engines = new Map<string, Promise<TrustEngine>>();
 
 function engineFor(context: { http?: { authInfo?: { extra?: Record<string, unknown> } } }) {
-  const operatorId = context.http?.authInfo?.extra?.operatorId;
+  const operatorId =
+    context.http?.authInfo?.extra?.operatorId ?? context.http?.authInfo?.extra?.userId;
   if (typeof operatorId !== 'string' || !repository) return Promise.resolve(new TrustEngine());
   let pending = engines.get(operatorId);
   if (!pending) {
@@ -44,26 +46,25 @@ const mcp = createMcpHandler(
   },
 );
 
-async function verifyToken(_request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
-  const projectId = process.env.DESCOPE_PROJECT_ID ?? process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID;
-  if (!projectId || !bearerToken) return undefined;
-  const descope = descopeSdk({ projectId });
-  const authentication = await descope.validateSession(bearerToken, {
-    ...(process.env.OPENCLASP_MCP_URL ? { audience: process.env.OPENCLASP_MCP_URL } : {}),
-  });
-  if (!authentication.token.exp) return undefined;
-  return {
-    token: bearerToken,
-    clientId: authentication.token.sub ?? 'unknown-client',
-    scopes: descope.getJwtPermissions(bearerToken),
-    expiresAt: authentication.token.exp,
-    extra: { operatorId: authentication.token.sub },
-  };
+async function verifyToken(request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  if (!secretKey || !publishableKey || !bearerToken) return undefined;
+  const state = await createClerkClient({ secretKey, publishableKey }).authenticateRequest(
+    request,
+    {
+      acceptsToken: 'oauth_token',
+    },
+  );
+  if (!state.isAuthenticated) return undefined;
+  const authInfo = verifyClerkToken(state.toAuth(), bearerToken);
+  if (!authInfo) return undefined;
+  return { ...authInfo, extra: { ...authInfo.extra, operatorId: state.toAuth().userId } };
 }
 
 const handler = withMcpAuth(mcp, verifyToken, {
   required: true,
-  requiredScopes: ['full-access'],
+  requiredScopes: ['profile'],
   resourceMetadataPath: '/.well-known/oauth-protected-resource',
   ...(process.env.OPENCLASP_MCP_URL
     ? { resourceUrl: new URL(process.env.OPENCLASP_MCP_URL).origin }

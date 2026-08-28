@@ -130,7 +130,7 @@ export function buildApi(
       const owner = operatorId(request);
       const current = await scopedEngine(request);
       const identity = AgentIdentitySchema.parse(request.body);
-      if (owner && identity.operatorRef !== `descope:${owner}`)
+      if (owner && identity.operatorRef !== `clerk:${owner}`)
         throw new Error('Agent identity is not owned by the authenticated operator');
       const registered = current.registerAgent(identity);
       await persist(request, 'agent', identity.agentId, registered);

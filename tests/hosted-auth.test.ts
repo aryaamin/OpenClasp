@@ -3,13 +3,10 @@ import { POST as mcpHandler } from '../api/mcp.js';
 import { GET as metadataHandler } from '../api/oauth-protected-resource.js';
 
 describe('hosted MCP authorization', () => {
-  const originalIssuer = process.env.DESCOPE_MCP_ISSUER;
-  const originalIntegrationIssuer = process.env.DESCOPE_ISSUER;
+  const originalPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   afterEach(() => {
-    if (originalIssuer === undefined) delete process.env.DESCOPE_MCP_ISSUER;
-    else process.env.DESCOPE_MCP_ISSUER = originalIssuer;
-    if (originalIntegrationIssuer === undefined) delete process.env.DESCOPE_ISSUER;
-    else process.env.DESCOPE_ISSUER = originalIntegrationIssuer;
+    if (originalPublishableKey === undefined) delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+    else process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = originalPublishableKey;
   });
 
   it('challenges unauthenticated remote MCP requests', async () => {
@@ -27,8 +24,7 @@ describe('hosted MCP authorization', () => {
   });
 
   it('fails closed when the OAuth issuer is not configured', () => {
-    delete process.env.DESCOPE_MCP_ISSUER;
-    delete process.env.DESCOPE_ISSUER;
+    delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
     const response = metadataHandler(
       new Request('https://openclasp.example/.well-known/oauth-protected-resource'),
     );

@@ -15,7 +15,12 @@
       "source": "/.well-known/oauth-protected-resource",
       "destination": "/api/oauth-protected-resource"
     },
+    {
+      "source": "/.well-known/oauth-authorization-server",
+      "destination": "/api/oauth-authorization-server"
+    },
     { "source": "/login", "destination": "/" },
+    { "source": "/sso-callback", "destination": "/" },
     { "source": "/dashboard", "destination": "/" },
     { "source": "/history", "destination": "/" },
     { "source": "/agents", "destination": "/" },

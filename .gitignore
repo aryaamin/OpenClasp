@@ -8,3 +8,4 @@ coverage
 apps/dashboard/dist
 .vercel
 .env*
+.agents

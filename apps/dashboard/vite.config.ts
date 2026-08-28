@@ -7,11 +7,9 @@ export default defineConfig(({ mode }) => {
     root: 'apps/dashboard',
     plugins: [react()],
     define: {
-      __DESCOPE_PROJECT_ID__: JSON.stringify(
-        process.env.NEXT_PUBLIC_DESCOPE_PROJECT_ID ??
-          process.env.DESCOPE_PROJECT_ID ??
-          env.NEXT_PUBLIC_DESCOPE_PROJECT_ID ??
-          env.DESCOPE_PROJECT_ID ??
+      __CLERK_PUBLISHABLE_KEY__: JSON.stringify(
+        process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
+          env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
           '',
       ),
     },

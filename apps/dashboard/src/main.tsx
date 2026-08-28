@@ -1,9 +1,16 @@
-import { AuthProvider, getSessionToken, useDescope, useSession, useUser } from '@descope/react-sdk';
+import {
+  AuthenticateWithRedirectCallback,
+  ClerkProvider,
+  useAuth,
+  useClerk,
+  useUser,
+} from '@clerk/react';
+import { useSignIn } from '@clerk/react/legacy';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-declare const __DESCOPE_PROJECT_ID__: string;
+declare const __CLERK_PUBLISHABLE_KEY__: string;
 
 type DashboardData = {
   agents: Record<string, any>[];
@@ -40,8 +47,10 @@ const defaultSettings: Settings = {
 const pages = ['dashboard', 'history', 'agents', 'insights', 'connect', 'settings'] as const;
 type Page = (typeof pages)[number];
 
-function api(path: string, init?: RequestInit) {
-  const token = getSessionToken();
+let getAuthToken: () => Promise<string | null> = async () => null;
+
+async function api(path: string, init?: RequestInit) {
+  const token = await getAuthToken();
   return fetch(path, {
     ...init,
     headers: {
@@ -62,9 +71,9 @@ function route(): Page {
 }
 
 function App() {
-  const { isAuthenticated, isSessionLoading } = useSession();
-  const { user, isUserLoading } = useUser();
-  const { logout, oauth } = useDescope();
+  const { isLoaded: isAuthLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded: isUserLoaded, user } = useUser();
+  const { signOut } = useClerk();
   const [page, setPage] = useState<Page>(route());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -78,10 +87,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const code = new URLSearchParams(location.search).get('code');
-    if (!isSessionLoading && !isAuthenticated && !code && location.pathname !== '/login')
+    getAuthToken = getToken;
+    if (isAuthLoaded && !isSignedIn && location.pathname !== '/login')
       history.replaceState({}, '', '/login');
-    if (!isAuthenticated) return;
+    if (!isSignedIn) return;
     if (location.pathname === '/login') history.replaceState({}, '', '/dashboard');
     setPage(route());
     Promise.all([api('/v0.1/dashboard'), api('/v0.1/settings')])
@@ -93,27 +102,15 @@ function App() {
         setError(reason instanceof Error ? reason.message : 'Load failed'),
       )
       .finally(() => setLoading(false));
-  }, [isAuthenticated, isSessionLoading]);
-
-  useEffect(() => {
-    const code = new URLSearchParams(location.search).get('code');
-    if (!code || isAuthenticated) return;
-    oauth
-      .exchange(code)
-      .then(() => {
-        history.replaceState({}, '', '/dashboard');
-        location.reload();
-      })
-      .catch(() => setError('Social sign-in could not be completed. Please try again.'));
-  }, [isAuthenticated, oauth]);
+  }, [getToken, isAuthLoaded, isSignedIn]);
 
   const navigate = (next: Page) => {
     history.pushState({}, '', `/${next}`);
     setPage(next);
   };
 
-  if (isSessionLoading || isUserLoading) return <Loading />;
-  if (!isAuthenticated) return <Login />;
+  if (!isAuthLoaded || !isUserLoaded) return <Loading />;
+  if (!isSignedIn) return <Login />;
 
   return (
     <div className="appShell">
@@ -140,11 +137,11 @@ function App() {
             <small>Raw conversations stay local</small>
           </div>
         </div>
-        <button className="account" onClick={() => void logout()}>
-          <span>{initials(user?.name || user?.email || 'OC')}</span>
+        <button className="account" onClick={() => void signOut({ redirectUrl: '/login' })}>
+          <span>{initials(user?.fullName || user?.primaryEmailAddress?.emailAddress || 'OC')}</span>
           <div>
-            <strong>{user?.name || 'OpenClasp user'}</strong>
-            <small>{user?.email || 'Sign out'}</small>
+            <strong>{user?.fullName || 'OpenClasp user'}</strong>
+            <small>{user?.primaryEmailAddress?.emailAddress || 'Sign out'}</small>
           </div>
           <b>↗</b>
         </button>
@@ -168,15 +165,17 @@ function App() {
 }
 
 function Login() {
-  const { oauth } = useDescope();
+  const { isLoaded, signIn } = useSignIn();
   const [error, setError] = useState('');
   const continueWith = async (provider: 'google' | 'github') => {
     setError('');
     try {
-      const result = await oauth.start(provider, `${location.origin}/dashboard`);
-      const url = result.data?.url;
-      if (!url) throw new Error('OAuth provider did not return a redirect URL');
-      location.assign(url);
+      if (!isLoaded) return;
+      await signIn.authenticateWithRedirect({
+        strategy: provider === 'google' ? 'oauth_google' : 'oauth_github',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/dashboard',
+      });
     } catch {
       setError(`${provider === 'google' ? 'Google' : 'GitHub'} sign-in is not configured yet.`);
     }
@@ -772,11 +771,11 @@ function timestamp(item: Record<string, any>) {
   return String(item.timestamp ?? item.completedAt ?? item.createdAt ?? new Date(0).toISOString());
 }
 
-if (!__DESCOPE_PROJECT_ID__) throw new Error('Descope project ID is not configured');
+if (!__CLERK_PUBLISHABLE_KEY__) throw new Error('Clerk publishable key is not configured');
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <AuthProvider projectId={__DESCOPE_PROJECT_ID__} persistTokens autoRefresh>
-      <App />
-    </AuthProvider>
+    <ClerkProvider publishableKey={__CLERK_PUBLISHABLE_KEY__} afterSignOutUrl="/login">
+      {location.pathname === '/sso-callback' ? <AuthenticateWithRedirectCallback /> : <App />}
+    </ClerkProvider>
   </React.StrictMode>,
 );
