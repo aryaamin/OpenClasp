@@ -39,9 +39,34 @@ export function buildMcpServer(engine = new TrustEngine()) {
   return registerOpenClaspTools(server, engine);
 }
 
-export function registerOpenClaspTools(server: McpServer, engine = new TrustEngine()) {
+type HostedRecord = (
+  operatorId: string,
+  kind: 'agent' | 'interaction' | 'event' | 'receipt' | 'feedback' | 'conflict' | 'profile',
+  recordId: string,
+  value: unknown,
+) => Promise<void>;
+
+type ToolContext = { http?: { authInfo?: { extra?: Record<string, unknown> } } };
+type EngineSource = TrustEngine | ((context: ToolContext) => Promise<TrustEngine>);
+
+export function registerOpenClaspTools(
+  server: McpServer,
+  engineSource: EngineSource = new TrustEngine(),
+  recordHosted?: HostedRecord,
+) {
   const factChecker = new FixtureFactCheckProvider();
-  const keys = new Map<string, unknown>();
+  const resolveEngine = (context: ToolContext) =>
+    typeof engineSource === 'function' ? engineSource(context) : Promise.resolve(engineSource);
+  const persist = async (
+    context: ToolContext,
+    kind: Parameters<HostedRecord>[1],
+    id: string,
+    value: unknown,
+  ) => {
+    const operatorId = context.http?.authInfo?.extra?.operatorId;
+    if (recordHosted && typeof operatorId === 'string')
+      await recordHosted(operatorId, kind, id, value);
+  };
 
   server.registerTool(
     OPENCLASP_TOOL_NAMES[0],
@@ -62,7 +87,6 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
             ? `descope:${authenticatedOperator}`
             : input.operatorRef,
       });
-      keys.set(input.agentId, created.keyPair);
       return text(created);
     },
   );
@@ -80,7 +104,10 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
       ) {
         throw new Error('Agent identity is not owned by the authenticated operator');
       }
-      return text(engine.registerAgent(input));
+      const engine = await resolveEngine(context);
+      const registered = engine.registerAgent(input);
+      await persist(context, 'agent', registered.agentId, registered);
+      return text(registered);
     },
   );
   server.registerTool(
@@ -89,7 +116,10 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
       description: 'Get a task-specific behavioural profile',
       inputSchema: z.object({ agentId: z.string(), version: z.string(), taskCategory: z.string() }),
     },
-    async (input) => text(engine.getRisk(input.agentId, input.version, input.taskCategory)),
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      return text(engine.getRisk(input.agentId, input.version, input.taskCategory));
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[3],
@@ -102,7 +132,10 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
         humanApproved: z.boolean().optional(),
       }),
     },
-    async (input) => text(engine.assess(input as any)),
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      return text(engine.assess(input as any));
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[4],
@@ -114,8 +147,16 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
         taskCategory: z.string(),
       }),
     },
-    async (input) =>
-      text({ interactionId: crypto.randomUUID(), status: 'contract_required', ...input }),
+    async (input, context) => {
+      const interaction = {
+        interactionId: crypto.randomUUID(),
+        status: 'contract_required',
+        createdAt: new Date().toISOString(),
+        ...input,
+      };
+      await persist(context, 'interaction', interaction.interactionId, interaction);
+      return text(interaction);
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[5],
@@ -123,7 +164,12 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
       description: 'Validate and record a signed structured event',
       inputSchema: InteractionEventSchema,
     },
-    async (input) => text(engine.recordEvent(input)),
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      const event = engine.recordEvent(input);
+      await persist(context, 'event', event.eventId, event);
+      return text(event);
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[6],
@@ -139,15 +185,17 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
       description: 'Check whether a commitment is represented by a signed event',
       inputSchema: z.object({ interactionId: z.string().uuid(), commitment: z.string() }),
     },
-    async (input) =>
-      text({
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      return text({
         valid: [...engine.events.values()].some(
           (event) =>
             event.interactionId === input.interactionId &&
             event.eventType === 'commitment' &&
             JSON.stringify(event.payload).includes(input.commitment),
         ),
-      }),
+      });
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[8],
@@ -155,17 +203,37 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
       description: 'Suggest attributable resolutions for a consented conflict',
       inputSchema: z.object({ conflictId: z.string() }),
     },
-    async (input) => text(engine.conflicts.get(input.conflictId)?.possibleResolutions ?? []),
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      return text(engine.conflicts.get(input.conflictId)?.possibleResolutions ?? []);
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[9],
     { description: 'Submit a signed completion receipt', inputSchema: ReceiptSchema },
-    async (input) => text(engine.submitReceipt(input)),
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      const receipt = engine.submitReceipt(input);
+      await persist(context, 'receipt', receipt.receiptId, receipt);
+      return text(receipt);
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[10],
     { description: 'Submit receipt-backed structured feedback', inputSchema: FeedbackSchema },
-    async (input) => text(engine.submitFeedback(input)),
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      const result = engine.submitFeedback(input);
+      await persist(context, 'feedback', input.feedbackId, input);
+      for (const profile of engine.profiles.values())
+        await persist(
+          context,
+          'profile',
+          `${profile.agentId}|${profile.agentVersion}|${profile.taskCategory}`,
+          profile,
+        );
+      return text(result);
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[11],
@@ -177,24 +245,27 @@ export function registerOpenClaspTools(server: McpServer, engine = new TrustEngi
         participants: z.array(z.string()).min(2),
       }),
     },
-    async (input) =>
-      text(
-        engine.createConflict({
-          interactionId: input.interactionId,
-          issue: input.issue,
-          participants: input.participants,
-          positions: {},
-          evidence: [],
-          contractClauses: [],
-          missingInformation: [],
-          possibleResolutions: [],
-        }),
-      ),
+    async (input, context) => {
+      const engine = await resolveEngine(context);
+      const conflict = engine.createConflict({
+        interactionId: input.interactionId,
+        issue: input.issue,
+        participants: input.participants,
+        positions: {},
+        evidence: [],
+        contractClauses: [],
+        missingInformation: [],
+        possibleResolutions: [],
+      });
+      await persist(context, 'conflict', conflict.conflictId, conflict);
+      return text(conflict);
+    },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[12],
     { description: 'Verify a signed interaction receipt', inputSchema: ReceiptSchema },
-    async (input) => {
+    async (input, context) => {
+      const engine = await resolveEngine(context);
       try {
         engine.submitReceipt(input);
         return text({ valid: true });

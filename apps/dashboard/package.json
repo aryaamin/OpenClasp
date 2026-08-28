@@ -2,5 +2,8 @@
   "name": "@openclasp/dashboard",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@descope/react-sdk": "^3.2.1"
+  }
 }

@@ -14,6 +14,13 @@
     {
       "source": "/.well-known/oauth-protected-resource",
       "destination": "/api/oauth-protected-resource"
-    }
+    },
+    { "source": "/login", "destination": "/" },
+    { "source": "/dashboard", "destination": "/" },
+    { "source": "/history", "destination": "/" },
+    { "source": "/agents", "destination": "/" },
+    { "source": "/insights", "destination": "/" },
+    { "source": "/connect", "destination": "/" },
+    { "source": "/settings", "destination": "/" }
   ]
 }

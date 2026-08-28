@@ -35,6 +35,13 @@ authorization server through `/.well-known/oauth-protected-resource`, open the h
 consent page, and retry with an audience-bound bearer token. The local stdio server remains for
 development and obtains credentials through its host environment.
 
+The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
+in, users can manage connected agents, review structured interaction history and signed receipts,
+inspect task-specific behavioural profiles, copy the MCP connection URL, and control retention,
+evidence sharing, and network-contribution consent. Hosted account records are isolated by the
+validated Descope subject and stored in Neon Postgres. Raw conversation bodies are not part of the
+hosted record schema.
+
 The provisioned Descope project initially issues `full-access`. Before a public beta, configure and
 enforce separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
 `network:contribute` scopes in Descope.
@@ -47,7 +54,7 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 
 - `protocol`: schemas, canonical hashing, and Ed25519 signing.
 - `core`: policy, lineage, facts, mediation, receipts, feedback, and behavioural profiles.
-- `persistence`: zero-configuration SQLite audit storage.
+- `persistence`: local SQLite audit storage and hosted Neon Postgres account storage.
 - `sdk`: HTTP client and local signed-object helpers.
 - `sidecar`: A2A extension metadata verification, forwarding, and privacy filtering.
 - `mcp-server`: the 13 documented OpenClasp MCP tools.
