@@ -3,7 +3,6 @@
   "buildCommand": "corepack pnpm build",
   "outputDirectory": "apps/dashboard/dist",
   "functions": {
-    "api/*.ts": { "maxDuration": 30 },
     "api/agent-delivery.ts": {
       "maxDuration": 30,
       "experimentalTriggers": [
