@@ -37,6 +37,13 @@ type DashboardData = {
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
   profiles: Record<string, any>[];
+  counterpartyBriefs: Record<string, any>[];
+  completionReports: Record<string, any>[];
+  feedbackRequests: Record<string, any>[];
+  interactionFeedback: Record<string, any>[];
+  interactionConclusions: Record<string, any>[];
+  learningEligibility: Record<string, any>[];
+  profileDeltas: Record<string, any>[];
   runtimes: Record<string, any>[];
   accessTokens: Record<string, any>[];
 };
@@ -63,6 +70,13 @@ const emptyData: DashboardData = {
   conflicts: [],
   receipts: [],
   profiles: [],
+  counterpartyBriefs: [],
+  completionReports: [],
+  feedbackRequests: [],
+  interactionFeedback: [],
+  interactionConclusions: [],
+  learningEligibility: [],
+  profileDeltas: [],
   runtimes: [],
   accessTokens: [],
 };
@@ -73,6 +87,10 @@ const defaultSettings: Settings = {
   evidenceSharing: 'ask',
   rawConversationsStored: false,
 };
+
+function normalizeDashboard(value: unknown): DashboardData {
+  return { ...emptyData, ...(value as Partial<DashboardData>) };
+}
 const pages = [
   'dashboard',
   'conversations',
@@ -220,7 +238,7 @@ function App() {
   );
   const refreshDashboard = useCallback(async () => {
     if (preview) return;
-    setData((await remoteApi('/v0.1/dashboard')) as DashboardData);
+    setData(normalizeDashboard(await remoteApi('/v0.1/dashboard')));
   }, [preview]);
 
   useEffect(() => {
@@ -287,7 +305,7 @@ function App() {
     }
     Promise.all([remoteApi('/v0.1/dashboard'), remoteApi('/v0.1/settings')])
       .then(([dashboard, accountSettings]) => {
-        setData(dashboard as DashboardData);
+        setData(normalizeDashboard(dashboard));
         setSettings(accountSettings as Settings);
       })
       .catch((reason: unknown) =>
@@ -650,8 +668,11 @@ function Overview({
   const pendingInvitations = data.federatedInteractions.filter(
     (interaction) => interaction.status === 'pending',
   ).length;
+  const pendingFeedback = data.feedbackRequests.filter(
+    (request) => request.status === 'pending',
+  ).length;
   const pendingSetup = data.setupRequests.filter((request) => request.status === 'pending').length;
-  const reviewCount = warnings + pendingInvitations;
+  const reviewCount = warnings + pendingInvitations + pendingFeedback;
   return (
     <>
       <PageHead page="dashboard" action="Connect agent" onAction={() => navigate('connect')} />
@@ -703,7 +724,7 @@ function Overview({
         <Metric
           label="Needs review"
           value={reviewCount}
-          note="warnings or approvals"
+          note={`${pendingFeedback} feedback · ${pendingInvitations} invitations`}
           warn={reviewCount > 0}
         />
       </section>
@@ -718,11 +739,21 @@ function Overview({
           subtitle="Task-specific profiles, never a universal score"
         >
           {data.profiles.length ? (
-            data.profiles
-              .slice(0, 4)
-              .map((profile) => (
-                <Profile key={`${profile.agentId}-${profile.taskCategory}`} profile={profile} />
-              ))
+            data.profiles.slice(0, 4).map((profile) => {
+              const deltas = data.profileDeltas.filter(
+                (delta) =>
+                  delta.agentId === profile.agentId &&
+                  delta.agentVersion === profile.agentVersion &&
+                  delta.taskCategory === profile.taskCategory,
+              );
+              return (
+                <Profile
+                  key={`${profile.agentId}-${profile.agentVersion}-${profile.taskCategory}`}
+                  profile={profile}
+                  deltas={deltas}
+                />
+              );
+            })
           ) : (
             <Empty
               title="No reliability profile yet"
@@ -734,8 +765,6 @@ function Overview({
     </>
   );
 }
-
-type HistoryFilter = 'all' | 'interaction' | 'event' | 'receipt' | 'dispute';
 
 function Conversations({
   data,
@@ -903,119 +932,446 @@ function Conversations({
 
 function History({ data }: { data: DashboardData }) {
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<HistoryFilter>('all');
-  const records = useMemo(
-    () =>
-      [
-        ...data.interactions.map((value) => ({ ...value, _kind: 'interaction' })),
-        ...data.federatedInteractions.map((value) => ({
-          ...value,
-          _kind: 'federated interaction',
-        })),
-        ...data.events.map((value) => ({ ...value, _kind: 'event' })),
-        ...data.receipts.map((value) => ({ ...value, _kind: 'receipt' })),
-        ...data.conflicts.map((value) => ({ ...value, _kind: 'dispute' })),
-      ].sort((a, b) => Date.parse(timestamp(b)) - Date.parse(timestamp(a))),
-    [data],
-  );
+  const [status, setStatus] = useState<'all' | 'pending' | 'active' | 'completed'>('all');
+  const journeys = useMemo(() => interactionJourneys(data), [data]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return records.filter((item) => {
-      const kind = String(item._kind);
-      if (filter === 'interaction' && !kind.includes('interaction')) return false;
-      if (filter === 'event' && kind !== 'event') return false;
-      if (filter === 'receipt' && kind !== 'receipt') return false;
-      if (filter === 'dispute' && kind !== 'dispute') return false;
+    return journeys.filter((journey) => {
+      if (status !== 'all' && journey.status !== status) return false;
       if (!needle) return true;
-      const record = item as Record<string, any>;
       const hay = [
-        record.eventType,
-        record._kind,
-        record.agentId,
-        record.interactionId,
-        record.receiptId,
-        record.outcome,
-        record.status,
-        record.visibility,
-        record.contract?.purpose,
+        journey.interactionId,
+        journey.purpose,
+        journey.taskCategory,
+        journey.status,
+        ...journey.participants,
       ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
       return hay.includes(needle);
     });
-  }, [filter, query, records]);
-  const count = (value: HistoryFilter) =>
-    value === 'all'
-      ? records.length
-      : records.filter((item) =>
-          value === 'interaction'
-            ? String(item._kind).includes('interaction')
-            : item._kind === value,
-        ).length;
+  }, [journeys, query, status]);
+  const [selectedId, setSelectedId] = useState('');
+  const selected = filtered.find((journey) => journey.interactionId === selectedId) ?? filtered[0];
   return (
     <>
       <PageHead page="history" />
-      <Panel
-        title="Account history"
-        subtitle="Only structured metadata, signatures, hashes, and permitted evidence are hosted"
-      >
-        <div className="toolbar">
-          <input
-            className="searchField"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search agents, contracts, or statuses"
-            aria-label="Search history"
-          />
-          <div className="filterRow" role="tablist" aria-label="History filters">
-            {(
-              [
-                ['all', 'All'],
-                ['interaction', 'Interactions'],
-                ['event', 'Events'],
-                ['receipt', 'Receipts'],
-                ['dispute', 'Disputes'],
-              ] as const
-            ).map(([value, label]) => (
+      <div className="historyToolbar">
+        <input
+          className="searchField"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search purpose, category, or agent"
+          aria-label="Search interaction history"
+        />
+        <div className="filterRow" aria-label="Interaction status filters">
+          {(['all', 'pending', 'active', 'completed'] as const).map((value) => (
+            <button
+              key={value}
+              className={status === value ? 'filterChip active' : 'filterChip'}
+              type="button"
+              aria-pressed={status === value}
+              onClick={() => setStatus(value)}
+            >
+              {value}{' '}
+              {value === 'all'
+                ? journeys.length
+                : journeys.filter((item) => item.status === value).length}
+            </button>
+          ))}
+        </div>
+      </div>
+      {filtered.length ? (
+        <section className="journeyLayout">
+          <div className="journeyList" aria-label="Interactions">
+            {filtered.map((journey) => (
               <button
-                key={value}
-                className={filter === value ? 'filterChip active' : 'filterChip'}
+                key={journey.interactionId}
+                className={selected?.interactionId === journey.interactionId ? 'active' : ''}
                 type="button"
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
+                onClick={() => {
+                  setSelectedId(journey.interactionId);
+                  if (matchMedia('(max-width: 980px)').matches)
+                    requestAnimationFrame(() =>
+                      document
+                        .querySelector('.journeyDetail')
+                        ?.scrollIntoView({ behavior: 'smooth' }),
+                    );
+                }}
               >
-                {label} {count(value)}
+                <span className="journeyListTop">
+                  <b>{journey.taskCategory}</b>
+                  <StatusPill value={journey.status} />
+                </span>
+                <strong>{journey.purpose}</strong>
+                <small>{journey.participants.join(' ↔ ') || 'Participants unavailable'}</small>
+                <span className="journeyListMeta">
+                  {relativeTime(journey.updatedAt)}
+                  <i>{journey.stepCount} recorded steps</i>
+                </span>
               </button>
             ))}
           </div>
-        </div>
-        {filtered.length ? (
-          filtered.map((item, index) => (
-            <HistoryRow
-              key={`${String(item._kind)}-${String(
-                (item as Record<string, any>).eventId ??
-                  (item as Record<string, any>).receiptId ??
-                  (item as Record<string, any>).conflictId ??
-                  (item as Record<string, any>).interactionId ??
-                  index,
-              )}`}
-              item={item}
-            />
-          ))
-        ) : (
+          {selected ? <InteractionJourney journey={selected} /> : null}
+        </section>
+      ) : (
+        <section className="panel">
           <Empty
-            title={records.length ? 'No matching records' : 'No interactions recorded'}
+            title={journeys.length ? 'No matching interactions' : 'No interactions recorded'}
             text={
-              records.length
-                ? 'Try another filter or clear the search.'
-                : 'Connect an agent and start an assured interaction. Raw message bodies will not appear here.'
+              journeys.length
+                ? 'Clear the search or choose another status.'
+                : 'Completed contracts, outcomes, feedback, and learning will appear as one readable journey.'
             }
           />
-        )}
-      </Panel>
+        </section>
+      )}
     </>
   );
+}
+
+type InteractionJourneyModel = {
+  interactionId: string;
+  purpose: string;
+  taskCategory: string;
+  status: string;
+  participants: string[];
+  updatedAt: string;
+  stepCount: number;
+  interaction: Record<string, any>;
+  session?: Record<string, any>;
+  events: Record<string, any>[];
+  briefs: Record<string, any>[];
+  reports: Record<string, any>[];
+  feedbackRequests: Record<string, any>[];
+  feedback: Record<string, any>[];
+  conclusion?: Record<string, any>;
+  receipt?: Record<string, any>;
+  eligibility?: Record<string, any>;
+  deltas: Record<string, any>[];
+  conflicts: Record<string, any>[];
+};
+
+function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
+  const ids = new Set<string>();
+  const collections = [
+    data.interactions,
+    data.federatedInteractions,
+    data.liveSessions,
+    data.events,
+    data.counterpartyBriefs,
+    data.completionReports,
+    data.feedbackRequests,
+    data.interactionFeedback,
+    data.interactionConclusions,
+    data.receipts,
+    data.learningEligibility,
+    data.profileDeltas,
+    data.conflicts,
+  ];
+  for (const collection of collections)
+    for (const item of collection) if (item.interactionId) ids.add(String(item.interactionId));
+  return [...ids]
+    .map((interactionId) => {
+      const interaction = data.federatedInteractions.find(
+        (item) => item.interactionId === interactionId,
+      ) ??
+        data.interactions.find((item) => item.interactionId === interactionId) ?? { interactionId };
+      const session = data.liveSessions.find((item) => item.interactionId === interactionId);
+      const events = data.events.filter((item) => item.interactionId === interactionId);
+      const briefs = data.counterpartyBriefs.filter((item) => item.interactionId === interactionId);
+      const reports = data.completionReports.filter((item) => item.interactionId === interactionId);
+      const feedbackRequests = data.feedbackRequests.filter(
+        (item) => item.interactionId === interactionId,
+      );
+      const feedback = data.interactionFeedback.filter(
+        (item) => item.interactionId === interactionId,
+      );
+      const conclusion = data.interactionConclusions.find(
+        (item) => item.interactionId === interactionId,
+      );
+      const receipt = data.receipts.find((item) => item.interactionId === interactionId);
+      const eligibility = data.learningEligibility.find(
+        (item) => item.interactionId === interactionId,
+      );
+      const deltas = data.profileDeltas.filter((item) => item.interactionId === interactionId);
+      const conflicts = data.conflicts.filter((item) => item.interactionId === interactionId);
+      const participants = [
+        interaction.initiatorAgentId,
+        interaction.responderAgentId,
+        interaction.agentId,
+        ...reports.flatMap((report) => [report.reportingAgentId, report.counterpartyAgentId]),
+      ]
+        .filter((value): value is string => typeof value === 'string' && Boolean(value))
+        .filter((value, index, values) => values.indexOf(value) === index);
+      const dates = [
+        interaction.updatedAt,
+        interaction.createdAt,
+        session?.completedAt,
+        session?.activatedAt,
+        ...events.map(timestamp),
+        ...reports.map(timestamp),
+        ...feedback.map(timestamp),
+        conclusion?.generatedAt,
+        receipt?.completedAt,
+        eligibility?.decidedAt,
+      ].filter((value): value is string => typeof value === 'string');
+      return {
+        interactionId,
+        purpose: String(
+          interaction.contract?.purpose ??
+            interaction.contract?.requestedOutcome ??
+            conclusion?.summary ??
+            'Assured agent interaction',
+        ),
+        taskCategory: String(interaction.contract?.taskCategory ?? 'general'),
+        status: String(
+          conclusion || receipt
+            ? 'completed'
+            : (session?.status ?? interaction.status ?? 'pending'),
+        ),
+        participants,
+        updatedAt:
+          dates.sort((left, right) => Date.parse(right) - Date.parse(left))[0] ??
+          new Date(0).toISOString(),
+        stepCount:
+          1 +
+          events.length +
+          briefs.length +
+          reports.length +
+          feedbackRequests.length +
+          feedback.length +
+          conflicts.length +
+          Number(Boolean(conclusion)) +
+          Number(Boolean(receipt)) +
+          Number(Boolean(eligibility)) +
+          deltas.length,
+        interaction,
+        ...(session ? { session } : {}),
+        events,
+        briefs,
+        reports,
+        feedbackRequests,
+        feedback,
+        ...(conclusion ? { conclusion } : {}),
+        ...(receipt ? { receipt } : {}),
+        ...(eligibility ? { eligibility } : {}),
+        deltas,
+        conflicts,
+      };
+    })
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+}
+
+function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
+  const timeline = interactionTimeline(journey);
+  const conclusion = journey.conclusion;
+  return (
+    <article className="journeyDetail">
+      <header className="journeyHero">
+        <div>
+          <span className="eyebrow">{journey.taskCategory}</span>
+          <h2>{journey.purpose}</h2>
+          <p>{journey.participants.join(' ↔ ')}</p>
+        </div>
+        <StatusPill value={conclusion?.outcome ?? journey.status} />
+      </header>
+
+      <div className="journeySummaryGrid">
+        <section>
+          <span>Outcome</span>
+          <strong>{humanize(conclusion?.outcome ?? 'In progress')}</strong>
+          <small>{humanize(conclusion?.consensus ?? 'Awaiting bilateral conclusion')}</small>
+        </section>
+        <section>
+          <span>Feedback</span>
+          <strong>{conclusion ? 'Closed' : `${journey.feedback.length} submitted locally`}</strong>
+          <small>{feedbackState(journey.feedbackRequests)}</small>
+        </section>
+        <section>
+          <span>Learning</span>
+          <strong>
+            {journey.eligibility
+              ? journey.eligibility.eligible
+                ? `${Math.round(Number(journey.eligibility.sampleWeight ?? 0) * 100)}% weight`
+                : 'Not eligible'
+              : 'Not assessed'}
+          </strong>
+          <small>{humanize(journey.eligibility?.contributionMode ?? 'Local only')}</small>
+        </section>
+      </div>
+
+      {conclusion ? (
+        <section className="outcomeCard">
+          <div>
+            <span className="eyebrow">WHAT HAPPENED</span>
+            <h3>{conclusion.summary}</h3>
+          </div>
+          {!!conclusion.criteria?.length && (
+            <ul>
+              {conclusion.criteria.map((criterion: Record<string, any>) => (
+                <li key={criterion.criterion}>
+                  <StatusPill value={String(criterion.status)} />
+                  <span>{criterion.criterion}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!!Object.keys(conclusion.averageRatings ?? {}).length && (
+            <div className="ratingGrid">
+              {Object.entries(conclusion.averageRatings).map(([label, value]) => (
+                <Meter key={label} label={humanize(label)} value={Number(value)} />
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <div className="journeyNotice">
+          No conclusion yet. It appears after terminal reports and bilateral feedback or timeout.
+        </div>
+      )}
+
+      <section className="journeyTimelineSection">
+        <div>
+          <h3>Interaction timeline</h3>
+          <small>Contract → session → outcome → feedback → learning</small>
+        </div>
+        <ol className="journeyTimeline">
+          {timeline.map((step, index) => (
+            <li key={`${step.at}-${step.title}-${index}`}>
+              <span className={`journeyNode ${step.tone}`} />
+              <div>
+                <span>{formatDate(step.at)}</span>
+                <strong>{step.title}</strong>
+                <p>{step.detail}</p>
+              </div>
+              <StatusPill value={step.status} />
+            </li>
+          ))}
+        </ol>
+      </section>
+    </article>
+  );
+}
+
+function interactionTimeline(journey: InteractionJourneyModel) {
+  const steps: { at: string; title: string; detail: string; status: string; tone: string }[] = [
+    {
+      at: String(journey.interaction.createdAt ?? journey.updatedAt),
+      title: 'Contract proposed',
+      detail: `${journey.participants.length || 2} participants · ${journey.taskCategory}`,
+      status: String(journey.interaction.status ?? 'recorded'),
+      tone: 'neutral',
+    },
+    ...journey.briefs.map((brief) => ({
+      at: String(brief.generatedAt ?? journey.updatedAt),
+      title: `Private counterparty brief for ${brief.recipientAgentId}`,
+      detail: `${brief.relevantSampleSize ?? 0} relevant samples · ${Math.round(Number(brief.historyConfidence ?? 0) * 100)}% history confidence`,
+      status: String(brief.decision ?? 'ready'),
+      tone: brief.decision === 'DENY' ? 'danger' : brief.decision === 'CHALLENGE' ? 'warn' : 'good',
+    })),
+    ...Object.values(journey.interaction.acceptances ?? {}).map((acceptance: any) => ({
+      at: String(acceptance.acceptedAt ?? journey.interaction.updatedAt ?? journey.updatedAt),
+      title: `Contract accepted by ${acceptance.agentId}`,
+      detail: `Acceptance method: ${humanize(acceptance.method ?? 'recorded')}`,
+      status: 'accepted',
+      tone: 'good',
+    })),
+    ...(journey.session?.activatedAt
+      ? [
+          {
+            at: String(journey.session.activatedAt),
+            title: 'A2A session activated',
+            detail:
+              'Scoped credentials were issued. Persistent runtimes exchange content directly; temporary mode uses the hosted adapter.',
+            status: 'active',
+            tone: 'good',
+          },
+        ]
+      : []),
+    ...journey.events.map((event) => ({
+      at: timestamp(event),
+      title: humanize(event.eventType ?? 'Structured event'),
+      detail: String(event.agentId ?? 'OpenClasp') + ' submitted structured metadata.',
+      status: String(event.visibility ?? 'recorded'),
+      tone: String(event.eventType).includes('violation')
+        ? 'danger'
+        : String(event.eventType).includes('warning')
+          ? 'warn'
+          : 'neutral',
+    })),
+    ...journey.reports.map((report) => ({
+      at: timestamp(report),
+      title: `Completion reported by ${report.reportingAgentId}`,
+      detail: String(report.summary ?? 'Structured completion report submitted.'),
+      status: String(report.outcome ?? 'reported'),
+      tone:
+        report.outcome === 'failure' ? 'danger' : report.outcome === 'partial' ? 'warn' : 'good',
+    })),
+    ...journey.feedback.map((item) => ({
+      at: timestamp(item),
+      title: `Feedback submitted by ${item.reviewerAgentId}`,
+      detail: `Would work again: ${humanize(item.wouldWorkAgain ?? 'unsure')} · private comment concealed`,
+      status: 'sealed',
+      tone: 'neutral',
+    })),
+    ...journey.feedbackRequests
+      .filter((request) => request.status !== 'submitted')
+      .map((request) => ({
+        at: String(request.requestedAt ?? journey.updatedAt),
+        title: `Feedback request ${humanize(request.status)}`,
+        detail:
+          request.status === 'pending'
+            ? `Response due ${formatDate(String(request.dueAt))}`
+            : 'The bilateral conclusion continued without this response.',
+        status: String(request.status),
+        tone: request.status === 'pending' ? 'warn' : 'neutral',
+      })),
+    ...journey.conflicts.map((conflict) => ({
+      at: timestamp(conflict),
+      title: 'Dispute recorded',
+      detail: String(conflict.summary ?? 'The interaction has a structured dispute record.'),
+      status: String(conflict.status ?? 'open'),
+      tone: conflict.status === 'resolved' ? 'good' : 'danger',
+    })),
+    ...(journey.conclusion
+      ? [
+          {
+            at: String(journey.conclusion.generatedAt),
+            title: 'Bilateral conclusion released',
+            detail: String(journey.conclusion.summary),
+            status: String(journey.conclusion.consensus),
+            tone: journey.conclusion.consensus === 'conflicting' ? 'warn' : 'good',
+          },
+        ]
+      : []),
+    ...(journey.receipt
+      ? [
+          {
+            at: timestamp(journey.receipt),
+            title: 'Outcome receipt attested',
+            detail: 'Contract result, commitment status, and evidence hashes were sealed.',
+            status: String(journey.receipt.outcome ?? 'signed'),
+            tone: journey.receipt.outcome === 'failure' ? 'danger' : 'good',
+          },
+        ]
+      : []),
+    ...(journey.eligibility
+      ? [
+          {
+            at: String(journey.eligibility.decidedAt),
+            title: journey.eligibility.eligible
+              ? 'Eligible history applied'
+              : 'History excluded from profile',
+            detail: `${Math.round(Number(journey.eligibility.sampleWeight ?? 0) * 100)}% sample weight · ${humanize(journey.eligibility.contributionMode)}`,
+            status: journey.eligibility.eligible ? 'attested' : 'excluded',
+            tone: journey.eligibility.eligible ? 'good' : 'warn',
+          },
+        ]
+      : []),
+  ];
+  return steps.sort((left, right) => Date.parse(left.at) - Date.parse(right.at));
 }
 
 function Agents({
@@ -1275,24 +1631,53 @@ function Invitations({
 }
 
 function Insights({ data }: { data: DashboardData }) {
+  const eligible = data.learningEligibility.filter((item) => item.eligible);
+  const pendingFeedback = data.feedbackRequests.filter((item) => item.status === 'pending');
   return (
     <>
       <PageHead page="insights" />
-      <div className="notice">
-        <strong>Context matters.</strong> OpenClasp profiles an agent by task category and version.
-        It does not produce a single universal trust score.
-      </div>
-      <section className="agentGrid">
+      <section className="insightPrinciple">
+        <div>
+          <span className="eyebrow">HOW TO READ THIS</span>
+          <h2>Reliability is contextual, not a leaderboard.</h2>
+          <p>
+            Every profile is tied to an agent version and task category. Scores reflect eligible
+            structured outcomes and decay as history gets older.
+          </p>
+        </div>
+        <div className="insightStats">
+          <span>
+            <strong>{data.profiles.length}</strong> contextual profiles
+          </span>
+          <span>
+            <strong>{eligible.length}</strong> eligible interactions
+          </span>
+          <span>
+            <strong>{pendingFeedback.length}</strong> feedback pending
+          </span>
+        </div>
+      </section>
+      <section className="insightGrid">
         {data.profiles.length ? (
-          data.profiles.map((profile) => (
-            <Panel
-              key={`${profile.agentId}-${profile.taskCategory}`}
-              title={profile.agentId}
-              subtitle={`${profile.taskCategory} · v${profile.agentVersion}`}
-            >
-              <Profile profile={profile} expanded />
-            </Panel>
-          ))
+          data.profiles.map((profile) => {
+            const deltas = data.profileDeltas
+              .filter(
+                (delta) =>
+                  delta.agentId === profile.agentId &&
+                  delta.agentVersion === profile.agentVersion &&
+                  delta.taskCategory === profile.taskCategory,
+              )
+              .sort((left, right) => Date.parse(timestamp(right)) - Date.parse(timestamp(left)));
+            return (
+              <Panel
+                key={`${profile.agentId}-${profile.agentVersion}-${profile.taskCategory}`}
+                title={profile.agentId}
+                subtitle={`${humanize(profile.taskCategory)} · version ${profile.agentVersion}`}
+              >
+                <Profile profile={profile} expanded deltas={deltas} showHeader={false} />
+              </Panel>
+            );
+          })
         ) : (
           <Empty
             title="Not enough verified evidence"
@@ -1300,6 +1685,32 @@ function Insights({ data }: { data: DashboardData }) {
           />
         )}
       </section>
+      {!!data.learningEligibility.length && (
+        <Panel
+          title="Recent learning decisions"
+          subtitle="Why an interaction did or did not affect contextual history"
+        >
+          <div className="learningDecisionList">
+            {data.learningEligibility
+              .slice()
+              .sort((left, right) => Date.parse(timestamp(right)) - Date.parse(timestamp(left)))
+              .slice(0, 8)
+              .map((decision) => (
+                <article key={decision.decisionId}>
+                  <StatusPill value={decision.eligible ? 'eligible' : 'excluded'} />
+                  <div>
+                    <strong>{decision.interactionId}</strong>
+                    <small>
+                      {Math.round(Number(decision.sampleWeight ?? 0) * 100)}% weight ·{' '}
+                      {humanize(decision.contributionMode)} · {relativeTime(timestamp(decision))}
+                    </small>
+                    <p>{decision.reasons?.[0] ?? 'No reason supplied.'}</p>
+                  </div>
+                </article>
+              ))}
+          </div>
+        </Panel>
+      )}
     </>
   );
 }
@@ -2271,40 +2682,93 @@ function AgentCard({
     </article>
   );
 }
-function Profile({ profile, expanded }: { profile: Record<string, any>; expanded?: boolean }) {
+function Profile({
+  profile,
+  expanded,
+  deltas = [],
+  showHeader = true,
+}: {
+  profile: Record<string, any>;
+  expanded?: boolean;
+  deltas?: Record<string, any>[];
+  showHeader?: boolean;
+}) {
   const dimensions = [
     ['Completion', profile.completion],
+    ['Acceptance', profile.acceptance],
+    ['Specification', profile.specification],
     ['Scope', profile.scope],
     ['Evidence', profile.evidence],
     ...(expanded
       ? [
           ['Communication', profile.communication],
           ['Deadline', profile.deadline],
+          ['Dispute-free', 1 - Number(profile.disputes ?? 0)],
         ]
       : []),
   ] as [string, number][];
+  const latestDelta = deltas[0];
   return (
     <article className="profile">
-      <div>
-        <strong>{profile.agentId}</strong>
-        <small>
-          {profile.taskCategory} · {profile.sampleSize} outcome(s)
-        </small>
+      <div className={showHeader ? 'profileHead' : 'profileHead profileHeadCompact'}>
+        {showHeader ? (
+          <div>
+            <strong>{profile.agentId}</strong>
+            <small>
+              {humanize(profile.taskCategory)} · version {profile.agentVersion ?? 'unknown'}
+            </small>
+          </div>
+        ) : (
+          <small>
+            Effective evidence{' '}
+            {Number(profile.effectiveSampleSize ?? profile.sampleSize ?? 0).toFixed(1)}
+            {profile.updatedAt ? ` · updated ${relativeTime(profile.updatedAt)}` : ''}
+          </small>
+        )}
+        <span className="sampleBadge">
+          {profile.sampleSize ?? 0} outcome{Number(profile.sampleSize) === 1 ? '' : 's'}
+        </span>
       </div>
+      {showHeader ? (
+        <div className="profileEvidenceLine">
+          <small>
+            Effective evidence{' '}
+            {Number(profile.effectiveSampleSize ?? profile.sampleSize ?? 0).toFixed(1)}
+            {profile.updatedAt ? ` · updated ${relativeTime(profile.updatedAt)}` : ''}
+          </small>
+        </div>
+      ) : null}
       {dimensions.map(([label, value]) => (
-        <Meter key={label} label={label} value={value ?? 0} />
+        <Meter key={label} label={label} value={Number(value ?? 0.5)} />
       ))}
+      {latestDelta ? (
+        <div className="profileDelta">
+          <span>Latest evidence impact</span>
+          <div>
+            {Object.entries(latestDelta.dimensionDeltas ?? {})
+              .filter(([, value]) => Math.abs(Number(value)) >= 0.001)
+              .slice(0, 5)
+              .map(([dimension, value]) => (
+                <b className={Number(value) >= 0 ? 'positive' : 'negative'} key={dimension}>
+                  {humanize(dimension)} {Number(value) >= 0 ? '+' : ''}
+                  {(Number(value) * 100).toFixed(1)}
+                </b>
+              ))}
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
 function Meter({ label, value }: { label: string; value: number }) {
+  const bounded = Math.max(0, Math.min(1, value));
   return (
     <div className="meter">
       <span>{label}</span>
       <i>
-        <b style={{ width: `${Math.round(value * 100)}%` }} />
+        <b style={{ width: `${Math.round(bounded * 100)}%` }} />
       </i>
-      <strong>{Math.round(value * 100)}%</strong>
+      <strong>{Math.round(bounded * 100)}%</strong>
     </div>
   );
 }
@@ -2480,6 +2944,69 @@ function GitHubMark() {
   );
 }
 
+function humanize(value: unknown) {
+  const text = String(value ?? '')
+    .replaceAll('_', ' ')
+    .trim();
+  return text ? text[0]!.toUpperCase() + text.slice(1) : 'Unknown';
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Time unavailable' : date.toLocaleString();
+}
+
+function relativeTime(value: string) {
+  const milliseconds = Date.now() - Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return 'Time unavailable';
+  const minutes = Math.round(Math.abs(milliseconds) / 60_000);
+  const future = milliseconds < 0;
+  const phrase =
+    minutes < 1
+      ? 'just now'
+      : minutes < 60
+        ? `${minutes}m`
+        : minutes < 1_440
+          ? `${Math.round(minutes / 60)}h`
+          : `${Math.round(minutes / 1_440)}d`;
+  return minutes < 1 ? phrase : future ? `in ${phrase}` : `${phrase} ago`;
+}
+
+function feedbackState(requests: Record<string, any>[]) {
+  if (!requests.length) return 'Starts after a completion report';
+  const pending = requests.filter((request) => request.status === 'pending').length;
+  if (pending) return `${pending} response${pending === 1 ? '' : 's'} still pending`;
+  const expired = requests.filter((request) => request.status === 'expired').length;
+  return expired
+    ? `${expired} request${expired === 1 ? '' : 's'} timed out`
+    : 'Bilateral feedback closed';
+}
+
+function StatusPill({ value }: { value: string }) {
+  const normalized = String(value).toLowerCase();
+  const tone = [
+    'success',
+    'active',
+    'ready',
+    'met',
+    'eligible',
+    'attested',
+    'allow',
+    'completed',
+  ].includes(normalized)
+    ? 'good'
+    : ['failure', 'denied', 'deny', 'missed', 'rejected', 'violation'].some((item) =>
+          normalized.includes(item),
+        )
+      ? 'danger'
+      : ['partial', 'pending', 'challenge', 'conflict', 'expired', 'excluded'].some((item) =>
+            normalized.includes(item),
+          )
+        ? 'warn'
+        : 'neutral';
+  return <span className={`statusPill ${tone}`}>{humanize(value)}</span>;
+}
+
 function initials(value: string) {
   return value
     .split(/\s+|@/)
@@ -2488,7 +3015,19 @@ function initials(value: string) {
     .join('');
 }
 function timestamp(item: Record<string, any>) {
-  return String(item.timestamp ?? item.completedAt ?? item.createdAt ?? new Date(0).toISOString());
+  return String(
+    item.timestamp ??
+      item.generatedAt ??
+      item.decidedAt ??
+      item.appliedAt ??
+      item.submittedAt ??
+      item.completedAt ??
+      item.activatedAt ??
+      item.updatedAt ??
+      item.requestedAt ??
+      item.createdAt ??
+      new Date(0).toISOString(),
+  );
 }
 
 if (!__AUTH0_DOMAIN__ || !__AUTH0_CLIENT_ID__ || !__AUTH0_AUDIENCE__)

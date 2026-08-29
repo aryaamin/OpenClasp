@@ -22,6 +22,13 @@ export type DashboardData = {
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
   profiles: Record<string, any>[];
+  counterpartyBriefs: Record<string, any>[];
+  completionReports: Record<string, any>[];
+  feedbackRequests: Record<string, any>[];
+  interactionFeedback: Record<string, any>[];
+  interactionConclusions: Record<string, any>[];
+  learningEligibility: Record<string, any>[];
+  profileDeltas: Record<string, any>[];
   runtimes: Record<string, any>[];
   accessTokens: Record<string, any>[];
 };
@@ -126,6 +133,10 @@ export function createPreviewData(): DashboardData {
         interactionId: 'ix_local_brief',
         agentId: 'agent_atlas',
         status: 'completed',
+        contract: {
+          purpose: 'Produce a source-backed research brief',
+          taskCategory: 'research',
+        },
         createdAt: ago(240),
         completedAt: ago(220),
       },
@@ -138,7 +149,10 @@ export function createPreviewData(): DashboardData {
         status: 'pending',
         termsHash: '7f3c91a0b2e84d11c6aa09f1d3e8b470',
         createdAt: ago(26),
-        contract: { purpose: 'Review a research brief for scope and sources' },
+        contract: {
+          purpose: 'Review a research brief for scope and sources',
+          taskCategory: 'research',
+        },
       },
       {
         interactionId: 'ix_shared_ops',
@@ -147,7 +161,10 @@ export function createPreviewData(): DashboardData {
         status: 'active',
         termsHash: '12ab44c0e91f77d0aa3310bc44ee9012',
         createdAt: ago(90),
-        contract: { purpose: 'Share a sanitized incident timeline' },
+        contract: {
+          purpose: 'Share a sanitized incident timeline',
+          taskCategory: 'coordination',
+        },
         acceptances: {
           agent_peer_keel: { method: 'policy_auto_accept' },
         },
@@ -216,28 +233,142 @@ export function createPreviewData(): DashboardData {
         completedAt: ago(220),
       },
     ],
+    counterpartyBriefs: [
+      {
+        briefId: 'brief_1',
+        interactionId: 'ix_local_brief',
+        recipientAgentId: 'agent_atlas',
+        subjectAgentId: 'agent_peer_nova',
+        decision: 'CHALLENGE',
+        relevantSampleSize: 3,
+        historyConfidence: 0.38,
+        requirements: [
+          { requirement: 'Provide source evidence', status: 'partial', confidence: 0.7 },
+        ],
+        generatedAt: ago(241),
+      },
+    ],
+    completionReports: [
+      {
+        reportId: 'report_1',
+        interactionId: 'ix_local_brief',
+        reportingAgentId: 'agent_atlas',
+        counterpartyAgentId: 'agent_peer_nova',
+        outcome: 'success',
+        summary: 'Research brief delivered with sources and scope notes.',
+        criteria: [{ criterion: 'Brief delivered', status: 'met' }],
+        completedAt: ago(222),
+      },
+      {
+        reportId: 'report_2',
+        interactionId: 'ix_local_brief',
+        reportingAgentId: 'agent_peer_nova',
+        counterpartyAgentId: 'agent_atlas',
+        outcome: 'success',
+        summary: 'Received and accepted the requested brief.',
+        criteria: [{ criterion: 'Brief delivered', status: 'met' }],
+        completedAt: ago(221),
+      },
+    ],
+    feedbackRequests: [
+      {
+        requestId: 'feedback_request_1',
+        interactionId: 'ix_local_brief',
+        reviewerAgentId: 'agent_atlas',
+        subjectAgentId: 'agent_peer_nova',
+        status: 'submitted',
+        requestedAt: ago(221),
+        dueAt: ago(197),
+      },
+      {
+        requestId: 'feedback_request_2',
+        interactionId: 'ix_local_brief',
+        reviewerAgentId: 'agent_peer_nova',
+        subjectAgentId: 'agent_atlas',
+        status: 'submitted',
+        requestedAt: ago(221),
+        dueAt: ago(197),
+      },
+    ],
+    interactionFeedback: [
+      {
+        feedbackId: 'feedback_1',
+        interactionId: 'ix_local_brief',
+        reviewerAgentId: 'agent_atlas',
+        subjectAgentId: 'agent_peer_nova',
+        ratings: { outcome_satisfaction: 0.9, communication: 0.8, reliability: 0.9 },
+        wouldWorkAgain: 'yes',
+        submittedAt: ago(219),
+      },
+    ],
+    interactionConclusions: [
+      {
+        conclusionId: 'conclusion_1',
+        interactionId: 'ix_local_brief',
+        outcome: 'success',
+        consensus: 'bilateral_agreement',
+        summary: 'Both agents reported successful delivery and acceptance.',
+        criteria: [{ criterion: 'Brief delivered', status: 'met' }],
+        averageRatings: { outcome_satisfaction: 0.88, communication: 0.82, reliability: 0.9 },
+        generatedAt: ago(218),
+      },
+    ],
+    learningEligibility: [
+      {
+        decisionId: 'eligibility_1',
+        interactionId: 'ix_local_brief',
+        eligible: true,
+        sampleWeight: 0.87,
+        contributionMode: 'local_only',
+        structuredDataOnly: true,
+        reasons: ['Bilateral reports provide outcome corroboration'],
+        decidedAt: ago(218),
+      },
+    ],
+    profileDeltas: [
+      {
+        deltaId: 'delta_1',
+        interactionId: 'ix_local_brief',
+        agentId: 'agent_atlas',
+        agentVersion: '1.4.2',
+        taskCategory: 'research',
+        sampleWeight: 0.87,
+        dimensionDeltas: { completion: 0.02, evidence: 0.03, communication: -0.01 },
+        appliedAt: ago(218),
+      },
+    ],
     profiles: [
       {
         agentId: 'agent_atlas',
         taskCategory: 'research',
         agentVersion: '1.4.2',
         sampleSize: 14,
+        effectiveSampleSize: 10.8,
+        updatedAt: ago(218),
         completion: 0.92,
+        acceptance: 0.87,
+        specification: 0.86,
         scope: 0.84,
         evidence: 0.88,
         communication: 0.79,
         deadline: 0.9,
+        disputes: 0.08,
       },
       {
         agentId: 'agent_harbor',
         taskCategory: 'ops',
         agentVersion: '2.1.0',
         sampleSize: 6,
+        effectiveSampleSize: 4.1,
+        updatedAt: ago(3 * 24 * 60),
         completion: 0.71,
+        acceptance: 0.68,
+        specification: 0.63,
         scope: 0.66,
         evidence: 0.58,
         communication: 0.74,
         deadline: 0.62,
+        disputes: 0.22,
       },
     ],
     runtimes: [

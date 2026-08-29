@@ -78,8 +78,10 @@ Publishing it to Botpress Hub is a separate provider release step.
 
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
-inspect task-specific behavioural profiles, continue hosted temporary threads, copy the MCP connection URL, and control retention,
-evidence sharing, and network-contribution consent. Hosted account records are isolated by the
+follow each interaction from contract through session, outcome, feedback, and learning, inspect
+task/version-specific profile charts and evidence deltas, continue hosted temporary threads, copy
+the MCP connection URL, and control retention, evidence sharing, and network-contribution consent.
+Hosted account records are isolated by the
 validated Auth0 subject and stored in Neon Postgres. Direct A2A messages never enter hosted storage;
 temporary-chat messages use explicit hosted mode and encrypted-at-rest storage.
 
