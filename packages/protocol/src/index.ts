@@ -323,6 +323,7 @@ export const LiveSessionActivationSchema = z.object({
   reporting: z.object({
     endpoint: z.string().url(),
     completionEndpoint: z.string().url().optional(),
+    feedbackEndpoint: z.string().url().optional(),
     bearerToken: z.string().min(1),
   }),
   privateInsights: z.array(LiveSessionInsightSchema).optional(),
@@ -439,6 +440,7 @@ export const FeedbackRequestSchema = z
     requestedDimensions: z.array(FeedbackDimensionSchema).min(1),
     requestedAt: z.string().datetime(),
     dueAt: z.string().datetime(),
+    platformAttestation: RecordAttestationSchema.optional(),
   })
   .strict()
   .refine((request) => request.reviewerAgentId !== request.subjectAgentId, {
@@ -466,6 +468,10 @@ export const InteractionFeedbackSchema = z
     confidence: z.number().min(0).max(1),
     submittedAt: z.string().datetime(),
     signature: SignatureSchema.optional(),
+    submissionMethod: z
+      .enum(['agent_signature', 'oauth_installation', 'agent_access_token', 'runtime_session'])
+      .optional(),
+    platformAttestation: RecordAttestationSchema.optional(),
   })
   .strict()
   .refine((feedback) => feedback.reviewerAgentId !== feedback.subjectAgentId, {
@@ -497,6 +503,7 @@ export const InteractionConclusionSchema = z
     averageRatings: z.partialRecord(FeedbackDimensionSchema, z.number().min(0).max(1)).default({}),
     evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
     generatedAt: z.string().datetime(),
+    platformAttestation: RecordAttestationSchema.optional(),
   })
   .strict();
 
@@ -621,6 +628,9 @@ export const ReceiptSchema = z.object({
   delegationChainHash: z.string(),
   unilateral: z.boolean(),
   signatures: z.record(z.string(), SignatureSchema).default({}),
+  completionReportIds: z.array(z.string().uuid()).max(2).optional(),
+  conclusionId: z.string().uuid().optional(),
+  platformAttestation: RecordAttestationSchema.optional(),
 });
 
 export const RiskDecisionSchema = z.object({

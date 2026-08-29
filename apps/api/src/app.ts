@@ -12,6 +12,7 @@ import {
   FederatedInteractionSchema,
   LiveSessionEventSchema,
   InteractionCompletionReportSchema,
+  InteractionFeedbackSchema,
 } from '../../../packages/protocol/src/index.js';
 import {
   FixtureFactCheckProvider,
@@ -51,6 +52,9 @@ type DashboardRepository = Pick<
       | 'getCounterpartyBrief'
       | 'submitCompletionReport'
       | 'recordSessionCompletionReport'
+      | 'submitInteractionFeedback'
+      | 'recordSessionFeedback'
+      | 'listFeedbackRequests'
       | 'recordLiveSessionEvent'
       | 'touchAgentPresence'
       | 'getRuntimeVerificationKey'
@@ -194,6 +198,19 @@ export function buildApi(
       if (report.interactionId !== (request.params as { id: string }).id)
         throw new Error('Interaction path does not match the completion report');
       return repository.recordSessionCompletionReport(authorization.slice(7), report);
+    });
+    router.post('/sessions/:id/feedback', async (request, reply) => {
+      if (!repository?.recordSessionFeedback)
+        throw new Error('Live-session feedback is not configured');
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith('Bearer ')) {
+        reply.status(401);
+        return { error: 'session_credential_required' };
+      }
+      const feedback = InteractionFeedbackSchema.parse(request.body);
+      if (feedback.interactionId !== (request.params as { id: string }).id)
+        throw new Error('Interaction path does not match the feedback');
+      return repository.recordSessionFeedback(authorization.slice(7), feedback);
     });
     router.post('/a2a/temporary/:id', async (request, reply) => {
       if (!repository?.receiveTemporaryMessage)
@@ -658,6 +675,30 @@ export function buildApi(
           ? 'agent_access_token'
           : 'oauth_installation',
       );
+    });
+    router.post('/v0.1/federated-interactions/:id/feedback', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.submitInteractionFeedback || !owner)
+        throw new Error('Interaction feedback is not configured');
+      const feedback = InteractionFeedbackSchema.parse(request.body);
+      if (feedback.interactionId !== (request.params as { id: string }).id)
+        throw new Error('Interaction path does not match the feedback');
+      return repository.submitInteractionFeedback(
+        owner,
+        boundAgentId(request),
+        feedback,
+        request.headers['x-openclasp-credential-type'] === 'agent_access_token'
+          ? 'agent_access_token'
+          : 'oauth_installation',
+      );
+    });
+    router.get('/v0.1/feedback-requests', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listFeedbackRequests || !owner)
+        throw new Error('Interaction feedback is not configured');
+      const value = z.object({ agentId: z.string().min(1) }).parse(request.query);
+      enforceBoundAgent(request, value.agentId);
+      return repository.listFeedbackRequests(owner, value.agentId);
     });
     router.post('/v0.1/federated-interactions', async (request) => {
       const owner = operatorId(request);

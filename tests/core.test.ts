@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCounterpartyBrief,
+  buildInteractionConclusion,
   createIdentity,
   FixtureFactCheckProvider,
   TrustEngine,
 } from '@openclasp/core';
 import {
   canonicalHash,
+  InteractionCompletionReportSchema,
+  InteractionFeedbackSchema,
   PublicAgentCardSchema,
   signNamed,
   type InteractionContract,
@@ -225,5 +228,75 @@ describe('general assurance behavior', () => {
       ]),
     );
     expect(brief.insights[0]?.requirementReferences.length).toBeGreaterThan(0);
+  });
+
+  it('releases an aggregate conclusion without private feedback comments', () => {
+    const interactionId = crypto.randomUUID();
+    const contract: InteractionContract = {
+      protocolVersion: '0.1',
+      interactionId,
+      purpose: 'Coordinate a task',
+      parties: ['agent:a', 'agent:b'],
+      taskCategory: 'coordination',
+      requestedOutcome: 'Deliver a plan',
+      successCriteria: ['Plan delivered'],
+      allowedActions: [],
+      prohibitedActions: [],
+      allowedData: [],
+      prohibitedData: [],
+      evidenceRequirements: [],
+      delegationRules: [],
+      humanApprovalRequirements: [],
+      factCheckingPolicy: 'important_claims',
+      mediationPolicy: 'mutual_consent',
+      retentionDays: 30,
+      completionConditions: ['Plan delivered'],
+      cancellationConditions: [],
+      signatures: {},
+    };
+    const report = (agentId: string, counterpartyAgentId: string, outcome: 'success' | 'partial') =>
+      InteractionCompletionReportSchema.parse({
+        reportId: crypto.randomUUID(),
+        interactionId,
+        contractHash: canonicalHash(contract),
+        reportingAgentId: agentId,
+        counterpartyAgentId,
+        agentVersion: '1.0.0',
+        outcome,
+        summary: 'Structured summary',
+        requestedOutcome: contract.requestedOutcome,
+        criteria: [
+          {
+            criterion: 'Plan delivered',
+            status: outcome === 'success' ? 'met' : 'partially_met',
+          },
+        ],
+        completedAt: '2026-08-29T00:10:00.000Z',
+        confidence: 0.9,
+      });
+    const feedback = (reviewerAgentId: string, subjectAgentId: string, rating: number) =>
+      InteractionFeedbackSchema.parse({
+        feedbackId: crypto.randomUUID(),
+        requestId: crypto.randomUUID(),
+        interactionId,
+        reviewerAgentId,
+        subjectAgentId,
+        reviewerAgentVersion: '1.0.0',
+        ratings: { reliability: rating },
+        wouldWorkAgain: 'yes',
+        privateComment: `private note from ${reviewerAgentId}`,
+        confidence: 0.9,
+        submittedAt: '2026-08-29T00:11:00.000Z',
+      });
+    const conclusion = buildInteractionConclusion({
+      interaction: { interactionId, termsHash: canonicalHash(contract), contract },
+      reports: [report('agent:a', 'agent:b', 'success'), report('agent:b', 'agent:a', 'partial')],
+      feedback: [feedback('agent:a', 'agent:b', 0.8), feedback('agent:b', 'agent:a', 0.6)],
+      conclusionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      generatedAt: '2026-08-29T00:12:00.000Z',
+    });
+    expect(conclusion.consensus).toBe('bilateral_partial_agreement');
+    expect(conclusion.averageRatings.reliability).toBeCloseTo(0.7);
+    expect(JSON.stringify(conclusion)).not.toContain('private note');
   });
 });

@@ -8,6 +8,7 @@ import {
   FeedbackSchema,
   InteractionContractSchema,
   InteractionCompletionReportSchema,
+  InteractionFeedbackSchema,
   InteractionEventSchema,
   LiveSessionEventSchema,
   ReceiptSchema,
@@ -64,6 +65,8 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_mark_read',
   'openclasp_close_thread',
   'openclasp_submit_completion_report',
+  'openclasp_list_feedback_requests',
+  'openclasp_submit_interaction_feedback',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -86,7 +89,7 @@ const text = (value: unknown) => ({
 });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Call openclasp_connection_status and openclasp_heartbeat. Persistent runtimes use direct A2A. Temporary chat agents use openclasp_list_threads, openclasp_get_thread, openclasp_send_message, and openclasp_reply; their text is encrypted at rest in OpenClasp. Report structured outcomes with openclasp_record_session_event.';
+  'Call openclasp_connection_status and openclasp_heartbeat. Persistent runtimes use direct A2A. Temporary agents use openclasp_list_threads, openclasp_get_thread, openclasp_send_message, and openclasp_reply. At a terminal outcome, call openclasp_submit_completion_report, then openclasp_submit_interaction_feedback for your pending request. Submit evidence-backed structured facts only; never upload transcripts or invent peer feedback.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -153,6 +156,13 @@ type AgentDirectory = {
     operatorId: string,
     agentId: string,
     report: z.infer<typeof InteractionCompletionReportSchema>,
+    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+  ): Promise<unknown>;
+  listFeedbackRequests?(operatorId: string, agentId: string): Promise<unknown[]>;
+  submitInteractionFeedback?(
+    operatorId: string,
+    agentId: string,
+    feedback: z.infer<typeof InteractionFeedbackSchema>,
     submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ): Promise<unknown>;
   touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
@@ -1236,6 +1246,101 @@ export function registerOpenClaspTools(
           connection.operatorId,
           binding.agent.agentId,
           report,
+          connection.credentialType === 'agent_access_token'
+            ? 'agent_access_token'
+            : 'oauth_installation',
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[39],
+    {
+      title: 'List feedback requests',
+      description:
+        'List this agent’s pending and completed bilateral feedback requests. Peer feedback remains concealed until both respond or the timeout expires.',
+      inputSchema: z.object({}),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (_input, context) => {
+      if (!agentDirectory?.listFeedbackRequests)
+        throw new Error('Interaction feedback is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.listFeedbackRequests(connection.operatorId, binding.agent.agentId),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[40],
+    {
+      title: 'Submit bilateral interaction feedback',
+      description:
+        'Rate the counterparty after an interaction. The private comment is never included in the shared aggregate conclusion.',
+      inputSchema: z
+        .object({
+          requestId: z.string().uuid(),
+          interactionId: z.string().uuid(),
+          ratings: z
+            .object({
+              overall_satisfaction: z.number().min(0).max(1),
+              outcome_satisfaction: z.number().min(0).max(1),
+              communication: z.number().min(0).max(1),
+              timeliness: z.number().min(0).max(1),
+              scope_adherence: z.number().min(0).max(1),
+              evidence_quality: z.number().min(0).max(1),
+              correction_handling: z.number().min(0).max(1),
+              reliability: z.number().min(0).max(1),
+            })
+            .strict(),
+          wouldWorkAgain: z.enum(['yes', 'no', 'unsure']),
+          reasonCodes: z.array(z.string().min(1).max(128)).max(32).default([]),
+          privateComment: z.string().max(1000).optional(),
+          evidenceReferences: z.array(z.string().min(1).max(2048)).max(50).default([]),
+          confidence: z.number().min(0).max(1),
+        })
+        .strict(),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.submitInteractionFeedback)
+        throw new Error('Interaction feedback is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const interaction = await agentDirectory.getFederatedInteraction(
+        connection.operatorId,
+        input.interactionId,
+      );
+      if (!interaction) throw new Error('Interaction not found');
+      const subjectAgentId =
+        interaction.initiatorAgentId === binding.agent.agentId
+          ? interaction.responderAgentId
+          : interaction.initiatorAgentId;
+      if (!interaction.contract.parties.includes(binding.agent.agentId))
+        throw new Error('Bound agent is not an interaction participant');
+      const feedback = InteractionFeedbackSchema.parse({
+        feedbackId: crypto.randomUUID(),
+        requestId: input.requestId,
+        interactionId: input.interactionId,
+        reviewerAgentId: binding.agent.agentId,
+        subjectAgentId,
+        reviewerAgentVersion: binding.agent.agentVersion,
+        ratings: input.ratings,
+        wouldWorkAgain: input.wouldWorkAgain,
+        reasonCodes: input.reasonCodes,
+        ...(input.privateComment ? { privateComment: input.privateComment } : {}),
+        evidenceReferences: input.evidenceReferences,
+        confidence: input.confidence,
+        submittedAt: new Date().toISOString(),
+      });
+      return text(
+        await agentDirectory.submitInteractionFeedback(
+          connection.operatorId,
+          binding.agent.agentId,
+          feedback,
           connection.credentialType === 'agent_access_token'
             ? 'agent_access_token'
             : 'oauth_installation',

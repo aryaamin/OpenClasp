@@ -4,14 +4,24 @@
   "outputDirectory": "apps/dashboard/dist",
   "functions": {
     "api/index.ts": { "maxDuration": 60 },
-    "api/mcp.ts": { "maxDuration": 60 }
+    "api/mcp.ts": { "maxDuration": 60 },
+    "api/cron-feedback.ts": { "maxDuration": 60 }
   },
+  "crons": [{ "path": "/api/cron-feedback", "schedule": "0 0 * * *" }],
   "rewrites": [
     { "source": "/health", "destination": "/api/index?path=/health" },
     { "source": "/ready", "destination": "/api/index?path=/ready" },
     { "source": "/openapi.json", "destination": "/api/index?path=/openapi.json" },
     { "source": "/extensions/trust/v0.1", "destination": "/api/index?path=/extensions/trust/v0.1" },
     { "source": "/sessions/:id/events", "destination": "/api/index?path=/sessions/:id/events" },
+    {
+      "source": "/sessions/:id/completion-reports",
+      "destination": "/api/index?path=/sessions/:id/completion-reports"
+    },
+    {
+      "source": "/sessions/:id/feedback",
+      "destination": "/api/index?path=/sessions/:id/feedback"
+    },
     {
       "source": "/a2a/temporary/:id",
       "destination": "/api/index?path=/a2a/temporary/:id"

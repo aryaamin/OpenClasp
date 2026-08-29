@@ -1,11 +1,13 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
-import { randomBytes } from 'node:crypto';
-import { buildCounterpartyBrief } from '../../core/src/index.js';
+import { createHash, randomBytes } from 'node:crypto';
+import { buildCounterpartyBrief, buildInteractionConclusion } from '../../core/src/index.js';
 import {
   AgentIdentitySchema,
   DEFAULT_EXTENSION_URI,
   CounterpartyBriefSchema,
   FederatedInteractionSchema,
+  FeedbackDimensionSchema,
+  FeedbackRequestSchema,
   LiveSessionAcceptanceSchema,
   LiveSessionActivationSchema,
   LiveSessionEventSchema,
@@ -13,7 +15,10 @@ import {
   HostedMessageSchema,
   HostedThreadSchema,
   InteractionCompletionReportSchema,
+  InteractionConclusionSchema,
+  InteractionFeedbackSchema,
   PublicAgentCardSchema,
+  ReceiptSchema,
   canonicalHash,
   verifyObject,
   type FederatedInteraction,
@@ -25,6 +30,7 @@ import {
   type HostedMessage,
   type HostedThread,
   type InteractionCompletionReport,
+  type InteractionFeedback,
   type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
@@ -90,6 +96,16 @@ type ContextualProfile = {
   scope: number;
   disputes: number;
 };
+
+const FEEDBACK_DIMENSIONS = FeedbackDimensionSchema.options;
+
+function deterministicUuid(value: string): string {
+  const bytes = createHash('sha256').update(value).digest().subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 function normalizePublicAgentCard(value: unknown): PublicAgentCard {
   const current = PublicAgentCardSchema.safeParse(value);
@@ -1468,6 +1484,7 @@ export class HostedRepository {
         reporting: {
           endpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/events`,
           completionEndpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/completion-reports`,
+          feedbackEndpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/feedback`,
           bearerToken,
         },
         privateInsights,
@@ -1613,6 +1630,7 @@ export class HostedRepository {
       reporting: {
         endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/events`,
         completionEndpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/completion-reports`,
+        feedbackEndpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/feedback`,
         bearerToken,
       },
       privateInsights: privateContext.insights,
@@ -1670,6 +1688,53 @@ export class HostedRepository {
     const parsed = CounterpartyBriefSchema.safeParse(rows[0]?.payload);
     if (!parsed.success) throw new Error('Counterparty brief is not available');
     return parsed.data;
+  }
+
+  private async ensureFeedbackRequest(
+    operatorId: string,
+    interactionId: string,
+    reviewerAgentId: string,
+    subjectAgentId: string,
+  ) {
+    const existing = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'feedback_request'
+        AND payload->>'interactionId' = ${interactionId}
+        AND payload->>'reviewerAgentId' = ${reviewerAgentId}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    const parsed = FeedbackRequestSchema.safeParse(existing[0]?.payload);
+    if (parsed.success) return parsed.data;
+    const requestedAt = new Date();
+    const base = FeedbackRequestSchema.parse({
+      requestId: deterministicUuid(`feedback-request:${interactionId}:${reviewerAgentId}`),
+      interactionId,
+      reviewerAgentId,
+      subjectAgentId,
+      status: 'pending',
+      requestedDimensions: FEEDBACK_DIMENSIONS,
+      requestedAt: requestedAt.toISOString(),
+      dueAt: new Date(requestedAt.getTime() + 24 * 60 * 60_000).toISOString(),
+    });
+    const request = FeedbackRequestSchema.parse({
+      ...base,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), base),
+    });
+    await this.upsert(operatorId, 'feedback_request', request.requestId, request);
+    return request;
+  }
+
+  async listFeedbackRequests(operatorId: string, agentId: string) {
+    const rows = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'feedback_request'
+        AND payload->>'reviewerAgentId' = ${agentId}
+      ORDER BY updated_at DESC
+    `;
+    return rows.map((row) => FeedbackRequestSchema.parse(row.payload));
   }
 
   async submitCompletionReport(
@@ -1745,7 +1810,46 @@ export class HostedRepository {
       this.upsert(participant.participantOperatorId, 'completion_report', stored.reportId, stored),
       this.upsert(participant.counterpartyOperatorId, 'completion_report', stored.reportId, stored),
     ]);
-    return stored;
+    const [feedbackRequest] = await Promise.all([
+      this.ensureFeedbackRequest(
+        participant.participantOperatorId,
+        stored.interactionId,
+        stored.reportingAgentId,
+        stored.counterpartyAgentId,
+      ),
+      this.ensureFeedbackRequest(
+        participant.counterpartyOperatorId,
+        stored.interactionId,
+        stored.counterpartyAgentId,
+        stored.reportingAgentId,
+      ),
+    ]);
+    const completed = await this.sql`
+      SELECT COUNT(DISTINCT payload->>'reportingAgentId') AS count
+      FROM openclasp_records
+      WHERE kind = 'completion_report'
+        AND payload->>'interactionId' = ${stored.interactionId}
+    `;
+    if (Number(completed[0]?.count ?? 0) >= 2) {
+      const completedAt = new Date().toISOString();
+      await Promise.all([
+        this.sql`
+          UPDATE openclasp_live_sessions SET status = 'completed', completed_at = NOW()
+          WHERE interaction_id = ${stored.interactionId} AND status = 'active'
+        `,
+        this.sql`
+          UPDATE openclasp_federated_interactions
+          SET status = 'completed',
+            payload = jsonb_set(
+              jsonb_set(payload, '{status}', '"completed"'::jsonb),
+              '{updatedAt}', to_jsonb(${completedAt}::text)
+            ),
+            updated_at = NOW()
+          WHERE interaction_id = ${stored.interactionId} AND status = 'active'
+        `,
+      ]);
+    }
+    return { report: stored, feedbackRequest };
   }
 
   async recordSessionCompletionReport(token: string, value: InteractionCompletionReport) {
@@ -1775,6 +1879,303 @@ export class HostedRepository {
       operatorId,
       report.reportingAgentId,
       report,
+      'runtime_session',
+    );
+  }
+
+  private async finalizeInteractionConclusion(interactionId: string) {
+    const [interactionRows, reportRows, feedbackRows, requestRows, existingRows] =
+      await Promise.all([
+        this.sql`
+        SELECT payload, initiator_operator_id, responder_operator_id
+        FROM openclasp_federated_interactions
+        WHERE interaction_id = ${interactionId}
+        LIMIT 1
+      `,
+        this.sql`
+        SELECT record_id, payload FROM openclasp_records
+        WHERE kind = 'completion_report' AND payload->>'interactionId' = ${interactionId}
+      `,
+        this.sql`
+        SELECT record_id, payload FROM openclasp_records
+        WHERE kind = 'interaction_feedback' AND payload->>'interactionId' = ${interactionId}
+      `,
+        this.sql`
+        SELECT record_id, payload FROM openclasp_records
+        WHERE kind = 'feedback_request' AND payload->>'interactionId' = ${interactionId}
+      `,
+        this.sql`
+        SELECT payload FROM openclasp_records
+        WHERE kind = 'interaction_conclusion' AND payload->>'interactionId' = ${interactionId}
+        LIMIT 1
+      `,
+      ]);
+    const existing = InteractionConclusionSchema.safeParse(existingRows[0]?.payload);
+    if (existing.success) return { released: true, conclusion: existing.data };
+    const interactionRow = interactionRows[0];
+    if (!interactionRow) throw new Error('Interaction not found');
+    const interaction = FederatedInteractionSchema.parse(interactionRow.payload);
+    const reports = [
+      ...new Map(
+        reportRows
+          .map((row) => InteractionCompletionReportSchema.parse(row.payload))
+          .map((report) => [report.reportId, report]),
+      ).values(),
+    ];
+    const feedback = [
+      ...new Map(
+        feedbackRows
+          .map((row) => InteractionFeedbackSchema.parse(row.payload))
+          .map((item) => [item.feedbackId, item]),
+      ).values(),
+    ];
+    const requests = [
+      ...new Map(
+        requestRows
+          .map((row) => FeedbackRequestSchema.parse(row.payload))
+          .map((request) => [request.requestId, request]),
+      ).values(),
+    ];
+    if (requests.length < 2 || requests.some((request) => request.status === 'pending'))
+      return { released: false as const };
+    const base = buildInteractionConclusion({
+      interaction,
+      reports,
+      feedback,
+      conclusionId: deterministicUuid(`interaction-conclusion:${interactionId}`),
+    });
+    const conclusion = InteractionConclusionSchema.parse({
+      ...base,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), base),
+    });
+    const startedAt = reports
+      .map((report) => report.startedAt)
+      .filter((value): value is string => typeof value === 'string')
+      .sort()[0];
+    const receiptBase = {
+      receiptId: deterministicUuid(`interaction-receipt:${interactionId}`),
+      interactionId,
+      participants: [interaction.initiatorAgentId, interaction.responderAgentId],
+      agentVersions: Object.fromEntries(
+        reports.map((report) => [report.reportingAgentId, report.agentVersion]),
+      ),
+      contractHash: interaction.termsHash,
+      startedAt: startedAt ?? interaction.createdAt,
+      completedAt:
+        reports
+          .map((report) => report.completedAt)
+          .sort()
+          .at(-1) ?? conclusion.generatedAt,
+      outcome: conclusion.outcome,
+      commitmentsFulfilled: conclusion.criteria
+        .filter((criterion) => criterion.status === 'met')
+        .map((criterion) => criterion.criterion),
+      commitmentsMissed: conclusion.criteria
+        .filter((criterion) => criterion.status !== 'met')
+        .map((criterion) => criterion.criterion),
+      evidenceHashes: conclusion.evidenceReferences.map((reference) => canonicalHash(reference)),
+      policyWarnings: reports.flatMap((report) => report.blockers),
+      policyViolations: [],
+      disputeStatus: conclusion.consensus === 'conflicting' ? ('open' as const) : ('none' as const),
+      delegationChainHash: canonicalHash(interaction.contract.delegationRules),
+      unilateral: reports.length < 2,
+      signatures: {},
+      completionReportIds: conclusion.reportIds,
+      conclusionId: conclusion.conclusionId,
+    };
+    const receipt = ReceiptSchema.parse({
+      ...receiptBase,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), receiptBase),
+    });
+    await Promise.all([
+      this.upsert(
+        String(interactionRow.initiator_operator_id),
+        'interaction_conclusion',
+        conclusion.conclusionId,
+        conclusion,
+      ),
+      this.upsert(
+        String(interactionRow.responder_operator_id),
+        'interaction_conclusion',
+        conclusion.conclusionId,
+        conclusion,
+      ),
+      this.upsert(
+        String(interactionRow.initiator_operator_id),
+        'receipt',
+        receipt.receiptId,
+        receipt,
+      ),
+      this.upsert(
+        String(interactionRow.responder_operator_id),
+        'receipt',
+        receipt.receiptId,
+        receipt,
+      ),
+    ]);
+    return { released: true as const, conclusion, receipt };
+  }
+
+  async submitInteractionFeedback(
+    operatorId: string,
+    agentId: string,
+    value: InteractionFeedback,
+    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+  ) {
+    const feedback = InteractionFeedbackSchema.parse(value);
+    if (feedback.platformAttestation)
+      throw new Error('Platform attestation is assigned by OpenClasp');
+    if (feedback.reviewerAgentId !== agentId)
+      throw new Error('Feedback reviewer does not match the authenticated agent');
+    const participant = await this.interactionParticipant(
+      operatorId,
+      feedback.interactionId,
+      agentId,
+    );
+    if (feedback.subjectAgentId !== participant.counterpartyAgentId)
+      throw new Error('Feedback subject does not match the interaction counterparty');
+    const requestRows = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'feedback_request'
+        AND record_id = ${feedback.requestId}
+      LIMIT 1
+    `;
+    const request = FeedbackRequestSchema.parse(requestRows[0]?.payload);
+    if (
+      request.interactionId !== feedback.interactionId ||
+      request.reviewerAgentId !== feedback.reviewerAgentId ||
+      request.subjectAgentId !== feedback.subjectAgentId
+    )
+      throw new Error('Feedback does not match its request');
+    if (request.status !== 'pending') throw new Error('Feedback request is no longer pending');
+    if (Date.parse(request.dueAt) <= Date.now()) throw new Error('Feedback request has expired');
+    if (
+      request.requestedDimensions.some(
+        (dimension) => typeof feedback.ratings[dimension] !== 'number',
+      )
+    )
+      throw new Error('Feedback must rate every requested dimension');
+    const profiles = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+      LIMIT 1
+    `;
+    const profile = profiles[0]?.payload as Partial<AgentProfile> | undefined;
+    if (!profile || profile.agentVersion !== feedback.reviewerAgentVersion)
+      throw new Error('Feedback reviewer version does not match the registered agent');
+    let verifiedSubmissionMethod: InteractionFeedback['submissionMethod'] = submissionMethod;
+    if (feedback.signature) {
+      if (feedback.submissionMethod !== 'agent_signature')
+        throw new Error('Signed feedback must declare agent_signature submission');
+      const identities = await this.sql`
+        SELECT payload FROM openclasp_records
+        WHERE operator_id = ${operatorId} AND kind = 'agent' AND record_id = ${agentId}
+        LIMIT 1
+      `;
+      const identity = AgentIdentitySchema.safeParse(identities[0]?.payload);
+      if (
+        !identity.success ||
+        !verifyObject(feedback as unknown as Record<string, unknown>, identity.data.publicKey)
+      )
+        throw new Error('Feedback agent signature is invalid or unverifiable');
+      verifiedSubmissionMethod = 'agent_signature';
+    }
+    const unattested = InteractionFeedbackSchema.parse({
+      ...feedback,
+      submissionMethod: verifiedSubmissionMethod,
+    });
+    const stored = InteractionFeedbackSchema.parse({
+      ...unattested,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), unattested),
+    });
+    const existing = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'interaction_feedback'
+        AND record_id = ${stored.feedbackId}
+      LIMIT 1
+    `;
+    if (existing[0] && canonicalHash(existing[0].payload) !== canonicalHash(stored))
+      throw new Error('Conflicting feedback ID');
+    await this.upsert(operatorId, 'interaction_feedback', stored.feedbackId, stored);
+    const requestBase = { ...request, status: 'submitted' as const };
+    delete requestBase.platformAttestation;
+    const updatedRequest = FeedbackRequestSchema.parse({
+      ...requestBase,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), requestBase),
+    });
+    await this.upsert(operatorId, 'feedback_request', request.requestId, updatedRequest);
+    const release = await this.finalizeInteractionConclusion(feedback.interactionId);
+    return {
+      feedbackId: stored.feedbackId,
+      status: 'submitted' as const,
+      revealed: release.released,
+      ...(release.released ? { conclusion: release.conclusion } : {}),
+    };
+  }
+
+  async processDueFeedback(now = new Date()) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT operator_id, record_id, payload FROM openclasp_records
+      WHERE kind = 'feedback_request'
+        AND payload->>'status' = 'pending'
+        AND (payload->>'dueAt')::timestamptz <= ${now.toISOString()}
+      LIMIT 500
+    `;
+    const interactions = new Set<string>();
+    for (const row of rows) {
+      const request = FeedbackRequestSchema.parse(row.payload);
+      const base = { ...request, status: 'expired' as const };
+      delete base.platformAttestation;
+      const expired = FeedbackRequestSchema.parse({
+        ...base,
+        platformAttestation: attestSessionRecord(this.gatewaySecret(), base),
+      });
+      await this.upsert(
+        String(row.operator_id),
+        'feedback_request',
+        String(row.record_id),
+        expired,
+      );
+      interactions.add(request.interactionId);
+    }
+    let released = 0;
+    for (const interactionId of interactions) {
+      const result = await this.finalizeInteractionConclusion(interactionId);
+      if (result.released) released += 1;
+    }
+    return { expired: rows.length, released };
+  }
+
+  async recordSessionFeedback(token: string, value: InteractionFeedback) {
+    const feedback = InteractionFeedbackSchema.parse(value);
+    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    if (
+      grant.interactionId !== feedback.interactionId ||
+      grant.senderAgentId !== feedback.reviewerAgentId ||
+      grant.recipientAgentId !== feedback.subjectAgentId
+    )
+      throw new Error('Session credential does not match the feedback');
+    const owners = await this.sql`
+      SELECT initiator_operator_id, responder_operator_id,
+        initiator_agent_id, responder_agent_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${feedback.interactionId}
+      LIMIT 1
+    `;
+    const row = owners[0];
+    if (!row) throw new Error('Interaction not found');
+    const operatorId = String(
+      row.initiator_agent_id === feedback.reviewerAgentId
+        ? row.initiator_operator_id
+        : row.responder_operator_id,
+    );
+    return this.submitInteractionFeedback(
+      operatorId,
+      feedback.reviewerAgentId,
+      feedback,
       'runtime_session',
     );
   }

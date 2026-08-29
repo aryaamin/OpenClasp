@@ -31,6 +31,8 @@ message bodies are processed only for delivery/history and never feed reliabilit
 The live-session offer and activation also include the recipient's private, contract-bound
 counterparty brief. Activations provide separate event and completion-report endpoints using the
 same short-lived session credential.
+The activation also provides a feedback endpoint. Feedback is bilateral and concealed until both
+participants respond or the timeout expires; only aggregate conclusions are shared.
 For each A2A message, include the extension URI in `A2A-Extensions` and put this shape in message
 metadata:
 

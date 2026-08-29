@@ -72,6 +72,10 @@
           "type": "string",
           "format": "uri"
         },
+        "feedbackEndpoint": {
+          "type": "string",
+          "format": "uri"
+        },
         "bearerToken": {
           "type": "string",
           "minLength": 1

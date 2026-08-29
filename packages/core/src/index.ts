@@ -6,7 +6,9 @@ import {
   createKeyPair,
   DelegationCredentialSchema,
   FeedbackSchema,
+  FeedbackDimensionSchema,
   InteractionContractSchema,
+  InteractionConclusionSchema,
   InteractionEventSchema,
   ReceiptSchema,
   signNamed,
@@ -20,6 +22,9 @@ import {
   type FactCheckResult,
   type Feedback,
   type InteractionContract,
+  type InteractionConclusion,
+  type InteractionCompletionReport,
+  type InteractionFeedback,
   type InteractionEvent,
   type KeyPair,
   type LiveSessionInsight,
@@ -201,6 +206,74 @@ export function buildCounterpartyBrief(input: {
       .map((requirement) => `Resolve mismatch: ${requirement.requirement}`),
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     expiresAt: input.expiresAt,
+  });
+}
+
+export function buildInteractionConclusion(input: {
+  interaction: { interactionId: string; termsHash: string; contract: InteractionContract };
+  reports: InteractionCompletionReport[];
+  feedback: InteractionFeedback[];
+  conclusionId?: string;
+  generatedAt?: string;
+}): InteractionConclusion {
+  const outcomes = input.reports.map((report) => report.outcome);
+  const uniqueOutcomes = new Set(outcomes);
+  const outcome =
+    outcomes.length === 0
+      ? ('cancelled' as const)
+      : uniqueOutcomes.size === 1
+        ? outcomes[0]!
+        : outcomes.includes('failure')
+          ? ('failure' as const)
+          : ('partial' as const);
+  const consensus =
+    input.reports.length < 2
+      ? ('unilateral' as const)
+      : uniqueOutcomes.size === 1
+        ? ('bilateral_agreement' as const)
+        : outcomes.includes('partial')
+          ? ('bilateral_partial_agreement' as const)
+          : ('conflicting' as const);
+  const statusRank = { met: 0, partially_met: 1, unknown: 2, missed: 3 } as const;
+  const criteria = input.interaction.contract.successCriteria.map((criterion) => {
+    const assessments = input.reports
+      .flatMap((report) => report.criteria)
+      .filter((assessment) => assessment.criterion === criterion);
+    const selected = assessments.sort(
+      (left, right) => statusRank[right.status] - statusRank[left.status],
+    )[0];
+    return {
+      criterion,
+      status: selected?.status ?? ('unknown' as const),
+      ...(selected?.explanation ? { explanation: selected.explanation } : {}),
+      evidenceReferences: [
+        ...new Set(assessments.flatMap((assessment) => assessment.evidenceReferences)),
+      ],
+    };
+  });
+  const averageRatings = Object.fromEntries(
+    FeedbackDimensionSchema.options.flatMap((dimension) => {
+      const values = input.feedback
+        .map((item) => item.ratings[dimension])
+        .filter((value): value is number => typeof value === 'number');
+      return values.length
+        ? [[dimension, values.reduce((total, value) => total + value, 0) / values.length]]
+        : [];
+    }),
+  );
+  return InteractionConclusionSchema.parse({
+    conclusionId: input.conclusionId ?? randomUUID(),
+    interactionId: input.interaction.interactionId,
+    contractHash: input.interaction.termsHash,
+    outcome,
+    consensus,
+    summary: `${input.reports.length} completion report${input.reports.length === 1 ? '' : 's'} and ${input.feedback.length} feedback response${input.feedback.length === 1 ? '' : 's'} were eligible for this conclusion.`,
+    criteria,
+    reportIds: input.reports.map((report) => report.reportId),
+    feedbackIds: input.feedback.map((item) => item.feedbackId),
+    averageRatings,
+    evidenceReferences: [...new Set(input.reports.flatMap((report) => report.evidenceReferences))],
+    generatedAt: input.generatedAt ?? new Date().toISOString(),
   });
 }
 

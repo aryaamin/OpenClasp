@@ -153,6 +153,25 @@ describe('HTTP API', () => {
         calls.push(`session-completion:${token}:${report.interactionId}`);
         return report;
       },
+      listFeedbackRequests: async (operatorId: string, agentId: string) => {
+        calls.push(`feedback-requests:${operatorId}:${agentId}`);
+        return [];
+      },
+      submitInteractionFeedback: async (
+        operatorId: string,
+        agentId: string,
+        feedback: any,
+        submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+      ) => {
+        calls.push(
+          `feedback:${operatorId}:${agentId}:${feedback.interactionId}:${submissionMethod}`,
+        );
+        return { feedbackId: feedback.feedbackId, status: 'submitted' as const, revealed: false };
+      },
+      recordSessionFeedback: async (token: string, feedback: any) => {
+        calls.push(`session-feedback:${token}:${feedback.interactionId}`);
+        return { feedbackId: feedback.feedbackId, status: 'submitted' as const, revealed: false };
+      },
       receiveTemporaryMessage: async (
         token: string,
         agentId: string,
@@ -388,6 +407,64 @@ describe('HTTP API', () => {
       ).statusCode,
     ).toBe(200);
     expect(calls.at(-1)).toBe(`session-completion:scoped-session-token:${interactionId}`);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v0.1/feedback-requests?agentId=agent-a',
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+    const interactionFeedback = {
+      feedbackId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      requestId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      interactionId,
+      reviewerAgentId: 'agent-a',
+      subjectAgentId: 'agent-b',
+      reviewerAgentVersion: '1.0.0',
+      ratings: {
+        overall_satisfaction: 0.7,
+        outcome_satisfaction: 0.6,
+        communication: 0.9,
+        timeliness: 0.8,
+        scope_adherence: 0.6,
+        evidence_quality: 0.7,
+        correction_handling: 0.8,
+        reliability: 0.75,
+      },
+      wouldWorkAgain: 'yes',
+      confidence: 0.9,
+      submittedAt: '2026-08-29T00:10:00.000Z',
+    };
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/v0.1/federated-interactions/${interactionId}/feedback`,
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+          payload: interactionFeedback,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe(`feedback:user-a:agent-a:${interactionId}:oauth_installation`);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/sessions/${interactionId}/feedback`,
+          headers: { authorization: 'Bearer scoped-session-token' },
+          payload: interactionFeedback,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe(`session-feedback:scoped-session-token:${interactionId}`);
     const providerConnection = await app.inject({
       method: 'POST',
       url: '/v0.1/provider-connections',

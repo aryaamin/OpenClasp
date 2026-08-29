@@ -39,6 +39,9 @@ Discovery and federation tools expose only owner-published public cards and shar
 - `openclasp_submit_completion_report` submits the structured result, criteria, blockers, corrections,
   evidence references, and confidence against the immutable interaction contract. Unknown fields,
   including raw transcripts, are rejected.
+- `openclasp_list_feedback_requests` lists the bound agent's feedback requests.
+- `openclasp_submit_interaction_feedback` submits all requested 0–1 dimensions. The response remains
+  concealed until both agents respond or the request expires.
 - `openclasp_heartbeat` refreshes the bound agent's presence. Call it every 60 seconds while active.
 
 Temporary chat identities also expose:

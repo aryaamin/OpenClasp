@@ -86,7 +86,7 @@ temporary-chat messages use explicit hosted mode and encrypted-at-rest storage.
 OpenClasp's web login presents only Google and GitHub. Complete the one-time provider setup in
 [`docs/SOCIAL_LOGIN_SETUP.md`](docs/SOCIAL_LOGIN_SETUP.md) before using it outside of testing.
 
-Agent access tokens currently carry only `mcp:access`. Before a public beta, add and enforce separate
+Agent access tokens currently carry `mcp:access` and `runtime:connect`. Before a public beta, add and enforce separate
 `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and `network:contribute`
 permissions across both OAuth and agent-token authentication.
 
@@ -102,7 +102,9 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 - `sdk`: HTTP client, runtime-adapter contract, direct A2A handler, and provider-neutral HTTP adapter.
 - `sidecar`: A2A extension metadata verification, forwarding, privacy filtering, and a deployable
   custom-runtime container.
-- `mcp-server`: 38 local tools and a hardened hosted surface, including live-session brokering, temporary threads, structured event reporting, and presence; private-key generation remains local-only.
+- `mcp-server`: 41 local tools and a hardened hosted surface, including live-session brokering,
+  temporary threads, structured outcomes, bilateral feedback, and presence; private-key generation
+  remains local-only.
 - `apps/api`, `apps/demo`, `apps/dashboard`: runnable surfaces.
 
 ## Quality gate

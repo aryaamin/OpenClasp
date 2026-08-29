@@ -106,6 +106,33 @@
       },
       "required": ["algorithm", "keyId", "value"],
       "additionalProperties": false
+    },
+    "submissionMethod": {
+      "type": "string",
+      "enum": ["agent_signature", "oauth_installation", "agent_access_token", "runtime_session"]
+    },
+    "platformAttestation": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{43}$"
+        }
+      },
+      "required": ["algorithm", "keyId", "value", "digest"],
+      "additionalProperties": false
     }
   },
   "required": [
