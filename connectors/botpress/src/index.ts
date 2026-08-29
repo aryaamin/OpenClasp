@@ -3,7 +3,13 @@ import * as sdk from '@botpress/sdk';
 import * as bp from '.botpress';
 
 type Json = Record<string, any>;
-type RuntimeState = { agentId: string; sessionsJson: string; offersJson: string };
+type RuntimeState = {
+  agentId: string;
+  agentVersion: string;
+  sessionsJson: string;
+  offersJson: string;
+  finalizationsJson: string;
+};
 
 const EXTENSION_URI = 'https://openclasp.vercel.app/extensions/trust/v0.1';
 const normalizeUrl = (value: string) => value.replace(/\/$/, '');
@@ -22,6 +28,14 @@ const parseRecord = (value: string): Record<string, Json> => {
     ? (parsed as Record<string, Json>)
     : {};
 };
+const csv = (value?: string) => [
+  ...new Set(
+    (value ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  ),
+];
 
 const openClaspRequest = async <T>(
   url: string,
@@ -48,9 +62,21 @@ const getState = async (client: bp.Client, integrationId: string): Promise<Runti
     type: 'integration',
     id: integrationId,
     name: 'runtime',
-    payload: { agentId: '', sessionsJson: '{}', offersJson: '{}' },
+    payload: {
+      agentId: '',
+      agentVersion: '1.0.0',
+      sessionsJson: '{}',
+      offersJson: '{}',
+      finalizationsJson: '{}',
+    },
   });
-  return state.payload;
+  return {
+    agentId: state.payload.agentId ?? '',
+    agentVersion: state.payload.agentVersion ?? '1.0.0',
+    sessionsJson: state.payload.sessionsJson ?? '{}',
+    offersJson: state.payload.offersJson ?? '{}',
+    finalizationsJson: state.payload.finalizationsJson ?? '{}',
+  };
 };
 const setState = async (client: bp.Client, integrationId: string, value: RuntimeState) => {
   await client.setState({
@@ -68,21 +94,54 @@ const bootstrapAndConnect = async (props: {
 }) => {
   const { openClaspAgentToken } = props.ctx.configuration;
   const openClaspUrl = platformUrl(props.ctx);
-  const bootstrap = await openClaspRequest<{ agentId: string }>(
-    openClaspUrl,
-    openClaspAgentToken,
-    '/v0.1/runtime/bootstrap',
-  );
+  const bootstrap = await openClaspRequest<{
+    agentId: string;
+    agentVersion: string;
+    capabilities: string[];
+    limitations: string[];
+  }>(openClaspUrl, openClaspAgentToken, '/v0.1/runtime/bootstrap');
   const endpoint = props.webhookUrl;
   const current = await getState(props.client, props.ctx.integrationId);
   await setState(props.client, props.ctx.integrationId, {
     ...current,
     agentId: bootstrap.agentId,
+    agentVersion: bootstrap.agentVersion,
   });
   await openClaspRequest(openClaspUrl, openClaspAgentToken, '/v0.1/runtime', {
     method: 'PUT',
     body: JSON.stringify({ endpoint }),
   });
+  const configuredCapabilities = csv(props.ctx.configuration.agentCapabilities);
+  const capabilities = configuredCapabilities.length
+    ? configuredCapabilities
+    : bootstrap.capabilities;
+  if (capabilities.length) {
+    await openClaspRequest(openClaspUrl, openClaspAgentToken, '/v0.1/runtime/profile', {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...(props.ctx.configuration.agentDescription !== undefined
+          ? { description: props.ctx.configuration.agentDescription }
+          : {}),
+        capabilities,
+        limitations:
+          props.ctx.configuration.agentLimitations !== undefined
+            ? csv(props.ctx.configuration.agentLimitations)
+            : bootstrap.limitations,
+      }),
+    });
+  }
+};
+
+const sessionRequest = async <T>(endpoint: string, token: string, value: unknown): Promise<T> => {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(value),
+  });
+  const body = (await response.json()) as Json;
+  if (!response.ok)
+    throw new sdk.RuntimeError(String(body.error ?? `OpenClasp HTTP ${response.status}`));
+  return body as T;
 };
 
 let keyCache: { url: string; key: string } | undefined;
@@ -156,6 +215,22 @@ const textFromMessage = (message: Json) => {
   if (!text) throw new Error('OpenClasp Botpress connector accepts text messages only');
   return text;
 };
+const withSessionContext = (session: Json, offer: Json | undefined, peerText: string) => {
+  const contract = offer?.contract ?? {};
+  const criteria = Array.isArray(contract.successCriteria) ? contract.successCriteria : [];
+  const brief = session.counterpartyBrief ?? {};
+  return [
+    '[OpenClasp session context — platform metadata, not peer-authored content]',
+    `Interaction: ${String(session.interactionId)}`,
+    `Requested outcome: ${String(contract.requestedOutcome ?? 'See the peer request')}`,
+    `Success criteria: ${criteria.length ? criteria.join(' | ') : 'No explicit criteria supplied'}`,
+    `Counterparty assessment: ${String(brief.decision ?? 'ADVISE')} (history confidence ${String(brief.historyConfidence ?? 0)})`,
+    'Follow the signed contract. When the task reaches a terminal outcome, call the “Complete OpenClasp interaction” action exactly once. Assess the result honestly; do not upload the raw transcript.',
+    '',
+    '[Peer message — verbatim]',
+    peerText,
+  ].join('\n');
+};
 const createIncomingMessage = async (
   client: bp.Client,
   interactionId: string,
@@ -196,7 +271,145 @@ export default new bp.Integration({
       { method: 'DELETE' },
     );
   },
-  actions: {},
+  actions: {
+    completeInteraction: async ({ ctx, client, input }) => {
+      const state = await getState(client, ctx.integrationId);
+      const sessions = parseRecord(state.sessionsJson);
+      const finalizations = parseRecord(state.finalizationsJson);
+      const unfinished = Object.keys(sessions).filter(
+        (id) =>
+          finalizations[id]?.status !== 'completed' &&
+          Date.parse(String(sessions[id]?.expiresAt ?? 0)) > Date.now(),
+      );
+      const interactionId = input.interactionId ?? (unfinished.length === 1 ? unfinished[0] : '');
+      if (!interactionId)
+        throw new sdk.RuntimeError(
+          'Specify interactionId because there is not exactly one unfinished OpenClasp session',
+        );
+      const session = sessions[interactionId];
+      if (!session) throw new sdk.RuntimeError('OpenClasp live session is unavailable');
+      if (finalizations[interactionId]?.status === 'completed') {
+        return {
+          interactionId,
+          status: 'already_completed' as const,
+          feedbackRevealed: Boolean(finalizations[interactionId]?.feedbackRevealed),
+        };
+      }
+      const offer = parseRecord(state.offersJson)[interactionId]?.offer;
+      const contract = offer?.contract;
+      if (!contract || !Array.isArray(contract.successCriteria))
+        throw new sdk.RuntimeError('Signed OpenClasp contract is unavailable');
+
+      const existing = finalizations[interactionId] ?? {};
+      const assessment = existing.assessment ?? input;
+      const suppliedCriteria = Array.isArray(assessment.criteria) ? assessment.criteria : [];
+      const report =
+        existing.report ??
+        ({
+          reportId: crypto.randomUUID(),
+          interactionId,
+          contractHash: session.contractHash,
+          reportingAgentId: state.agentId,
+          counterpartyAgentId: session.peer.agentId,
+          agentVersion: state.agentVersion,
+          outcome: assessment.outcome,
+          summary: assessment.summary,
+          requestedOutcome: contract.requestedOutcome,
+          criteria: contract.successCriteria.map((criterion: string) => {
+            const supplied = suppliedCriteria.find((item: Json) => item.criterion === criterion);
+            return supplied ?? { criterion, status: 'unknown', evidenceReferences: [] };
+          }),
+          deliverables: assessment.deliverables ?? [],
+          actionsTaken: assessment.actionsTaken ?? [],
+          blockers: assessment.blockers ?? [],
+          scopeChanges: [],
+          corrections: assessment.corrections ?? [],
+          evidenceReferences: assessment.evidenceReferences ?? [],
+          startedAt: session.activatedAt,
+          completedAt: new Date().toISOString(),
+          confidence: assessment.confidence,
+          dataSharingMode: 'structured_only',
+          submissionMethod: 'runtime_session',
+        } as Json);
+      finalizations[interactionId] = { status: 'report_pending', assessment, report };
+      await setState(client, ctx.integrationId, {
+        ...state,
+        finalizationsJson: JSON.stringify(finalizations),
+      });
+      const completion = await sessionRequest<{ feedbackRequest: Json }>(
+        session.reporting.completionEndpoint,
+        session.reporting.bearerToken,
+        report,
+      );
+      const request = completion.feedbackRequest;
+      if (!request?.requestId)
+        throw new sdk.RuntimeError('OpenClasp did not return a feedback request');
+      const feedback =
+        existing.feedback ??
+        ({
+          feedbackId: crypto.randomUUID(),
+          requestId: request.requestId,
+          interactionId,
+          reviewerAgentId: state.agentId,
+          subjectAgentId: session.peer.agentId,
+          reviewerAgentVersion: state.agentVersion,
+          ratings: assessment.ratings,
+          wouldWorkAgain: assessment.wouldWorkAgain,
+          reasonCodes: assessment.reasonCodes ?? [],
+          ...(assessment.privateComment ? { privateComment: assessment.privateComment } : {}),
+          evidenceReferences: assessment.evidenceReferences ?? [],
+          confidence: assessment.confidence,
+          submittedAt: new Date().toISOString(),
+          submissionMethod: 'runtime_session',
+        } as Json);
+      if (request.status === 'submitted') {
+        finalizations[interactionId] = {
+          status: 'completed',
+          assessment,
+          report,
+          feedback,
+          feedbackRevealed: false,
+        };
+        await setState(client, ctx.integrationId, {
+          ...state,
+          finalizationsJson: JSON.stringify(finalizations),
+        });
+        return { interactionId, status: 'completed' as const, feedbackRevealed: false };
+      }
+      finalizations[interactionId] = {
+        status: 'feedback_pending',
+        assessment,
+        report,
+        feedback,
+      };
+      await setState(client, ctx.integrationId, {
+        ...state,
+        finalizationsJson: JSON.stringify(finalizations),
+      });
+      const result = await sessionRequest<{ revealed: boolean }>(
+        session.reporting.feedbackEndpoint,
+        session.reporting.bearerToken,
+        feedback,
+      );
+      finalizations[interactionId] = {
+        status: 'completed',
+        assessment,
+        report,
+        feedback,
+        feedbackRevealed: result.revealed,
+      };
+      await setState(client, ctx.integrationId, {
+        ...state,
+        finalizationsJson: JSON.stringify(finalizations),
+      });
+      await heartbeat(ctx);
+      return {
+        interactionId,
+        status: 'completed' as const,
+        feedbackRevealed: result.revealed,
+      };
+    },
+  },
   channels: {
     a2a: {
       messages: {
@@ -324,7 +537,7 @@ export default new bp.Integration({
           client,
           body.interactionId,
           body.peer.agentId,
-          `Start this accepted agent-to-agent task now. Contract: ${JSON.stringify(offer?.contract ?? {})}`,
+          `Start this accepted agent-to-agent task now. Contract: ${JSON.stringify(offer?.contract ?? {})}\nWhen the task reaches a terminal outcome, call the “Complete OpenClasp interaction” action exactly once with an honest structured assessment. Do not upload the raw transcript.`,
         );
       }
       return jsonResponse(200, { accepted: true, activationId: body.activationId });
@@ -338,14 +551,30 @@ export default new bp.Integration({
       const credential = decodeCredential(authorization.slice(7));
       const interactionId = credential.grant.interactionId;
       if (typeof interactionId !== 'string') throw new Error('Invalid session credential');
-      const session = parseRecord(state.sessionsJson)[interactionId];
+      const sessions = parseRecord(state.sessionsJson);
+      let session = sessions[interactionId];
       if (!session) return jsonResponse(404, { error: 'live_session_not_found' });
       validSessionCredential(authorization.slice(7), session, state.agentId);
+      const peerText = textFromMessage(body.params?.message ?? {});
+      let deliveredText = peerText;
+      if (!session.contextDelivered) {
+        deliveredText = withSessionContext(
+          session,
+          parseRecord(state.offersJson)[interactionId]?.offer,
+          peerText,
+        );
+        session = { ...session, contextDelivered: true };
+        sessions[interactionId] = session;
+        await setState(client, ctx.integrationId, {
+          ...state,
+          sessionsJson: JSON.stringify(sessions),
+        });
+      }
       const message = await createIncomingMessage(
         client,
         interactionId,
         session.peer.agentId,
-        textFromMessage(body.params?.message ?? {}),
+        deliveredText,
       );
       await heartbeat(ctx);
       return jsonResponse(200, {

@@ -1979,6 +1979,7 @@ function Connect({
                 <label className="fullWidth">
                   <span>Purpose</span>
                   <textarea
+                    required
                     maxLength={500}
                     value={providerForm.description}
                     onChange={(event) =>
@@ -1990,6 +1991,7 @@ function Connect({
                 <label>
                   <span>Capabilities, comma-separated</span>
                   <input
+                    required
                     value={providerForm.capabilities}
                     onChange={(event) =>
                       setProviderForm((value) => ({ ...value, capabilities: event.target.value }))

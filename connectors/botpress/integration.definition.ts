@@ -3,7 +3,7 @@ import { integrationName } from './package.json';
 
 export default new IntegrationDefinition({
   name: integrationName,
-  version: '0.1.1',
+  version: '0.2.0',
   title: 'OpenClasp',
   description: 'Direct A2A runtime connectivity with OpenClasp assurance and identity.',
   readme: 'hub.md',
@@ -17,7 +17,78 @@ export default new IntegrationDefinition({
         .title('OpenClasp agent token')
         .describe('The oc_at_ token created for this exact agent in OpenClasp.'),
       openClaspUrl: z.string().url().default('https://openclasp.vercel.app').title('OpenClasp URL'),
+      agentDescription: z
+        .string()
+        .max(500)
+        .optional()
+        .title('Public agent description')
+        .describe('What this bot actually does. Synced to its OpenClasp Agent Card.'),
+      agentCapabilities: z
+        .string()
+        .optional()
+        .title('Public capabilities')
+        .describe(
+          'Comma-separated task capabilities, for example: recruiting, candidate-screening.',
+        ),
+      agentLimitations: z
+        .string()
+        .optional()
+        .title('Public limitations')
+        .describe('Comma-separated limitations, for example: no-live-job-database.'),
     }),
+  },
+  actions: {
+    completeInteraction: {
+      title: 'Complete OpenClasp interaction',
+      description:
+        "Call exactly once when an OpenClasp agent-to-agent task reaches a terminal outcome. Submits this bot's structured completion report and private feedback without uploading the raw conversation.",
+      input: {
+        schema: z.object({
+          interactionId: z
+            .string()
+            .optional()
+            .describe('OpenClasp interaction ID. Omit when only one unfinished session exists.'),
+          outcome: z.enum(['success', 'partial', 'failure', 'cancelled']),
+          summary: z.string().min(1).max(2000),
+          criteria: z
+            .array(
+              z.object({
+                criterion: z.string().min(1).max(1000),
+                status: z.enum(['met', 'partially_met', 'missed', 'unknown']),
+                explanation: z.string().max(1000).optional(),
+                evidenceReferences: z.array(z.string().min(1).max(2048)).max(50).default([]),
+              }),
+            )
+            .max(100),
+          deliverables: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          actionsTaken: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          blockers: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          corrections: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
+          confidence: z.number().min(0).max(1),
+          ratings: z.object({
+            overall_satisfaction: z.number().min(0).max(1),
+            outcome_satisfaction: z.number().min(0).max(1),
+            communication: z.number().min(0).max(1),
+            timeliness: z.number().min(0).max(1),
+            scope_adherence: z.number().min(0).max(1),
+            evidence_quality: z.number().min(0).max(1),
+            correction_handling: z.number().min(0).max(1),
+            reliability: z.number().min(0).max(1),
+          }),
+          wouldWorkAgain: z.enum(['yes', 'no', 'unsure']),
+          reasonCodes: z.array(z.string().min(1).max(128)).max(32).default([]),
+          privateComment: z.string().max(1000).optional(),
+        }),
+      },
+      output: {
+        schema: z.object({
+          interactionId: z.string(),
+          status: z.enum(['completed', 'already_completed']),
+          feedbackRevealed: z.boolean(),
+        }),
+      },
+    },
   },
   channels: {
     a2a: {
@@ -44,8 +115,10 @@ export default new IntegrationDefinition({
       type: 'integration',
       schema: z.object({
         agentId: z.string(),
+        agentVersion: z.string().optional(),
         sessionsJson: z.string(),
         offersJson: z.string(),
+        finalizationsJson: z.string().optional(),
       }),
     },
   },

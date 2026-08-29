@@ -325,10 +325,16 @@ export function buildApi(
       return getOnboardingState(repository, owner);
     });
     router.get('/v0.1/runtime/bootstrap', async (request) => {
-      operatorId(request);
+      const owner = operatorId(request);
       const agentId = boundAgentId(request);
+      const rows = owner && repository ? await repository.list(owner) : [];
+      const profile = rows.find((row) => row.kind === 'agent_profile' && row.recordId === agentId)
+        ?.payload as AgentProfile | undefined;
       return {
         agentId,
+        agentVersion: profile?.agentVersion ?? '1.0.0',
+        capabilities: profile?.capabilities ?? [],
+        limitations: profile?.limitations ?? [],
         openClaspUrl: publicBaseUrl(request),
         runtimeRegistrationEndpoint: `${publicBaseUrl(request)}/v0.1/runtime`,
         protocol: 'A2A/1.0',
@@ -355,6 +361,47 @@ export function buildApi(
       if (!repository?.touchAgentPresence || !owner)
         throw new Error('Agent presence is not configured');
       return repository.touchAgentPresence(owner, boundAgentId(request));
+    });
+    router.put('/v0.1/runtime/profile', async (request) => {
+      const owner = operatorId(request);
+      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
+      const agentId = boundAgentId(request);
+      const value = z
+        .object({
+          description: z.string().trim().max(500).optional(),
+          capabilities: z.array(z.string().trim().min(1).max(100)).min(1).max(100),
+          limitations: z.array(z.string().trim().min(1).max(300)).max(100).default([]),
+        })
+        .strict()
+        .parse(request.body);
+      const rows = await repository.list(owner);
+      const current = rows.find((row) => row.kind === 'agent_profile' && row.recordId === agentId)
+        ?.payload as AgentProfile | undefined;
+      if (!current || current.status !== 'active') throw new Error('Active owned agent not found');
+      const profile: AgentProfile = {
+        ...current,
+        ...(value.description !== undefined ? { description: value.description } : {}),
+        capabilities: [...new Set(value.capabilities)],
+        limitations: [...new Set(value.limitations)],
+        updatedAt: new Date().toISOString(),
+      };
+      await repository.upsert(owner, 'agent_profile', agentId, profile);
+      const publication = rows.find((row) => row.kind === 'publication' && row.recordId === agentId)
+        ?.payload as { published?: boolean } | undefined;
+      if (profile.autoPublish || publication?.published) {
+        const previous = await repository.getPublishedAgent(agentId);
+        const card = await repository.publishAgent(
+          owner,
+          buildPublicAgentCard(profile, publicBaseUrl(request), previous),
+        );
+        await repository.upsert(owner, 'publication', agentId, {
+          agentId,
+          published: true,
+          updatedAt: card.updatedAt,
+        });
+        return { profile, card };
+      }
+      return { profile };
     });
     router.post('/v0.1/onboarding/:id/approve', async (request) => {
       const owner = operatorId(request);
@@ -404,8 +451,8 @@ export function buildApi(
           provider: z.enum(['botpress', 'custom']),
           agentName: z.string().trim().min(1).max(100),
           projectName: z.string().trim().min(1).max(100),
-          description: z.string().trim().max(500).optional(),
-          capabilities: z.array(z.string().trim().min(1).max(100)).max(100).default([]),
+          description: z.string().trim().min(1).max(500),
+          capabilities: z.array(z.string().trim().min(1).max(100)).min(1).max(100),
           limitations: z.array(z.string().trim().min(1).max(300)).max(100).default([]),
           expiresInDays: z.number().int().min(1).max(365).default(365),
         })

@@ -20,6 +20,25 @@ describe('HTTP API', () => {
 
   it('isolates hosted dashboard and settings by authenticated operator', async () => {
     const calls: string[] = [];
+    let storedProfile: any = {
+      agentId: 'agent-a',
+      projectId: 'project-a',
+      name: 'Test agent',
+      description: '',
+      framework: 'Botpress',
+      agentVersion: '1.0.0',
+      agentMode: 'persistent_runtime',
+      transport: 'direct_a2a',
+      autoPublish: false,
+      autoAcceptPolicy: 'off',
+      autoAcceptTaskCategories: [],
+      capabilities: [],
+      limitations: [],
+      identityMode: 'owner_managed',
+      status: 'active',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
     const repository = {
       dashboard: async (operatorId: string) => {
         calls.push(`dashboard:${operatorId}`);
@@ -62,8 +81,17 @@ describe('HTTP API', () => {
         calls.push(`save:${operatorId}`);
         return { ...value, rawConversationsStored: false as const };
       },
-      upsert: async () => undefined,
-      list: async () => [],
+      upsert: async (_operatorId: string, kind: string, _recordId: string, payload: any) => {
+        if (kind === 'agent_profile') storedProfile = payload;
+      },
+      list: async () => [
+        { kind: 'agent_profile' as const, recordId: 'agent-a', payload: storedProfile },
+        {
+          kind: 'publication' as const,
+          recordId: 'agent-a',
+          payload: { agentId: 'agent-a', published: true },
+        },
+      ],
       publishAgent: async (_operatorId: string, card: any) => card,
       unpublishAgent: async () => true,
       getPublishedAgent: async () => undefined,
@@ -290,6 +318,30 @@ describe('HTTP API', () => {
       ).statusCode,
     ).toBe(200);
     expect(calls.at(-1)).toBe('heartbeat:user-a:agent-a');
+    const runtimeProfile = await app.inject({
+      method: 'PUT',
+      url: '/v0.1/runtime/profile',
+      headers: {
+        'x-openclasp-operator': 'user-a',
+        'x-openclasp-bound-agent': 'agent-a',
+        host: 'openclasp.example',
+        'x-forwarded-proto': 'https',
+      },
+      payload: {
+        description: 'Finds suitable candidates for open roles',
+        capabilities: ['recruiting', 'candidate-screening', 'recruiting'],
+        limitations: ['no-live-job-database'],
+      },
+    });
+    expect(runtimeProfile.statusCode).toBe(200);
+    expect(runtimeProfile.json()).toMatchObject({
+      profile: {
+        capabilities: ['recruiting', 'candidate-screening'],
+        limitations: ['no-live-job-database'],
+      },
+      card: { capabilities: ['recruiting', 'candidate-screening'] },
+    });
+    expect(storedProfile.description).toBe('Finds suitable candidates for open roles');
     expect(
       (
         await app.inject({
@@ -473,6 +525,7 @@ describe('HTTP API', () => {
         provider: 'botpress',
         agentName: 'Recruiting agent',
         projectName: 'Recruiting',
+        description: 'Matches candidates with open roles',
         capabilities: ['candidate matching'],
         limitations: ['no final hiring decisions'],
         expiresInDays: 365,
