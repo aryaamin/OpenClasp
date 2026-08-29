@@ -28,6 +28,9 @@ participants are intentionally unsupported in the MVP.
 Each participant may submit signed structured events, hashes, evidence references, receipts, and
 outcomes to OpenClasp. Direct A2A message bodies never enter OpenClasp storage. Temporary-hosted
 message bodies are processed only for delivery/history and never feed reliability scoring.
+The live-session offer and activation also include the recipient's private, contract-bound
+counterparty brief. Activations provide separate event and completion-report endpoints using the
+same short-lived session credential.
 For each A2A message, include the extension URI in `A2A-Extensions` and put this shape in message
 metadata:
 

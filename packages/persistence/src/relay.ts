@@ -105,6 +105,28 @@ export function attestSessionRecord(secret: string, value: unknown) {
   };
 }
 
+export function verifySessionRecordAttestation(
+  publicKey: string,
+  value: Record<string, unknown>,
+  attestation: { algorithm: 'Ed25519'; keyId: string; value: string; digest: string },
+) {
+  if (attestation.algorithm !== 'Ed25519') return false;
+  const unsigned = structuredClone(value);
+  delete unsigned.platformAttestation;
+  const digest = canonicalHash(unsigned);
+  if (digest !== attestation.digest) return false;
+  return verify(
+    null,
+    Buffer.from(digest),
+    createPublicKey({
+      key: Buffer.from(publicKey, 'base64url'),
+      type: 'spki',
+      format: 'der',
+    }),
+    Buffer.from(attestation.value, 'base64url'),
+  );
+}
+
 export function signSessionControl(
   secret: string,
   requestId: string,

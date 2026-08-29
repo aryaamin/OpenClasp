@@ -2,6 +2,7 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { randomBytes } from 'node:crypto';
 import { buildCounterpartyBrief } from '../../core/src/index.js';
 import {
+  AgentIdentitySchema,
   DEFAULT_EXTENSION_URI,
   CounterpartyBriefSchema,
   FederatedInteractionSchema,
@@ -11,8 +12,10 @@ import {
   LiveSessionOfferSchema,
   HostedMessageSchema,
   HostedThreadSchema,
+  InteractionCompletionReportSchema,
   PublicAgentCardSchema,
   canonicalHash,
+  verifyObject,
   type FederatedInteraction,
   type AgentPresence,
   type CounterpartyBrief,
@@ -21,6 +24,7 @@ import {
   type LiveSessionInsight,
   type HostedMessage,
   type HostedThread,
+  type InteractionCompletionReport,
   type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
@@ -1463,6 +1467,7 @@ export class HostedRepository {
         },
         reporting: {
           endpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/events`,
+          completionEndpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/completion-reports`,
           bearerToken,
         },
         privateInsights,
@@ -1607,6 +1612,7 @@ export class HostedRepository {
       },
       reporting: {
         endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/events`,
+        completionEndpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/completion-reports`,
         bearerToken,
       },
       privateInsights: privateContext.insights,
@@ -1617,6 +1623,160 @@ export class HostedRepository {
         : new Date().toISOString(),
       expiresAt: new Date(String(row.expires_at)).toISOString(),
     };
+  }
+
+  private async interactionParticipant(operatorId: string, interactionId: string, agentId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT payload, initiator_operator_id, responder_operator_id,
+        initiator_agent_id, responder_agent_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${interactionId}
+        AND (
+          (initiator_operator_id = ${operatorId} AND initiator_agent_id = ${agentId})
+          OR (responder_operator_id = ${operatorId} AND responder_agent_id = ${agentId})
+        )
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) throw new Error('Interaction participant not found for this account');
+    const interaction = FederatedInteractionSchema.parse(row.payload);
+    const isInitiator = interaction.initiatorAgentId === agentId;
+    return {
+      interaction,
+      counterpartyAgentId: isInitiator
+        ? interaction.responderAgentId
+        : interaction.initiatorAgentId,
+      participantOperatorId: String(
+        isInitiator ? row.initiator_operator_id : row.responder_operator_id,
+      ),
+      counterpartyOperatorId: String(
+        isInitiator ? row.responder_operator_id : row.initiator_operator_id,
+      ),
+    };
+  }
+
+  async getCounterpartyBrief(operatorId: string, interactionId: string, agentId: string) {
+    await this.interactionParticipant(operatorId, interactionId, agentId);
+    const rows = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'counterparty_brief'
+        AND payload->>'interactionId' = ${interactionId}
+        AND payload->>'recipientAgentId' = ${agentId}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    const parsed = CounterpartyBriefSchema.safeParse(rows[0]?.payload);
+    if (!parsed.success) throw new Error('Counterparty brief is not available');
+    return parsed.data;
+  }
+
+  async submitCompletionReport(
+    operatorId: string,
+    agentId: string,
+    value: InteractionCompletionReport,
+    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+  ) {
+    const participant = await this.interactionParticipant(operatorId, value.interactionId, agentId);
+    const report = InteractionCompletionReportSchema.parse(value);
+    if (report.platformAttestation)
+      throw new Error('Platform attestation is assigned by OpenClasp');
+    if (report.reportingAgentId !== agentId)
+      throw new Error('Completion report identity does not match the authenticated agent');
+    if (report.counterpartyAgentId !== participant.counterpartyAgentId)
+      throw new Error('Completion report counterparty does not match the interaction');
+    if (report.contractHash !== participant.interaction.termsHash)
+      throw new Error('Completion report contract hash does not match the interaction');
+    if (report.requestedOutcome !== participant.interaction.contract.requestedOutcome)
+      throw new Error('Completion report requested outcome does not match the contract');
+    if (
+      report.criteria.some(
+        (criterion) =>
+          !participant.interaction.contract.successCriteria.includes(criterion.criterion),
+      )
+    )
+      throw new Error('Completion report contains a criterion outside the contract');
+    if (!['active', 'completed'].includes(participant.interaction.status))
+      throw new Error('Only active or completed interactions accept completion reports');
+    const profiles = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+      LIMIT 1
+    `;
+    const profile = profiles[0]?.payload as Partial<AgentProfile> | undefined;
+    if (!profile || profile.agentVersion !== report.agentVersion)
+      throw new Error('Completion report agent version does not match the registered agent');
+    let verifiedSubmissionMethod: InteractionCompletionReport['submissionMethod'] =
+      submissionMethod;
+    if (report.signature) {
+      if (report.submissionMethod !== 'agent_signature')
+        throw new Error('Signed completion reports must declare agent_signature submission');
+      const identities = await this.sql`
+        SELECT payload FROM openclasp_records
+        WHERE operator_id = ${operatorId} AND kind = 'agent' AND record_id = ${agentId}
+        LIMIT 1
+      `;
+      const identity = AgentIdentitySchema.safeParse(identities[0]?.payload);
+      if (
+        !identity.success ||
+        !verifyObject(report as unknown as Record<string, unknown>, identity.data.publicKey)
+      )
+        throw new Error('Completion report agent signature is invalid or unverifiable');
+      verifiedSubmissionMethod = 'agent_signature';
+    }
+    const unsigned = InteractionCompletionReportSchema.parse({
+      ...report,
+      submissionMethod: verifiedSubmissionMethod,
+    });
+    const stored = InteractionCompletionReportSchema.parse({
+      ...unsigned,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), unsigned),
+    });
+    const existing = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE kind = 'completion_report' AND record_id = ${stored.reportId}
+        AND payload->>'interactionId' = ${stored.interactionId}
+      LIMIT 1
+    `;
+    if (existing[0] && canonicalHash(existing[0].payload) !== canonicalHash(stored))
+      throw new Error('Conflicting completion report ID');
+    await Promise.all([
+      this.upsert(participant.participantOperatorId, 'completion_report', stored.reportId, stored),
+      this.upsert(participant.counterpartyOperatorId, 'completion_report', stored.reportId, stored),
+    ]);
+    return stored;
+  }
+
+  async recordSessionCompletionReport(token: string, value: InteractionCompletionReport) {
+    const report = InteractionCompletionReportSchema.parse(value);
+    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    if (
+      grant.interactionId !== report.interactionId ||
+      grant.senderAgentId !== report.reportingAgentId ||
+      grant.recipientAgentId !== report.counterpartyAgentId
+    )
+      throw new Error('Session credential does not match the completion report');
+    const owners = await this.sql`
+      SELECT initiator_operator_id, responder_operator_id,
+        initiator_agent_id, responder_agent_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${report.interactionId}
+      LIMIT 1
+    `;
+    const row = owners[0];
+    if (!row) throw new Error('Interaction not found');
+    const operatorId = String(
+      row.initiator_agent_id === report.reportingAgentId
+        ? row.initiator_operator_id
+        : row.responder_operator_id,
+    );
+    return this.submitCompletionReport(
+      operatorId,
+      report.reportingAgentId,
+      report,
+      'runtime_session',
+    );
   }
 
   private async ownedTemporaryAgent(operatorId: string, agentId: string) {

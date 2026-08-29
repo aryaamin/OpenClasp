@@ -68,6 +68,10 @@
           "type": "string",
           "format": "uri"
         },
+        "completionEndpoint": {
+          "type": "string",
+          "format": "uri"
+        },
         "bearerToken": {
           "type": "string",
           "minLength": 1

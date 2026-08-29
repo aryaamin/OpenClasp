@@ -118,6 +118,41 @@ describe('HTTP API', () => {
         calls.push(`revoke-token:${operatorId}:${agentId}:${tokenId}`);
         return { tokenId, agentId, revokedAt: '2026-01-02T00:00:00.000Z' };
       },
+      getCounterpartyBrief: async (operatorId: string, interactionId: string, agentId: string) => {
+        calls.push(`brief:${operatorId}:${interactionId}:${agentId}`);
+        return {
+          briefId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          interactionId,
+          contractHash: 'contract-hash',
+          recipientAgentId: agentId,
+          subjectAgentId: 'agent-b',
+          taskCategory: 'recruiting',
+          decision: 'CHALLENGE' as const,
+          requirements: [],
+          insights: [],
+          relevantSampleSize: 0,
+          historyConfidence: 0,
+          subjectAgentVersion: '1.0.0',
+          recommendedContractChanges: [],
+          generatedAt: '2026-08-29T00:00:00.000Z',
+          expiresAt: '2026-08-29T01:00:00.000Z',
+        };
+      },
+      submitCompletionReport: async (
+        operatorId: string,
+        agentId: string,
+        report: any,
+        submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+      ) => {
+        calls.push(
+          `completion:${operatorId}:${agentId}:${report.interactionId}:${submissionMethod}`,
+        );
+        return report;
+      },
+      recordSessionCompletionReport: async (token: string, report: any) => {
+        calls.push(`session-completion:${token}:${report.interactionId}`);
+        return report;
+      },
       receiveTemporaryMessage: async (
         token: string,
         agentId: string,
@@ -269,6 +304,90 @@ describe('HTTP API', () => {
       ).statusCode,
     ).toBe(200);
     expect(calls.at(-1)).toBe('revoke-token:user-a:agent-a:abcdefghijklmnop');
+    const interactionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/v0.1/federated-interactions/${interactionId}/brief?agentId=agent-a`,
+          headers: { 'x-openclasp-operator': 'user-a' },
+        })
+      ).json(),
+    ).toMatchObject({ recipientAgentId: 'agent-a', decision: 'CHALLENGE' });
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/v0.1/federated-interactions/${interactionId}/brief?agentId=agent-b`,
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+        })
+      ).statusCode,
+    ).toBe(403);
+    const completionReport = {
+      reportId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      interactionId,
+      contractHash: 'contract-hash',
+      reportingAgentId: 'agent-a',
+      counterpartyAgentId: 'agent-b',
+      agentVersion: '1.0.0',
+      outcome: 'partial',
+      summary: 'The counterparty answered but no matching role was available.',
+      requestedOutcome: 'Find a backend role',
+      criteria: [],
+      completedAt: '2026-08-29T00:00:00.000Z',
+      confidence: 0.9,
+      dataSharingMode: 'structured_only',
+    };
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/v0.1/federated-interactions/${interactionId}/completion-reports`,
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+          payload: completionReport,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe(`completion:user-a:agent-a:${interactionId}:oauth_installation`);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/v0.1/federated-interactions/${interactionId}/completion-reports`,
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+          payload: { ...completionReport, rawTranscript: 'must never be accepted' },
+        })
+      ).statusCode,
+    ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/sessions/${interactionId}/completion-reports`,
+          payload: completionReport,
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/sessions/${interactionId}/completion-reports`,
+          headers: { authorization: 'Bearer scoped-session-token' },
+          payload: completionReport,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe(`session-completion:scoped-session-token:${interactionId}`);
     const providerConnection = await app.inject({
       method: 'POST',
       url: '/v0.1/provider-connections',

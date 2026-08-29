@@ -32,6 +32,10 @@ export const SignatureSchema = z.object({
   value: z.string().min(1),
 });
 
+export const RecordAttestationSchema = SignatureSchema.extend({
+  digest: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
+}).strict();
+
 export const ExpectationManifestSchema = z.object({
   requiredInputs: z.array(z.string()).default([]),
   supportedTaskCategories: z.array(z.string()).min(1),
@@ -318,6 +322,7 @@ export const LiveSessionActivationSchema = z.object({
   }),
   reporting: z.object({
     endpoint: z.string().url(),
+    completionEndpoint: z.string().url().optional(),
     bearerToken: z.string().min(1),
   }),
   privateInsights: z.array(LiveSessionInsightSchema).optional(),
@@ -398,6 +403,10 @@ export const InteractionCompletionReportSchema = z
     confidence: z.number().min(0).max(1),
     dataSharingMode: DataSharingModeSchema.default('structured_only'),
     signature: SignatureSchema.optional(),
+    submissionMethod: z
+      .enum(['agent_signature', 'oauth_installation', 'agent_access_token', 'runtime_session'])
+      .optional(),
+    platformAttestation: RecordAttestationSchema.optional(),
   })
   .strict()
   .refine((report) => report.reportingAgentId !== report.counterpartyAgentId, {
@@ -679,6 +688,7 @@ export type InteractionFeedback = z.infer<typeof InteractionFeedbackSchema>;
 export type InteractionConclusion = z.infer<typeof InteractionConclusionSchema>;
 export type LearningEligibilityDecision = z.infer<typeof LearningEligibilityDecisionSchema>;
 export type BehaviouralProfileDelta = z.infer<typeof BehaviouralProfileDeltaSchema>;
+export type RecordAttestation = z.infer<typeof RecordAttestationSchema>;
 
 export interface KeyPair {
   keyId: string;

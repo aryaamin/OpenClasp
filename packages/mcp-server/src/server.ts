@@ -7,6 +7,7 @@ import {
   DelegationCredentialSchema,
   FeedbackSchema,
   InteractionContractSchema,
+  InteractionCompletionReportSchema,
   InteractionEventSchema,
   LiveSessionEventSchema,
   ReceiptSchema,
@@ -62,6 +63,7 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_reply',
   'openclasp_mark_read',
   'openclasp_close_thread',
+  'openclasp_submit_completion_report',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -146,6 +148,12 @@ type AgentDirectory = {
   recordLiveSessionEvent(
     token: string,
     event: z.infer<typeof LiveSessionEventSchema>,
+  ): Promise<unknown>;
+  submitCompletionReport?(
+    operatorId: string,
+    agentId: string,
+    report: z.infer<typeof InteractionCompletionReportSchema>,
+    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ): Promise<unknown>;
   touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
   listHostedThreads(operatorId: string, agentId: string): Promise<any[]>;
@@ -1147,6 +1155,92 @@ export function registerOpenClaspTools(
           binding.agent.agentId,
         ),
       });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[38],
+    {
+      title: 'Submit structured completion report',
+      description:
+        'Submit this agent’s structured outcome against the signed interaction contract. Raw messages and transcripts are rejected.',
+      inputSchema: z
+        .object({
+          interactionId: z.string().uuid(),
+          outcome: z.enum(['success', 'partial', 'failure', 'cancelled']),
+          summary: z.string().min(1).max(2000),
+          criteria: z
+            .array(
+              z
+                .object({
+                  criterion: z.string().min(1).max(1000),
+                  status: z.enum(['met', 'partially_met', 'missed', 'unknown']),
+                  explanation: z.string().max(1000).optional(),
+                  evidenceReferences: z.array(z.string().min(1).max(2048)).max(50).default([]),
+                })
+                .strict(),
+            )
+            .max(100),
+          deliverables: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          actionsTaken: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          blockers: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          scopeChanges: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          corrections: z.array(z.string().min(1).max(1000)).max(100).default([]),
+          evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
+          startedAt: z.string().datetime().optional(),
+          confidence: z.number().min(0).max(1),
+        })
+        .strict(),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.submitCompletionReport)
+        throw new Error('Interaction completion is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const interaction = await agentDirectory.getFederatedInteraction(
+        connection.operatorId,
+        input.interactionId,
+      );
+      if (!interaction) throw new Error('Interaction not found');
+      const counterpartyAgentId =
+        interaction.initiatorAgentId === binding.agent.agentId
+          ? interaction.responderAgentId
+          : interaction.initiatorAgentId;
+      if (!interaction.contract.parties.includes(binding.agent.agentId))
+        throw new Error('Bound agent is not an interaction participant');
+      const report = InteractionCompletionReportSchema.parse({
+        reportId: crypto.randomUUID(),
+        interactionId: input.interactionId,
+        contractHash: interaction.termsHash,
+        reportingAgentId: binding.agent.agentId,
+        counterpartyAgentId,
+        agentVersion: binding.agent.agentVersion,
+        outcome: input.outcome,
+        summary: input.summary,
+        requestedOutcome: interaction.contract.requestedOutcome,
+        criteria: input.criteria,
+        deliverables: input.deliverables,
+        actionsTaken: input.actionsTaken,
+        blockers: input.blockers,
+        scopeChanges: input.scopeChanges,
+        corrections: input.corrections,
+        evidenceReferences: input.evidenceReferences,
+        ...(input.startedAt ? { startedAt: input.startedAt } : {}),
+        completedAt: new Date().toISOString(),
+        confidence: input.confidence,
+        dataSharingMode: 'structured_only',
+      });
+      return text(
+        await agentDirectory.submitCompletionReport(
+          connection.operatorId,
+          binding.agent.agentId,
+          report,
+          connection.credentialType === 'agent_access_token'
+            ? 'agent_access_token'
+            : 'oauth_installation',
+        ),
+      );
     },
   );
   server.registerTool(

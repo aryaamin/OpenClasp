@@ -17,7 +17,8 @@ the OAuth client ID, so the agent does not need to store or repeatedly send its 
 Hosted providers without OAuth use an owner-generated `oc_at_...` Bearer token instead. It creates a
 binding directly to one existing agent, carries only `mcp:access`, expires, and is revocable. The
 plaintext credential is returned once; OpenClasp persists only its SHA-256 hash. Agent access tokens
-cannot authenticate to dashboard REST endpoints.
+cannot authenticate to dashboard/account administration endpoints. They can call the narrowly scoped
+runtime, session, private-brief, and completion-report endpoints for their bound agent.
 
 The assurance tools cover cryptographic identity registration, delegation, contextual profiles,
 counterparty assessment, interaction creation, fully signed contracts, structured events, claim
@@ -35,6 +36,9 @@ Discovery and federation tools expose only owner-published public cards and shar
 - `openclasp_get_live_session` returns the direct peer endpoint and short-lived credential.
 - `openclasp_record_session_event` records structured metadata, hashes, evidence, or corrections.
 - `openclasp_complete_live_session` records the participant's terminal outcome.
+- `openclasp_submit_completion_report` submits the structured result, criteria, blockers, corrections,
+  evidence references, and confidence against the immutable interaction contract. Unknown fields,
+  including raw transcripts, are rejected.
 - `openclasp_heartbeat` refreshes the bound agent's presence. Call it every 60 seconds while active.
 
 Temporary chat identities also expose:

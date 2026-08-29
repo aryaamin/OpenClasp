@@ -11,6 +11,7 @@ import {
   ReceiptSchema,
   FederatedInteractionSchema,
   LiveSessionEventSchema,
+  InteractionCompletionReportSchema,
 } from '../../../packages/protocol/src/index.js';
 import {
   FixtureFactCheckProvider,
@@ -47,6 +48,9 @@ type DashboardRepository = Pick<
       | 'getFederatedInteraction'
       | 'respondToFederatedInteraction'
       | 'getLiveSession'
+      | 'getCounterpartyBrief'
+      | 'submitCompletionReport'
+      | 'recordSessionCompletionReport'
       | 'recordLiveSessionEvent'
       | 'touchAgentPresence'
       | 'getRuntimeVerificationKey'
@@ -104,6 +108,17 @@ export function buildApi(
         throw error;
       }
       return value;
+    };
+    const enforceBoundAgent = (
+      request: { headers: Record<string, unknown> },
+      requestedAgentId: string,
+    ) => {
+      const value = request.headers['x-openclasp-bound-agent'];
+      if (typeof value === 'string' && value !== requestedAgentId) {
+        const error = new Error('Agent credential cannot access another agent');
+        Object.assign(error, { statusCode: 403 });
+        throw error;
+      }
     };
     const scopedEngine = async (request: { headers: Record<string, unknown> }) => {
       const owner = operatorId(request);
@@ -166,6 +181,19 @@ export function buildApi(
       if (event.interactionId !== (request.params as { id: string }).id)
         throw new Error('Interaction path does not match the event');
       return repository.recordLiveSessionEvent(authorization.slice(7), event);
+    });
+    router.post('/sessions/:id/completion-reports', async (request, reply) => {
+      if (!repository?.recordSessionCompletionReport)
+        throw new Error('Live-session completion reporting is not configured');
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith('Bearer ')) {
+        reply.status(401);
+        return { error: 'session_credential_required' };
+      }
+      const report = InteractionCompletionReportSchema.parse(request.body);
+      if (report.interactionId !== (request.params as { id: string }).id)
+        throw new Error('Interaction path does not match the completion report');
+      return repository.recordSessionCompletionReport(authorization.slice(7), report);
     });
     router.post('/a2a/temporary/:id', async (request, reply) => {
       if (!repository?.receiveTemporaryMessage)
@@ -244,6 +272,13 @@ export function buildApi(
         conflicts: [...engine.conflicts.values()],
         receipts: [...engine.receipts.values()],
         profiles: [...engine.profiles.values()],
+        counterpartyBriefs: [],
+        completionReports: [],
+        feedbackRequests: [],
+        interactionFeedback: [],
+        interactionConclusions: [],
+        learningEligibility: [],
+        profileDeltas: [],
         runtimes: [],
       };
     });
@@ -593,7 +628,36 @@ export function buildApi(
       if (!repository?.getLiveSession || !owner)
         throw new Error('Live sessions are not configured');
       const value = z.object({ agentId: z.string().min(1) }).parse(request.query);
+      enforceBoundAgent(request, value.agentId);
       return repository.getLiveSession(owner, (request.params as { id: string }).id, value.agentId);
+    });
+    router.get('/v0.1/federated-interactions/:id/brief', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getCounterpartyBrief || !owner)
+        throw new Error('Counterparty briefs are not configured');
+      const value = z.object({ agentId: z.string().min(1) }).parse(request.query);
+      enforceBoundAgent(request, value.agentId);
+      return repository.getCounterpartyBrief(
+        owner,
+        (request.params as { id: string }).id,
+        value.agentId,
+      );
+    });
+    router.post('/v0.1/federated-interactions/:id/completion-reports', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.submitCompletionReport || !owner)
+        throw new Error('Completion reports are not configured');
+      const report = InteractionCompletionReportSchema.parse(request.body);
+      if (report.interactionId !== (request.params as { id: string }).id)
+        throw new Error('Interaction path does not match the completion report');
+      return repository.submitCompletionReport(
+        owner,
+        boundAgentId(request),
+        report,
+        request.headers['x-openclasp-credential-type'] === 'agent_access_token'
+          ? 'agent_access_token'
+          : 'oauth_installation',
+      );
     });
     router.post('/v0.1/federated-interactions', async (request) => {
       const owner = operatorId(request);

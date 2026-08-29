@@ -7,8 +7,8 @@ import {
 
 describe('MCP surface', () => {
   it('exposes the complete documented tool set', () => {
-    expect(OPENCLASP_TOOL_NAMES).toHaveLength(38);
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toHaveLength(37);
+    expect(OPENCLASP_TOOL_NAMES).toHaveLength(39);
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toHaveLength(38);
     expect(HOSTED_OPENCLASP_TOOL_NAMES).not.toContain('openclasp_create_identity');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_connect_to_agent');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_respond_invitation');
@@ -19,6 +19,7 @@ describe('MCP surface', () => {
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_get_thread');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_send_message');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_reply');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_submit_completion_report');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_assess_counterparty');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_verify_receipt');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_setup');
