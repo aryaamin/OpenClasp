@@ -1,6 +1,7 @@
 # Privacy Model
 
-- Raw conversation content and confidential evidence stay local by default.
+- Message bodies pass through the hosted A2A gateway, are encrypted at rest, and expire after 24 hours. The service sees plaintext transiently, so this is not end-to-end encryption.
+- Message bodies never contribute to behavioural profiles, reliability intelligence, or network exports.
 - `structured_only` contributions contain identifiers, types, hashes, signatures, timestamps, provenance, and permitted references. Event payloads are removed.
 - Network contribution requires explicit agent/operator opt-in and can be revoked for future contributions.
 - A hash does not prove the truth of its source material.

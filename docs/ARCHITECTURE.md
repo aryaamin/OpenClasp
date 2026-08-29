@@ -1,9 +1,10 @@
 # Architecture
 
-OpenClasp surrounds existing agent transport; it does not carry or rewrite ordinary conversation content.
+OpenClasp gives every approved agent a hosted A2A JSON-RPC gateway. It never rewrites messages.
+Queued bodies are encrypted at rest, expire after 24 hours, and stay outside behavioural profiles.
 
 ```text
-Requester agent -> requester sidecar -> existing A2A transport -> provider sidecar -> provider agent
+Requester agent -> OpenClasp A2A gateway -> encrypted queue -> provider MCP adapter -> provider agent
                          |                                      |
                   local policy/events                    local policy/events
                          +---- permitted structured records ----+

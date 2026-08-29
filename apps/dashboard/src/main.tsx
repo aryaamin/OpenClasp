@@ -33,7 +33,7 @@ type Settings = {
   contributionEnabled: boolean;
   retentionDays: number;
   evidenceSharing: 'never' | 'ask' | 'contract_only';
-  rawConversationsStored: false;
+  rawConversationsStored: true;
 };
 
 const emptyData: DashboardData = {
@@ -54,7 +54,7 @@ const defaultSettings: Settings = {
   contributionEnabled: false,
   retentionDays: 30,
   evidenceSharing: 'ask',
-  rawConversationsStored: false,
+  rawConversationsStored: true,
 };
 const pages = ['dashboard', 'history', 'agents', 'insights', 'connect', 'settings'] as const;
 type Page = (typeof pages)[number];
@@ -223,8 +223,8 @@ function App() {
         <div className="privacyStamp">
           <span className="liveDot" />
           <div>
-            <strong>Structured-only</strong>
-            <small>Raw conversations stay local</small>
+            <strong>Privacy separated</strong>
+            <small>Gateway bodies expire in 24h</small>
           </div>
         </div>
         <button className="account" onClick={() => void signOut()}>
@@ -277,7 +277,7 @@ function Login() {
           <h1>Know who your agent is dealing with.</h1>
           <p>
             Verified identities, signed outcomes, private warnings, and contextual
-            reliability—without collecting raw conversations.
+            reliability—without using message bodies for scoring.
           </p>
         </div>
         <div className="loginProof">
@@ -397,9 +397,7 @@ function Overview({
       .filter((publication) => publication.published)
       .map((publication) => String(publication.agentId)),
   );
-  const readyAgents = data.agents.filter(
-    (agent) => agent.a2aEndpoint && publishedIds.has(String(agent.agentId)),
-  ).length;
+  const readyAgents = data.agents.filter((agent) => publishedIds.has(String(agent.agentId))).length;
   const pendingInvitations = data.federatedInteractions.filter(
     (interaction) => interaction.status === 'pending',
   ).length;
@@ -533,7 +531,6 @@ function Agents({
   const saveAutomation = async (
     agentId: string,
     value: {
-      a2aEndpoint: string;
       autoPublish: boolean;
       autoAcceptPolicy: 'off' | 'safe_matching';
       autoAcceptTaskCategories: string[];
@@ -562,8 +559,8 @@ function Agents({
         onAction={() => navigate('connect')}
       />
       <div className="notice">
-        <strong>One approval, then automatic.</strong> A public A2A endpoint makes the agent
-        discoverable. Safe matching tasks can be accepted automatically; sensitive or mismatched
+        <strong>One approval, then automatic.</strong> OpenClasp creates and hosts the agent's A2A
+        endpoint. Safe matching tasks can be accepted automatically; sensitive or mismatched
         requests still require review.
       </div>
       {error && <div className="errorBar">{error}</div>}
@@ -920,10 +917,10 @@ function SettingsPage({
           </select>
         </Setting>
         <Setting
-          label="Raw conversations"
-          description="Message bodies remain local and user-owned. This cannot be enabled on the hosted service."
+          label="Gateway message bodies"
+          description="Encrypted at rest, deleted on acknowledgement, and automatically expired after 24 hours. Never used for profiles."
         >
-          <span className="locked">ALWAYS OFF</span>
+          <span className="locked">24H MAX</span>
         </Setting>
         <div className="saveRow">
           <button className="primary" onClick={() => void save()} disabled={saving}>
@@ -1059,14 +1056,12 @@ function AgentCard({
   published: boolean;
   working: boolean;
   onSave: (value: {
-    a2aEndpoint: string;
     autoPublish: boolean;
     autoAcceptPolicy: 'off' | 'safe_matching';
     autoAcceptTaskCategories: string[];
   }) => void;
 }) {
-  const [editing, setEditing] = useState(!agent.a2aEndpoint);
-  const [endpoint, setEndpoint] = useState(String(agent.a2aEndpoint ?? ''));
+  const [editing, setEditing] = useState(false);
   const [autoPublish, setAutoPublish] = useState(Boolean(agent.autoPublish ?? published));
   const [autoAcceptPolicy, setAutoAcceptPolicy] = useState<'off' | 'safe_matching'>(
     agent.autoAcceptPolicy === 'safe_matching' ? 'safe_matching' : 'off',
@@ -1077,7 +1072,8 @@ function AgentCard({
       : (agent.capabilities ?? [])
     ).join(', '),
   );
-  const ready = published && Boolean(agent.a2aEndpoint);
+  const ready = published;
+  const endpoint = `${window.location.origin}/a2a/${encodeURIComponent(agent.agentId)}`;
   const identityLabel = agent.revoked
     ? 'REVOKED'
     : agent.identityMode === 'oauth_installation'
@@ -1104,7 +1100,7 @@ function AgentCard({
         {agent.identityMode === 'oauth_installation' ? 'OAuth-bound · ' : 'Ed25519 · '}Created{' '}
         {new Date(agent.createdAt).toLocaleDateString()}
       </small>
-      {published && agent.a2aEndpoint ? (
+      {published ? (
         <a
           href={`/agents/${encodeURIComponent(agent.agentId)}/card.json`}
           target="_blank"
@@ -1115,6 +1111,7 @@ function AgentCard({
       ) : null}
       <div className="automationSummary">
         <span>{published ? '● Public discovery' : '○ Private'}</span>
+        <span>↗ OpenClasp A2A gateway</span>
         <span>
           {agent.autoAcceptPolicy === 'safe_matching'
             ? '⚡ Safe tasks automatic'
@@ -1124,13 +1121,8 @@ function AgentCard({
       {editing ? (
         <div className="automationForm">
           <label>
-            <span>Public A2A endpoint</span>
-            <input
-              type="url"
-              value={endpoint}
-              onChange={(event) => setEndpoint(event.target.value)}
-              placeholder="https://your-agent.example/a2a"
-            />
+            <span>Hosted A2A endpoint</span>
+            <input type="url" value={endpoint} readOnly />
           </label>
           <label>
             <span>Invitation policy</span>
@@ -1169,7 +1161,6 @@ function AgentCard({
               disabled={working || agent.status === 'revoked'}
               onClick={() =>
                 onSave({
-                  a2aEndpoint: endpoint.trim(),
                   autoPublish,
                   autoAcceptPolicy,
                   autoAcceptTaskCategories: categories

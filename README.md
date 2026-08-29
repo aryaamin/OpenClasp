@@ -4,7 +4,7 @@
 
 OpenClasp is a general-purpose assurance layer for agent-to-agent communication. It does not replace A2A, MCP, OAuth, or an agent framework. It adds signed identity and delegation, explicit interaction contracts, deterministic policy checks, evidence-backed clues, consented mediation, signed receipts, and task-specific behavioural history.
 
-Raw conversations remain local by default. OpenClasp learns from permitted structured events and verified outcomes—not from a universal trust score or a marketplace of private conversations.
+Gateway message bodies are encrypted at rest, deleted after acknowledgement, and expire after 24 hours. They never feed behavioural profiles or network intelligence. OpenClasp learns only from permitted structured events and verified outcomes.
 
 ## Five-minute quickstart
 
@@ -36,7 +36,8 @@ discover Auth0 through `/.well-known/oauth-protected-resource`, open hosted logi
 retry with an audience-bound bearer token. The local stdio server remains available for development.
 
 On first use, tell the connected agent to set itself up. It calls `openclasp_setup` with its project,
-identity, capabilities, and public A2A endpoint. Approve the proposal once on the dashboard. That
+identity and capabilities. Approve the proposal once on the dashboard. OpenClasp creates the
+agent's public A2A gateway endpoint automatically. That
 single approval binds the installation, publishes its Agent Card, and enables the proposed safe-task
 policy. One account can own multiple isolated projects and agents, and switching identities still
 requires confirmation.
@@ -47,15 +48,15 @@ categories, requests no shared data or human approval, and stays inside its capa
 immediately and returns a ready-to-send A2A request. Anything sensitive, mismatched, or broader waits
 for explicit approval. Both accounts always share one immutable contract record.
 
-OpenClasp cannot invent network reachability: the framework must expose a real HTTPS A2A endpoint.
-OpenClasp supplies discovery, assurance, policy, and metadata; messages still travel directly over A2A.
+Every approved agent receives `https://openclasp.vercel.app/a2a/{agentId}` automatically. The MCP
+adapter provides its inbox and send operations, so users do not host or configure an endpoint.
 
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
 inspect task-specific behavioural profiles, copy the MCP connection URL, and control retention,
 evidence sharing, and network-contribution consent. Hosted account records are isolated by the
-validated Auth0 subject and stored in Neon Postgres. Raw conversation bodies are not part of the
-hosted record schema.
+validated Auth0 subject and stored in Neon Postgres. Gateway bodies live in a separate encrypted,
+short-retention queue and are excluded from account history and reliability calculations.
 
 OpenClasp's web login presents only Google and GitHub. Complete the one-time provider setup in
 [`docs/SOCIAL_LOGIN_SETUP.md`](docs/SOCIAL_LOGIN_SETUP.md) before using it outside of testing.
@@ -75,7 +76,7 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 - `persistence`: local SQLite audit storage and hosted Neon Postgres account storage.
 - `sdk`: HTTP client and local signed-object helpers.
 - `sidecar`: A2A extension metadata verification, forwarding, and privacy filtering.
-- `mcp-server`: 28 local tools and a hardened 27-tool hosted surface; private-key generation remains local-only.
+- `mcp-server`: 31 local tools and a hardened 30-tool hosted surface, including gateway inbox/send/ack; private-key generation remains local-only.
 - `apps/api`, `apps/demo`, `apps/dashboard`: runnable surfaces.
 
 ## Quality gate

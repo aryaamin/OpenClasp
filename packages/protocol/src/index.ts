@@ -110,6 +110,7 @@ export const AgentTransportSchema = z.object({
   protocol: z.literal('A2A/1.0'),
   protocolBinding: z.string().min(1).default('JSONRPC'),
   endpoint: z.string().url(),
+  managedBy: z.literal('openclasp').default('openclasp'),
 });
 
 export const PublicAgentCardSchema = z.object({

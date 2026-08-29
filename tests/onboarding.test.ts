@@ -35,7 +35,6 @@ describe('agent self-onboarding', () => {
       limitations: ['No purchases'],
       description: 'Browses public sources',
       agentVersion: '2.0.0',
-      a2aEndpoint: 'https://research.example/a2a',
     });
 
     expect(request.status).toBe('pending');
@@ -55,7 +54,7 @@ describe('agent self-onboarding', () => {
         name: 'Research agent',
         capabilities: ['research'],
         agentVersion: '2.0.0',
-        a2aEndpoint: 'https://research.example/a2a',
+        transport: 'openclasp_gateway',
       },
       project: { name: 'Market research' },
     });
@@ -113,10 +112,9 @@ describe('agent self-onboarding', () => {
     await approveAgentSetup(store, 'owner', request.requestId);
     const updated = await updateAgentProfile(store, 'owner', 'client-a', {
       capabilities: ['planning', 'coordination'],
-      a2aEndpoint: 'https://planner.example/a2a',
     });
     expect(updated.capabilities).toEqual(['planning', 'coordination']);
-    expect(updated.a2aEndpoint).toBe('https://planner.example/a2a');
+    expect(updated.transport).toBe('openclasp_gateway');
     await expect(
       updateAgentProfile(store, 'owner', 'different-client', { name: 'Hijacked' }),
     ).rejects.toThrow('not connected');

@@ -3,6 +3,7 @@ import type { AuditStore } from '../../core/src/index.js';
 
 export * from './hosted.js';
 export * from './onboarding.js';
+export * from './relay.js';
 
 export class SqliteAuditStore implements AuditStore {
   private db: DatabaseSync;

@@ -58,9 +58,14 @@
           "endpoint": {
             "type": "string",
             "format": "uri"
+          },
+          "managedBy": {
+            "default": "openclasp",
+            "type": "string",
+            "const": "openclasp"
           }
         },
-        "required": ["protocol", "protocolBinding", "endpoint"],
+        "required": ["protocol", "protocolBinding", "endpoint", "managedBy"],
         "additionalProperties": false
       }
     },

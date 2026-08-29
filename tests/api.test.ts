@@ -11,7 +11,7 @@ describe('HTTP API', () => {
     });
     expect(
       (await app.inject({ method: 'GET', url: '/extensions/trust/v0.1' })).json(),
-    ).toMatchObject({ version: '0.1', transportsMessages: false });
+    ).toMatchObject({ version: '0.1', transportsMessages: true });
     const specification = (await app.inject({ method: 'GET', url: '/openapi.json' })).json();
     expect(specification.info.title).toBe('OpenClasp API');
     expect(specification.paths).toHaveProperty('/v0.1/risk/assess');
@@ -44,12 +44,12 @@ describe('HTTP API', () => {
           contributionEnabled: false,
           retentionDays: 30,
           evidenceSharing: 'ask' as const,
-          rawConversationsStored: false as const,
+          rawConversationsStored: true as const,
         };
       },
       saveSettings: async (operatorId: string, value: any) => {
         calls.push(`save:${operatorId}`);
-        return { ...value, rawConversationsStored: false as const };
+        return { ...value, rawConversationsStored: true as const };
       },
       upsert: async () => undefined,
       list: async () => [],
@@ -147,7 +147,7 @@ describe('HTTP API', () => {
     });
     expect(a2aCard.statusCode).toBe(200);
     expect(a2aCard.json().supportedInterfaces[0]).toMatchObject({
-      url: 'https://agent.example/a2a',
+      url: 'https://localhost:80/a2a/agent-one',
       protocolVersion: '1.0',
     });
     const automation = await app.inject({
@@ -165,6 +165,59 @@ describe('HTTP API', () => {
     expect(automation.json()).toMatchObject({
       autoPublish: true,
       autoAcceptPolicy: 'safe_matching',
+    });
+    await app.close();
+  });
+
+  it('accepts scoped A2A JSON-RPC delivery at the hosted endpoint', async () => {
+    const queued: any[] = [];
+    const repository = {
+      dashboard: async () => ({}) as any,
+      getSettings: async () => ({}) as any,
+      saveSettings: async () => ({}) as any,
+      upsert: async () => undefined,
+      list: async () => [],
+      publishAgent: async (_operatorId: string, card: any) => card,
+      unpublishAgent: async () => true,
+      getPublishedAgent: async () => undefined,
+      searchPublishedAgents: async () => [],
+      verifyGatewayToken: () => ({
+        interactionId: 'interaction-1',
+        senderAgentId: 'agent-a',
+        recipientAgentId: 'agent-b',
+        expiresAt: Date.now() + 60_000,
+      }),
+      enqueueGatewayMessage: async (value: any) => {
+        queued.push(value);
+        return {
+          accepted: true,
+          deduplicated: false,
+          messageId: 'message-1',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        };
+      },
+    };
+    const app = buildApi(undefined, undefined, repository);
+    await app.ready();
+    expect((await app.inject({ method: 'POST', url: '/a2a/agent-b' })).statusCode).toBe(401);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/a2a/agent-b',
+      headers: { authorization: 'Bearer scoped-token' },
+      payload: {
+        jsonrpc: '2.0',
+        id: 'request-1',
+        method: 'message/send',
+        params: { message: { role: 'user', parts: [{ kind: 'text', text: 'hello' }] } },
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ jsonrpc: '2.0', id: 'request-1' });
+    expect(queued[0]).toMatchObject({
+      interactionId: 'interaction-1',
+      senderAgentId: 'agent-a',
+      recipientAgentId: 'agent-b',
+      idempotencyKey: 'a2a:interaction-1:request-1',
     });
     await app.close();
   });

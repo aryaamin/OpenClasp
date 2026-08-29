@@ -10,6 +10,7 @@
     { "source": "/ready", "destination": "/api/index?path=/ready" },
     { "source": "/openapi.json", "destination": "/api/index?path=/openapi.json" },
     { "source": "/extensions/trust/v0.1", "destination": "/api/index?path=/extensions/trust/v0.1" },
+    { "source": "/a2a/:id", "destination": "/api/index?path=/a2a/:id" },
     { "source": "/agents/:id/card.json", "destination": "/api/index?path=/agents/:id/card.json" },
     {
       "source": "/agents/:id/a2a-agent-card.json",

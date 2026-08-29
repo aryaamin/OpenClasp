@@ -8,6 +8,13 @@ import {
   type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
+import {
+  decryptGatewayPayload,
+  encryptGatewayPayload,
+  issueGatewayGrant,
+  verifyGatewayGrant,
+  type GatewayGrant,
+} from './relay.js';
 
 export type HostedRecordKind =
   | 'agent'
@@ -31,7 +38,24 @@ export type { PublicAgentCard, FederatedInteraction } from '../../protocol/src/i
 
 function normalizePublicAgentCard(value: unknown): PublicAgentCard {
   const current = PublicAgentCardSchema.safeParse(value);
-  if (current.success) return current.data;
+  if (current.success) {
+    const card = current.data;
+    const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
+      /\/$/,
+      '',
+    );
+    return PublicAgentCardSchema.parse({
+      ...card,
+      transports: [
+        {
+          protocol: 'A2A/1.0',
+          protocolBinding: 'JSONRPC',
+          endpoint: `${baseUrl}/a2a/${encodeURIComponent(card.agentId)}`,
+          managedBy: 'openclasp',
+        },
+      ],
+    });
+  }
   const legacy = value as Record<string, unknown>;
   const agentId = String(legacy.agentId ?? '');
   const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
@@ -48,7 +72,14 @@ function normalizePublicAgentCard(value: unknown): PublicAgentCard {
     capabilities: legacy.capabilities,
     limitations: legacy.limitations,
     assurance: legacy.assurance,
-    transports: [],
+    transports: [
+      {
+        protocol: 'A2A/1.0',
+        protocolBinding: 'JSONRPC',
+        endpoint: `${baseUrl}/a2a/${encodeURIComponent(agentId)}`,
+        managedBy: 'openclasp',
+      },
+    ],
     cardUrl: `${baseUrl}/agents/${encodeURIComponent(agentId)}/card.json`,
     a2aAgentCardUrl: `${baseUrl}/agents/${encodeURIComponent(agentId)}/a2a-agent-card.json`,
     extensionUri: DEFAULT_EXTENSION_URI,
@@ -74,9 +105,14 @@ export function buildPublicAgentCard(
     capabilities: agent.capabilities,
     limitations: agent.limitations,
     assurance: 'oauth_authenticated',
-    transports: agent.a2aEndpoint
-      ? [{ protocol: 'A2A/1.0', protocolBinding: 'JSONRPC', endpoint: agent.a2aEndpoint }]
-      : [],
+    transports: [
+      {
+        protocol: 'A2A/1.0',
+        protocolBinding: 'JSONRPC',
+        endpoint: `${root}/a2a/${encodeURIComponent(agent.agentId)}`,
+        managedBy: 'openclasp',
+      },
+    ],
     cardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/card.json`,
     a2aAgentCardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/a2a-agent-card.json`,
     extensionUri: DEFAULT_EXTENSION_URI,
@@ -125,7 +161,7 @@ export type AccountSettings = {
   contributionEnabled: boolean;
   retentionDays: number;
   evidenceSharing: 'never' | 'ask' | 'contract_only';
-  rawConversationsStored: false;
+  rawConversationsStored: true;
 };
 
 const defaults: AccountSettings = {
@@ -133,7 +169,7 @@ const defaults: AccountSettings = {
   contributionEnabled: false,
   retentionDays: 30,
   evidenceSharing: 'ask',
-  rawConversationsStored: false,
+  rawConversationsStored: true,
 };
 
 export class HostedRepository {
@@ -142,6 +178,12 @@ export class HostedRepository {
 
   constructor(databaseUrl: string) {
     this.sql = neon(databaseUrl);
+  }
+
+  private gatewaySecret() {
+    const value = process.env.OPENCLASP_RELAY_ENCRYPTION_KEY;
+    if (!value || value.length < 32) throw new Error('Gateway encryption is not configured');
+    return value;
   }
 
   ensureSchema(): Promise<void> {
@@ -203,7 +245,137 @@ export class HostedRepository {
         CREATE INDEX IF NOT EXISTS openclasp_federated_interactions_participants
         ON openclasp_federated_interactions(initiator_operator_id, responder_operator_id, updated_at DESC)
       `;
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_gateway_messages (
+          message_id TEXT PRIMARY KEY,
+          idempotency_key TEXT UNIQUE,
+          interaction_id TEXT NOT NULL,
+          sender_agent_id TEXT NOT NULL,
+          recipient_agent_id TEXT NOT NULL,
+          ciphertext TEXT NOT NULL,
+          iv TEXT NOT NULL,
+          auth_tag TEXT NOT NULL,
+          content_type TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ NOT NULL,
+          delivered_at TIMESTAMPTZ
+        )
+      `;
+      await this.sql`
+        CREATE INDEX IF NOT EXISTS openclasp_gateway_messages_inbox
+        ON openclasp_gateway_messages(recipient_agent_id, created_at ASC)
+      `;
     })());
+  }
+
+  issueGatewayToken(interaction: FederatedInteraction): string {
+    return issueGatewayGrant(this.gatewaySecret(), {
+      interactionId: interaction.interactionId,
+      senderAgentId: interaction.initiatorAgentId,
+      recipientAgentId: interaction.responderAgentId,
+      expiresAt: Math.min(Date.parse(interaction.expiresAt), Date.now() + 60 * 60_000),
+    });
+  }
+
+  verifyGatewayToken(token: string): GatewayGrant {
+    return verifyGatewayGrant(this.gatewaySecret(), token);
+  }
+
+  async enqueueGatewayMessage(input: {
+    interactionId: string;
+    senderAgentId: string;
+    recipientAgentId: string;
+    payload: unknown;
+    contentType?: string;
+    idempotencyKey?: string;
+  }) {
+    await this.ensureSchema();
+    const values = await this.sql`
+      SELECT payload FROM openclasp_federated_interactions
+      WHERE interaction_id = ${input.interactionId} AND status = 'active'
+    `;
+    const interaction = values[0]?.payload
+      ? FederatedInteractionSchema.parse(values[0].payload)
+      : undefined;
+    if (!interaction) throw new Error('An active OpenClasp interaction is required');
+    const parties = new Set([interaction.initiatorAgentId, interaction.responderAgentId]);
+    if (
+      !parties.has(input.senderAgentId) ||
+      !parties.has(input.recipientAgentId) ||
+      input.senderAgentId === input.recipientAgentId
+    )
+      throw new Error('Gateway participants do not match the interaction');
+    const encrypted = encryptGatewayPayload(this.gatewaySecret(), input.payload);
+    const messageId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
+    const rows = await this.sql`
+      INSERT INTO openclasp_gateway_messages(
+        message_id, idempotency_key, interaction_id, sender_agent_id, recipient_agent_id,
+        ciphertext, iv, auth_tag, content_type, expires_at
+      ) VALUES (
+        ${messageId}, ${input.idempotencyKey ?? null}, ${input.interactionId},
+        ${input.senderAgentId}, ${input.recipientAgentId}, ${encrypted.ciphertext},
+        ${encrypted.iv}, ${encrypted.authTag}, ${input.contentType ?? 'application/json'}, ${expiresAt}
+      )
+      ON CONFLICT (idempotency_key) DO NOTHING
+      RETURNING message_id
+    `;
+    return {
+      accepted: true,
+      deduplicated: rows.length === 0,
+      messageId: rows.length ? String(rows[0]?.message_id) : undefined,
+      expiresAt,
+    };
+  }
+
+  async listGatewayMessages(operatorId: string, agentId: string, limit = 20) {
+    await this.ensureSchema();
+    const owned = await this.sql`
+      SELECT 1 FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+    `;
+    if (!owned.length) throw new Error('Agent is not owned by this account');
+    await this.sql`DELETE FROM openclasp_gateway_messages WHERE expires_at <= NOW()`;
+    const rows = await this.sql`
+      UPDATE openclasp_gateway_messages SET delivered_at = COALESCE(delivered_at, NOW())
+      WHERE message_id IN (
+        SELECT message_id FROM openclasp_gateway_messages
+        WHERE recipient_agent_id = ${agentId} AND expires_at > NOW()
+        ORDER BY created_at ASC LIMIT ${Math.min(Math.max(limit, 1), 50)}
+      )
+      RETURNING message_id, interaction_id, sender_agent_id, recipient_agent_id,
+        ciphertext, iv, auth_tag, content_type, created_at, expires_at
+    `;
+    return rows.map((row) => ({
+      messageId: String(row.message_id),
+      interactionId: String(row.interaction_id),
+      senderAgentId: String(row.sender_agent_id),
+      recipientAgentId: String(row.recipient_agent_id),
+      contentType: String(row.content_type),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      expiresAt: new Date(String(row.expires_at)).toISOString(),
+      payload: decryptGatewayPayload(this.gatewaySecret(), {
+        ciphertext: String(row.ciphertext),
+        iv: String(row.iv),
+        authTag: String(row.auth_tag),
+      }),
+    }));
+  }
+
+  async acknowledgeGatewayMessage(operatorId: string, agentId: string, messageId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      DELETE FROM openclasp_gateway_messages message
+      USING openclasp_records agent
+      WHERE message.message_id = ${messageId}
+        AND message.recipient_agent_id = ${agentId}
+        AND agent.operator_id = ${operatorId}
+        AND agent.kind = 'agent_profile'
+        AND agent.record_id = ${agentId}
+      RETURNING message.message_id
+    `;
+    if (!rows.length) throw new Error('Gateway message not found');
+    return { acknowledged: true, messageId };
   }
 
   async upsert(
@@ -504,7 +676,7 @@ export class HostedRepository {
           contributionEnabled: row.contribution_enabled,
           retentionDays: row.retention_days,
           evidenceSharing: row.evidence_sharing,
-          rawConversationsStored: false,
+          rawConversationsStored: true,
         }
       : defaults;
   }
@@ -528,6 +700,6 @@ export class HostedRepository {
         evidence_sharing = EXCLUDED.evidence_sharing,
         updated_at = NOW()
     `;
-    return { ...settings, rawConversationsStored: false };
+    return { ...settings, rawConversationsStored: true };
   }
 }

@@ -14,6 +14,7 @@ export type AgentProfile = {
   framework: string;
   agentVersion: string;
   a2aEndpoint?: string;
+  transport?: 'openclasp_gateway';
   autoPublish: boolean;
   autoAcceptPolicy: 'off' | 'safe_matching';
   autoAcceptTaskCategories: string[];
@@ -93,6 +94,7 @@ export async function getOnboardingState(
     projects: values<Project>('project'),
     agentProfiles: values<AgentProfile>('agent_profile').map((agent) => ({
       ...agent,
+      transport: 'openclasp_gateway',
       description: agent.description ?? '',
       agentVersion: agent.agentVersion ?? '1.0.0',
       autoPublish: agent.autoPublish ?? false,
@@ -170,9 +172,8 @@ export async function requestAgentSetup(
     description: input.description?.trim() || '',
     agentVersion: input.agentVersion?.trim() || '1.0.0',
     ...(input.a2aEndpoint?.trim() ? { a2aEndpoint: input.a2aEndpoint.trim() } : {}),
-    autoPublish: input.autoPublish ?? Boolean(input.a2aEndpoint?.trim()),
-    autoAcceptPolicy:
-      input.autoAcceptPolicy ?? (input.a2aEndpoint?.trim() ? 'safe_matching' : 'off'),
+    autoPublish: input.autoPublish ?? true,
+    autoAcceptPolicy: input.autoAcceptPolicy ?? 'safe_matching',
     autoAcceptTaskCategories: [
       ...new Set(input.autoAcceptTaskCategories ?? input.capabilities ?? []),
     ],
@@ -222,7 +223,7 @@ export async function approveAgentSetup(
       description: request.description ?? '',
       framework: request.framework,
       agentVersion: request.agentVersion,
-      ...(request.a2aEndpoint ? { a2aEndpoint: request.a2aEndpoint } : {}),
+      transport: 'openclasp_gateway',
       autoPublish: request.autoPublish ?? false,
       autoAcceptPolicy: request.autoAcceptPolicy ?? 'off',
       autoAcceptTaskCategories: request.autoAcceptTaskCategories ?? [],
@@ -294,6 +295,7 @@ export async function updateAgentProfile(
   if (binding.status !== 'connected') throw new Error('This MCP installation is not connected');
   const agent: AgentProfile = {
     ...binding.agent,
+    transport: 'openclasp_gateway',
     ...(patch.name?.trim() ? { name: patch.name.trim() } : {}),
     ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
     ...(patch.framework?.trim() ? { framework: patch.framework.trim() } : {}),
@@ -307,11 +309,6 @@ export async function updateAgentProfile(
     ...(patch.limitations ? { limitations: [...new Set(patch.limitations)] } : {}),
     updatedAt: new Date().toISOString(),
   };
-  if (patch.a2aEndpoint !== undefined) {
-    const endpoint = patch.a2aEndpoint.trim();
-    if (endpoint) agent.a2aEndpoint = endpoint;
-    else delete agent.a2aEndpoint;
-  }
   await store.upsert(operatorId, 'agent_profile', agent.agentId, agent);
   return agent;
 }

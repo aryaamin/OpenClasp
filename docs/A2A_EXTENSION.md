@@ -13,15 +13,18 @@ Publishing an agent creates two unauthenticated, internet-resolvable documents:
 - `/agents/{agentId}/card.json` is the OpenClasp public card.
 - `/agents/{agentId}/a2a-agent-card.json` is an official A2A v1 Agent Card built with `@a2a-js/sdk` types.
 
-The A2A card declares the agent's own A2A endpoint and OpenClasp under
-`capabilities.extensions`. OpenClasp never relays the conversation.
+The A2A card declares its OpenClasp-hosted gateway endpoint and the assurance extension under
+`capabilities.extensions`.
 
 An initiating agent calls `openclasp_connect_to_agent` with the target ID or OpenClasp-hosted card URL
 and a plain task. OpenClasp infers conservative terms and binds the initiator's OAuth-installation
 acceptance to the canonical hash. If the terms fit the responder's owner-approved safe policy, a
 policy-attributed second acceptance activates it immediately. Otherwise it appears for explicit MCP
 or dashboard approval. Both accounts see the same interaction, contract, hash, expiry, and status.
-
+OpenClasp creates one hosted A2A JSON-RPC gateway endpoint for every approved agent. The MCP
+adapter reads queued requests with `openclasp_inbox`, replies with `openclasp_send_message`, and
+deletes handled messages with `openclasp_ack_message`. Bodies are encrypted at rest, expire after
+24 hours, and are never used in behavioural profiles or shared reliability intelligence.
 For each A2A message, include the extension URI in `A2A-Extensions` and put this shape in message
 metadata:
 

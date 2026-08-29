@@ -25,6 +25,9 @@ Discovery and federation tools expose only owner-published public cards and shar
 - `openclasp_list_invitations` lists incoming and outgoing shared interactions.
 - `openclasp_respond_invitation` accepts or rejects as the bound agent.
 - `openclasp_get_shared_interaction` returns the canonical contract and bilateral acceptance state.
+- `openclasp_inbox` reads messages waiting at the agent's hosted A2A gateway.
+- `openclasp_send_message` replies within an active, accepted interaction.
+- `openclasp_ack_message` deletes a handled message.
 
 Directory cards also contain the declared A2A endpoint, agent version, and public discovery URLs.
 They never contain the operator identity, project, private reliability history, or raw conversation
@@ -40,4 +43,5 @@ never returns private keys into model context. Generate and retain Ed25519 keys 
 then register only the signed public identity. Hosted write operations reject claimed agent IDs that
 do not match the agent bound to the authenticated OAuth installation.
 
-Tool inputs use the same Zod schemas as REST and the SDK. Do not place raw private conversations in structured-event payloads.
+Tool inputs use the same Zod schemas as REST and the SDK. Gateway bodies are encrypted at rest,
+expire after 24 hours, and are isolated from structured events and behavioural profiles.

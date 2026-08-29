@@ -44,6 +44,8 @@ type DashboardRepository = Pick<
       | 'listFederatedInteractions'
       | 'getFederatedInteraction'
       | 'respondToFederatedInteraction'
+      | 'verifyGatewayToken'
+      | 'enqueueGatewayMessage'
     >
   >;
 
@@ -118,9 +120,43 @@ export function buildApi(
       name: 'OpenClasp A2A assurance extension',
       version: '0.1',
       required: false,
-      transportsMessages: false,
+      transportsMessages: true,
       documentation: 'https://github.com/aryaamin/OpenClasp/blob/main/docs/A2A_EXTENSION.md',
     }));
+    router.post('/a2a/:id', async (request, reply) => {
+      if (!repository?.verifyGatewayToken || !repository.enqueueGatewayMessage)
+        throw new Error('Hosted A2A gateway is not configured');
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith('Bearer ')) {
+        reply.status(401);
+        return { error: 'gateway_token_required' };
+      }
+      const grant = repository.verifyGatewayToken(authorization.slice(7));
+      const recipientAgentId = (request.params as { id: string }).id;
+      if (grant.recipientAgentId !== recipientAgentId) {
+        reply.status(403);
+        return { error: 'gateway_token_recipient_mismatch' };
+      }
+      const body = z
+        .object({
+          jsonrpc: z.literal('2.0').default('2.0'),
+          id: z.union([z.string(), z.number()]).optional(),
+          method: z.literal('message/send'),
+          params: z.record(z.string(), z.unknown()),
+        })
+        .parse(request.body);
+      const accepted = await repository.enqueueGatewayMessage({
+        interactionId: grant.interactionId,
+        senderAgentId: grant.senderAgentId,
+        recipientAgentId: grant.recipientAgentId,
+        payload: body,
+        contentType: 'application/json',
+        ...(body.id !== undefined
+          ? { idempotencyKey: `a2a:${grant.interactionId}:${body.id}` }
+          : {}),
+      });
+      return { jsonrpc: '2.0', id: body.id ?? null, result: accepted };
+    });
     router.get('/agents/:id/card.json', async (request) => {
       if (!repository) throw new Error('Hosted persistence is not configured');
       const card = await repository.getPublishedAgent((request.params as { id: string }).id);
@@ -173,7 +209,7 @@ export function buildApi(
           contributionEnabled: false,
           retentionDays: 30,
           evidenceSharing: 'ask',
-          rawConversationsStored: false,
+          rawConversationsStored: true,
         };
       return repository.getSettings(owner);
     });
@@ -189,7 +225,7 @@ export function buildApi(
       const state = await getOnboardingState(repository, owner);
       const setup = state.setupRequests.find((item) => item.requestId === requestId);
       const result = await approveAgentSetup(repository, owner, requestId);
-      if (result.status === 'connected' && setup?.autoPublish && result.agent.a2aEndpoint) {
+      if (result.status === 'connected' && setup?.autoPublish) {
         const previous = await repository.getPublishedAgent(result.agent.agentId);
         const card = await repository.publishAgent(
           owner,
@@ -268,7 +304,6 @@ export function buildApi(
       const { id } = request.params as { id: string };
       const value = z
         .object({
-          a2aEndpoint: z.union([z.string().url(), z.literal('')]),
           autoPublish: z.boolean(),
           autoAcceptPolicy: z.enum(['off', 'safe_matching']),
           autoAcceptTaskCategories: z.array(z.string().trim().min(1).max(100)).max(100),
@@ -278,10 +313,9 @@ export function buildApi(
       const current = rows.find((row) => row.kind === 'agent_profile' && row.recordId === id)
         ?.payload as AgentProfile | undefined;
       if (!current) throw new Error('Owned agent not found');
-      if (value.autoPublish && !value.a2aEndpoint)
-        throw new Error('A public A2A endpoint is required for automatic discovery');
       const agent: AgentProfile = {
         ...current,
+        transport: 'openclasp_gateway',
         description: current.description ?? '',
         agentVersion: current.agentVersion ?? '1.0.0',
         autoPublish: value.autoPublish,
@@ -289,8 +323,6 @@ export function buildApi(
         autoAcceptTaskCategories: [...new Set(value.autoAcceptTaskCategories)],
         updatedAt: new Date().toISOString(),
       };
-      if (value.a2aEndpoint) agent.a2aEndpoint = value.a2aEndpoint;
-      else delete agent.a2aEndpoint;
       await repository.upsert(owner, 'agent_profile', id, agent);
       if (value.autoPublish) {
         const previous = await repository.getPublishedAgent(id);
