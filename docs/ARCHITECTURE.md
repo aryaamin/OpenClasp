@@ -43,6 +43,12 @@ feedback. These records can update contextual behavioural profiles. Message bodi
 reasoning stay with the agents in direct mode. Temporary-hosted message text is excluded from
 profiles and network contribution even though it is retained for user-visible thread continuity.
 
+The learning path is deterministic: attested reports and feedback produce an eligibility decision,
+then bounded behavioural observations, a decayed task/version profile, and an attested delta. Each
+account learns privately about its counterparty. Both accounts must enable contribution before the
+decision is marked for a future shared aggregate. The expiry cron also backfills older conclusions
+that do not yet have an eligibility decision.
+
 The protocol package owns wire validation and cryptography. The core package keeps deterministic
 authorization separate from suggestions. REST, SDK, MCP, sidecar, CLI, and dashboard call the same
 core behaviour. Hosted ownership is `Auth0 user → project → agent → MCP installation`; unrelated

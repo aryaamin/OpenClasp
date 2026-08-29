@@ -3,8 +3,11 @@ import {
   buildCounterpartyBrief,
   buildInteractionConclusion,
   createIdentity,
+  deriveBehaviouralObservations,
+  evaluateLearningEligibility,
   FixtureFactCheckProvider,
   TrustEngine,
+  updateContextualBehaviouralProfile,
 } from '@openclasp/core';
 import {
   canonicalHash,
@@ -13,6 +16,9 @@ import {
   PublicAgentCardSchema,
   signNamed,
   type InteractionContract,
+  type InteractionConclusion,
+  type InteractionCompletionReport,
+  type InteractionFeedback,
   type Receipt,
 } from '@openclasp/protocol';
 import { createSignedEvent } from '@openclasp/sdk';
@@ -298,5 +304,148 @@ describe('general assurance behavior', () => {
     expect(conclusion.consensus).toBe('bilateral_partial_agreement');
     expect(conclusion.averageRatings.reliability).toBeCloseTo(0.7);
     expect(JSON.stringify(conclusion)).not.toContain('private note');
+  });
+});
+
+describe('behavioural learning', () => {
+  const attestation = {
+    algorithm: 'Ed25519' as const,
+    keyId: 'openclasp:test',
+    value: 'signed-test-record',
+    digest: 'a'.repeat(43),
+  };
+  const interactionId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const report = (
+    reportingAgentId: string,
+    counterpartyAgentId: string,
+    outcome: 'success' | 'partial' = 'success',
+  ): InteractionCompletionReport =>
+    InteractionCompletionReportSchema.parse({
+      reportId: crypto.randomUUID(),
+      interactionId,
+      contractHash: 'contract-hash',
+      reportingAgentId,
+      counterpartyAgentId,
+      agentVersion: '1.0.0',
+      outcome,
+      summary: 'Structured outcome only',
+      requestedOutcome: 'Complete the task',
+      criteria: [
+        {
+          criterion: 'Task completed',
+          status: outcome === 'success' ? 'met' : 'partially_met',
+        },
+      ],
+      confidence: 0.9,
+      completedAt: '2026-08-29T00:10:00.000Z',
+      platformAttestation: attestation,
+    });
+  const feedback = (
+    reviewerAgentId: string,
+    subjectAgentId: string,
+    rating: number,
+    evidenceReferences: string[] = [],
+  ): InteractionFeedback =>
+    InteractionFeedbackSchema.parse({
+      feedbackId: crypto.randomUUID(),
+      requestId: crypto.randomUUID(),
+      interactionId,
+      reviewerAgentId,
+      subjectAgentId,
+      reviewerAgentVersion: '1.0.0',
+      ratings: {
+        outcome_satisfaction: rating,
+        communication: rating,
+        timeliness: rating,
+        evidence_quality: rating,
+        scope_adherence: rating,
+      },
+      wouldWorkAgain: rating >= 0.5 ? 'yes' : 'no',
+      evidenceReferences,
+      confidence: 1,
+      submittedAt: '2026-08-29T00:11:00.000Z',
+      submissionMethod: 'runtime_session',
+      platformAttestation: attestation,
+    });
+  const conclusion = (consensus: InteractionConclusion['consensus']): InteractionConclusion => ({
+    conclusionId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    interactionId,
+    contractHash: 'contract-hash',
+    outcome: 'partial',
+    consensus,
+    summary: 'Structured conclusion',
+    criteria: [],
+    reportIds: [],
+    feedbackIds: [],
+    averageRatings: {},
+    evidenceReferences: [],
+    generatedAt: '2026-08-29T00:12:00.000Z',
+  });
+
+  it('requires attested corroboration or evidence and penalizes manipulation signals', () => {
+    const reports = [report('agent:a', 'agent:b'), report('agent:b', 'agent:a')];
+    const normal = evaluateLearningEligibility({
+      interactionId,
+      reports,
+      feedback: [feedback('agent:a', 'agent:b', 0.8)],
+      consensus: 'bilateral_agreement',
+      contributionMode: 'local_only',
+      reviewerCredibility: { 'agent:a': 1 },
+    });
+    const extreme = evaluateLearningEligibility({
+      interactionId,
+      reports,
+      feedback: [feedback('agent:a', 'agent:b', 1)],
+      consensus: 'bilateral_agreement',
+      contributionMode: 'local_only',
+      reviewerCredibility: { 'agent:a': 1 },
+    });
+    const unsupported = evaluateLearningEligibility({
+      interactionId,
+      reports: [report('agent:a', 'agent:b')],
+      feedback: [],
+      consensus: 'unilateral',
+      contributionMode: 'network_aggregate',
+    });
+    expect(normal.eligible).toBe(true);
+    expect(extreme.sampleWeight).toBeLessThan(normal.sampleWeight);
+    expect(unsupported).toMatchObject({
+      eligible: false,
+      sampleWeight: 0,
+      contributionMode: 'network_aggregate',
+      structuredDataOnly: true,
+    });
+  });
+
+  it('derives bounded observations and applies weighted history decay', () => {
+    const observations = deriveBehaviouralObservations({
+      subjectAgentId: 'agent:b',
+      reports: [report('agent:b', 'agent:a', 'partial')],
+      reviewerFeedback: feedback('agent:a', 'agent:b', 0.8, ['evidence:artifact:1']),
+      conclusion: conclusion('conflicting'),
+    });
+    expect(observations).toMatchObject({
+      completion: 0.5,
+      specification: 0.5,
+      acceptance: 0.8,
+      communication: 0.8,
+      disputes: 1,
+    });
+    const updated = updateContextualBehaviouralProfile({
+      current: {
+        completion: 1,
+        communication: 1,
+        sampleSize: 10,
+        effectiveSampleSize: 10,
+        updatedAt: '2026-03-02T00:12:00.000Z',
+      },
+      observations,
+      sampleWeight: 0.8,
+      appliedAt: '2026-08-29T00:12:00.000Z',
+    });
+    expect(updated.profile.sampleSize).toBe(11);
+    expect(updated.profile.effectiveSampleSize).toBeLessThan(5);
+    expect(updated.profile.completion).toBeLessThan(1);
+    expect(updated.dimensionDeltas.completion).toBeLessThan(0);
   });
 });

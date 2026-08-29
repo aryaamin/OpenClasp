@@ -1,8 +1,15 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { createHash, randomBytes } from 'node:crypto';
-import { buildCounterpartyBrief, buildInteractionConclusion } from '../../core/src/index.js';
+import {
+  buildCounterpartyBrief,
+  buildInteractionConclusion,
+  deriveBehaviouralObservations,
+  evaluateLearningEligibility,
+  updateContextualBehaviouralProfile,
+} from '../../core/src/index.js';
 import {
   AgentIdentitySchema,
+  BehaviouralProfileDeltaSchema,
   DEFAULT_EXTENSION_URI,
   CounterpartyBriefSchema,
   FederatedInteractionSchema,
@@ -17,12 +24,14 @@ import {
   InteractionCompletionReportSchema,
   InteractionConclusionSchema,
   InteractionFeedbackSchema,
+  LearningEligibilityDecisionSchema,
   PublicAgentCardSchema,
   ReceiptSchema,
   canonicalHash,
   verifyObject,
   type FederatedInteraction,
   type AgentPresence,
+  type BehaviouralProfileDelta,
   type CounterpartyBrief,
   type LiveSessionActivation,
   type LiveSessionEvent,
@@ -31,6 +40,7 @@ import {
   type HostedThread,
   type InteractionCompletionReport,
   type InteractionFeedback,
+  type InteractionConclusion,
   type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
@@ -84,8 +94,11 @@ export type { PublicAgentCard, FederatedInteraction } from '../../protocol/src/i
 
 type ContextualProfile = {
   recordId: string;
+  agentId: string;
   agentVersion: string;
+  taskCategory: string;
   sampleSize: number;
+  effectiveSampleSize?: number;
   updatedAt: string;
   completion: number;
   acceptance: number;
@@ -98,6 +111,18 @@ type ContextualProfile = {
 };
 
 const FEEDBACK_DIMENSIONS = FeedbackDimensionSchema.options;
+
+function reviewerCredibility(feedback: InteractionFeedback): number {
+  const provenance =
+    feedback.submissionMethod === 'agent_signature'
+      ? 0.9
+      : feedback.submissionMethod === 'runtime_session'
+        ? 0.8
+        : feedback.submissionMethod === 'agent_access_token'
+          ? 0.75
+          : 0.65;
+  return Math.min(1, provenance + (feedback.evidenceReferences.length ? 0.1 : 0));
+}
 
 function deterministicUuid(value: string): string {
   const bytes = createHash('sha256').update(value).digest().subarray(0, 16);
@@ -1228,10 +1253,14 @@ export class HostedRepository {
       );
       const freshness = Math.exp(-ageDays / 180);
       const sampleSize = Number(current.sampleSize);
-      const confidence = Math.min(0.95, (sampleSize / (sampleSize + 5)) * freshness);
+      const effectiveSampleSize = Number(current.effectiveSampleSize ?? sampleSize);
+      const versionChanged = current.agentVersion !== counterparty.card.agentVersion;
+      const confidence = Math.min(
+        0.95,
+        (effectiveSampleSize / (effectiveSampleSize + 5)) * freshness * (versionChanged ? 0.35 : 1),
+      );
       relevantSampleSize = sampleSize;
       historyConfidence = confidence;
-      const versionChanged = current.agentVersion !== counterparty.card.agentVersion;
       const reference = `openclasp:profile:${current.recordId}`;
       insights.push({
         code: versionChanged ? 'version_history_only' : 'contextual_history',
@@ -1883,6 +1912,160 @@ export class HostedRepository {
     );
   }
 
+  private async applyInteractionLearning(input: {
+    interaction: FederatedInteraction;
+    initiatorOperatorId: string;
+    responderOperatorId: string;
+    reports: InteractionCompletionReport[];
+    feedback: InteractionFeedback[];
+    conclusion: InteractionConclusion;
+  }) {
+    const { interaction, reports, feedback, conclusion } = input;
+    const [initiatorSettings, responderSettings, cards] = await Promise.all([
+      this.getSettings(input.initiatorOperatorId),
+      this.getSettings(input.responderOperatorId),
+      this.sql`
+        SELECT agent_id, card FROM openclasp_public_agents
+        WHERE agent_id IN (${interaction.initiatorAgentId}, ${interaction.responderAgentId})
+      `,
+    ]);
+    const contributionMode =
+      initiatorSettings.contributionEnabled && responderSettings.contributionEnabled
+        ? ('network_aggregate' as const)
+        : ('local_only' as const);
+    const eligibilityBase = evaluateLearningEligibility({
+      interactionId: interaction.interactionId,
+      reports,
+      feedback,
+      consensus: conclusion.consensus,
+      contributionMode,
+      reviewerCredibility: Object.fromEntries(
+        feedback.map((item) => [item.reviewerAgentId, reviewerCredibility(item)]),
+      ),
+      decisionId: deterministicUuid(`learning-eligibility:${interaction.interactionId}`),
+      decidedAt: conclusion.generatedAt,
+    });
+    const eligibility = LearningEligibilityDecisionSchema.parse({
+      ...eligibilityBase,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), eligibilityBase),
+    });
+    await Promise.all([
+      this.upsert(
+        input.initiatorOperatorId,
+        'learning_eligibility',
+        eligibility.decisionId,
+        eligibility,
+      ),
+      this.upsert(
+        input.responderOperatorId,
+        'learning_eligibility',
+        eligibility.decisionId,
+        eligibility,
+      ),
+    ]);
+    if (!eligibility.eligible || eligibility.sampleWeight <= 0)
+      return { eligibility, profileDeltas: [] as BehaviouralProfileDelta[] };
+
+    const appliedAt = new Date().toISOString();
+    const versions = new Map<string, string>();
+    for (const report of reports) versions.set(report.reportingAgentId, report.agentVersion);
+    for (const row of cards) {
+      const card = PublicAgentCardSchema.safeParse(row.card);
+      if (card.success && !versions.has(String(row.agent_id)))
+        versions.set(String(row.agent_id), card.data.agentVersion);
+    }
+    const participants = [
+      {
+        viewerOperatorId: input.initiatorOperatorId,
+        reviewerAgentId: interaction.initiatorAgentId,
+        subjectAgentId: interaction.responderAgentId,
+      },
+      {
+        viewerOperatorId: input.responderOperatorId,
+        reviewerAgentId: interaction.responderAgentId,
+        subjectAgentId: interaction.initiatorAgentId,
+      },
+    ];
+    const profileDeltas = await Promise.all(
+      participants.map(async (participant) => {
+        const agentVersion = versions.get(participant.subjectAgentId);
+        if (!agentVersion) return undefined;
+        const deltaId = deterministicUuid(
+          `profile-delta:${interaction.interactionId}:${participant.viewerOperatorId}:${participant.subjectAgentId}`,
+        );
+        const existingDelta = await this.sql`
+          SELECT payload FROM openclasp_records
+          WHERE operator_id = ${participant.viewerOperatorId}
+            AND kind = 'profile_delta' AND record_id = ${deltaId}
+          LIMIT 1
+        `;
+        const parsedDelta = BehaviouralProfileDeltaSchema.safeParse(existingDelta[0]?.payload);
+        if (parsedDelta.success) return parsedDelta.data;
+        const profileId = deterministicUuid(
+          `contextual-profile:${participant.subjectAgentId}:${agentVersion}:${interaction.contract.taskCategory}`,
+        );
+        const currentRows = await this.sql`
+          SELECT payload FROM openclasp_records
+          WHERE operator_id = ${participant.viewerOperatorId}
+            AND kind = 'profile' AND record_id = ${profileId}
+          LIMIT 1
+        `;
+        const current = currentRows[0]?.payload as Partial<ContextualProfile> | undefined;
+        const reviewerFeedback = feedback.find(
+          (item) =>
+            item.reviewerAgentId === participant.reviewerAgentId &&
+            item.subjectAgentId === participant.subjectAgentId,
+        );
+        const observations = deriveBehaviouralObservations({
+          subjectAgentId: participant.subjectAgentId,
+          reports,
+          ...(reviewerFeedback ? { reviewerFeedback } : {}),
+          conclusion,
+        });
+        const applied = updateContextualBehaviouralProfile({
+          ...(current ? { current } : {}),
+          observations,
+          sampleWeight: eligibility.sampleWeight,
+          appliedAt,
+        });
+        const profile: ContextualProfile = {
+          recordId: profileId,
+          agentId: participant.subjectAgentId,
+          agentVersion,
+          taskCategory: interaction.contract.taskCategory,
+          ...applied.profile,
+        };
+        const deltaBase = BehaviouralProfileDeltaSchema.parse({
+          deltaId,
+          interactionId: interaction.interactionId,
+          agentId: participant.subjectAgentId,
+          agentVersion,
+          taskCategory: interaction.contract.taskCategory,
+          sampleWeight: eligibility.sampleWeight,
+          dimensionDeltas: applied.dimensionDeltas,
+          explanation:
+            'Applied platform-attested structured outcome and eligible reviewer signals; private comments and raw conversation content were excluded.',
+          appliedAt,
+        });
+        const delta = BehaviouralProfileDeltaSchema.parse({
+          ...deltaBase,
+          platformAttestation: attestSessionRecord(this.gatewaySecret(), deltaBase),
+        });
+        await Promise.all([
+          this.upsert(participant.viewerOperatorId, 'profile', profileId, profile),
+          this.upsert(participant.viewerOperatorId, 'profile_delta', deltaId, delta),
+        ]);
+        return delta;
+      }),
+    );
+    return {
+      eligibility,
+      profileDeltas: profileDeltas.filter(
+        (delta): delta is BehaviouralProfileDelta => delta !== undefined,
+      ),
+    };
+  }
+
   private async finalizeInteractionConclusion(interactionId: string) {
     const [interactionRows, reportRows, feedbackRows, requestRows, existingRows] =
       await Promise.all([
@@ -1910,8 +2093,6 @@ export class HostedRepository {
         LIMIT 1
       `,
       ]);
-    const existing = InteractionConclusionSchema.safeParse(existingRows[0]?.payload);
-    if (existing.success) return { released: true, conclusion: existing.data };
     const interactionRow = interactionRows[0];
     if (!interactionRow) throw new Error('Interaction not found');
     const interaction = FederatedInteractionSchema.parse(interactionRow.payload);
@@ -1936,6 +2117,18 @@ export class HostedRepository {
           .map((request) => [request.requestId, request]),
       ).values(),
     ];
+    const existing = InteractionConclusionSchema.safeParse(existingRows[0]?.payload);
+    if (existing.success) {
+      await this.applyInteractionLearning({
+        interaction,
+        initiatorOperatorId: String(interactionRow.initiator_operator_id),
+        responderOperatorId: String(interactionRow.responder_operator_id),
+        reports,
+        feedback,
+        conclusion: existing.data,
+      });
+      return { released: true, conclusion: existing.data };
+    }
     if (requests.length < 2 || requests.some((request) => request.status === 'pending'))
       return { released: false as const };
     const base = buildInteractionConclusion({
@@ -2013,7 +2206,15 @@ export class HostedRepository {
         receipt,
       ),
     ]);
-    return { released: true as const, conclusion, receipt };
+    const learning = await this.applyInteractionLearning({
+      interaction,
+      initiatorOperatorId: String(interactionRow.initiator_operator_id),
+      responderOperatorId: String(interactionRow.responder_operator_id),
+      reports,
+      feedback,
+      conclusion,
+    });
+    return { released: true as const, conclusion, receipt, learning };
   }
 
   async submitInteractionFeedback(
@@ -2117,13 +2318,29 @@ export class HostedRepository {
 
   async processDueFeedback(now = new Date()) {
     await this.ensureSchema();
-    const rows = await this.sql`
-      SELECT operator_id, record_id, payload FROM openclasp_records
-      WHERE kind = 'feedback_request'
-        AND payload->>'status' = 'pending'
-        AND (payload->>'dueAt')::timestamptz <= ${now.toISOString()}
-      LIMIT 500
-    `;
+    const [rows, backfillRows] = await Promise.all([
+      this.sql`
+        SELECT operator_id, record_id, payload FROM openclasp_records
+        WHERE kind = 'feedback_request'
+          AND payload->>'status' = 'pending'
+          AND (payload->>'dueAt')::timestamptz <= ${now.toISOString()}
+        LIMIT 500
+      `,
+      this.sql`
+        SELECT conclusion.payload->>'interactionId' AS interaction_id
+        FROM openclasp_records conclusion
+        WHERE conclusion.kind = 'interaction_conclusion'
+          AND NOT EXISTS (
+            SELECT 1 FROM openclasp_records eligibility
+            WHERE eligibility.operator_id = conclusion.operator_id
+              AND eligibility.kind = 'learning_eligibility'
+              AND eligibility.payload->>'interactionId' = conclusion.payload->>'interactionId'
+          )
+        GROUP BY conclusion.payload->>'interactionId'
+        ORDER BY MIN(conclusion.created_at) ASC
+        LIMIT 200
+      `,
+    ]);
     const interactions = new Set<string>();
     for (const row of rows) {
       const request = FeedbackRequestSchema.parse(row.payload);
@@ -2141,12 +2358,13 @@ export class HostedRepository {
       );
       interactions.add(request.interactionId);
     }
+    for (const row of backfillRows) interactions.add(String(row.interaction_id));
     let released = 0;
     for (const interactionId of interactions) {
       const result = await this.finalizeInteractionConclusion(interactionId);
       if (result.released) released += 1;
     }
-    return { expired: rows.length, released };
+    return { expired: rows.length, released, backfilled: backfillRows.length };
   }
 
   async recordSessionFeedback(token: string, value: InteractionFeedback) {

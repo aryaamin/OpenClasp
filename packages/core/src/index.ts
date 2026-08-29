@@ -10,6 +10,7 @@ import {
   InteractionContractSchema,
   InteractionConclusionSchema,
   InteractionEventSchema,
+  LearningEligibilityDecisionSchema,
   ReceiptSchema,
   signNamed,
   signObject,
@@ -28,6 +29,7 @@ import {
   type InteractionEvent,
   type KeyPair,
   type LiveSessionInsight,
+  type LearningEligibilityDecision,
   type PublicAgentCard,
   type Receipt,
   type RiskDecision,
@@ -275,6 +277,218 @@ export function buildInteractionConclusion(input: {
     evidenceReferences: [...new Set(input.reports.flatMap((report) => report.evidenceReferences))],
     generatedAt: input.generatedAt ?? new Date().toISOString(),
   });
+}
+
+function extremeFeedbackPenalty(feedback: InteractionFeedback): number {
+  const ratings = Object.values(feedback.ratings).filter(
+    (value): value is number => typeof value === 'number',
+  );
+  if (!ratings.length) return 0.5;
+  const extremeShare =
+    ratings.filter((value) => value === 0 || value === 1).length / ratings.length;
+  return extremeShare === 1 && feedback.evidenceReferences.length === 0 ? 0.6 : 1;
+}
+
+export function evaluateLearningEligibility(input: {
+  interactionId: string;
+  reports: InteractionCompletionReport[];
+  feedback: InteractionFeedback[];
+  consensus: InteractionConclusion['consensus'];
+  contributionMode: 'local_only' | 'network_aggregate';
+  reviewerCredibility?: Record<string, number>;
+  decisionId?: string;
+  decidedAt?: string;
+}): LearningEligibilityDecision {
+  const attestedReports = input.reports.filter((report) => report.platformAttestation);
+  const attestedFeedback = input.feedback.filter((item) => item.platformAttestation);
+  const bilateralReports =
+    new Set(attestedReports.map((report) => report.reportingAgentId)).size >= 2;
+  const evidenceReferences = [
+    ...new Set([
+      ...attestedReports.flatMap((report) => report.evidenceReferences),
+      ...attestedFeedback.flatMap((item) => item.evidenceReferences),
+    ]),
+  ];
+  const evidenceBacked = bilateralReports || evidenceReferences.length > 0;
+  const eligible = attestedReports.length > 0 && evidenceBacked;
+  const reviewerWeight = attestedFeedback.length
+    ? attestedFeedback.reduce((total, item) => {
+        const credibility = Math.max(
+          0.1,
+          Math.min(1, input.reviewerCredibility?.[item.reviewerAgentId] ?? 0.5),
+        );
+        return total + item.confidence * credibility * extremeFeedbackPenalty(item);
+      }, 0) / attestedFeedback.length
+    : 0;
+  const sampleWeight = eligible
+    ? Math.max(
+        0.1,
+        Math.min(
+          1,
+          0.25 +
+            (bilateralReports ? 0.35 : 0) +
+            Math.min(0.2, reviewerWeight * 0.2) +
+            (evidenceReferences.length ? 0.1 : 0) -
+            (input.consensus === 'conflicting' ? 0.2 : 0),
+        ),
+      )
+    : 0;
+  const reasons = [
+    attestedReports.length
+      ? `${attestedReports.length} platform-attested completion report(s)`
+      : 'No attested completion report',
+    bilateralReports
+      ? 'Bilateral reports provide outcome corroboration'
+      : 'Outcome is not bilaterally corroborated',
+    attestedFeedback.length
+      ? `${attestedFeedback.length} eligible feedback response(s)`
+      : 'No eligible feedback response',
+    evidenceReferences.length
+      ? `${evidenceReferences.length} permitted evidence reference(s)`
+      : 'No permitted external evidence reference',
+    input.consensus === 'conflicting'
+      ? 'Conflicting reports reduce sample weight'
+      : 'No report-conflict penalty',
+  ];
+  return LearningEligibilityDecisionSchema.parse({
+    decisionId: input.decisionId ?? randomUUID(),
+    interactionId: input.interactionId,
+    eligible,
+    reasons,
+    sampleWeight,
+    reportIds: attestedReports.map((report) => report.reportId),
+    feedbackIds: attestedFeedback.map((item) => item.feedbackId),
+    evidenceReferences,
+    contributionMode: input.contributionMode,
+    structuredDataOnly: true,
+    decidedAt: input.decidedAt ?? new Date().toISOString(),
+  });
+}
+
+export type BehaviouralObservations = Partial<
+  Record<
+    | 'completion'
+    | 'acceptance'
+    | 'specification'
+    | 'deadline'
+    | 'communication'
+    | 'evidence'
+    | 'scope'
+    | 'disputes',
+    number
+  >
+>;
+
+export const BEHAVIOURAL_DIMENSIONS = [
+  'completion',
+  'acceptance',
+  'specification',
+  'deadline',
+  'communication',
+  'evidence',
+  'scope',
+  'disputes',
+] as const;
+
+export type BehaviouralDimension = (typeof BEHAVIOURAL_DIMENSIONS)[number];
+
+export type ContextualBehaviouralProfile = Record<BehaviouralDimension, number> & {
+  sampleSize: number;
+  effectiveSampleSize: number;
+  updatedAt: string;
+};
+
+export function updateContextualBehaviouralProfile(input: {
+  current?: Partial<ContextualBehaviouralProfile>;
+  observations: BehaviouralObservations;
+  sampleWeight: number;
+  appliedAt?: string;
+  decayDays?: number;
+}): { profile: ContextualBehaviouralProfile; dimensionDeltas: Record<string, number> } {
+  const appliedAt = input.appliedAt ?? new Date().toISOString();
+  const decayDays = input.decayDays ?? 180;
+  const priorAgeDays = input.current?.updatedAt
+    ? Math.max(0, (Date.parse(appliedAt) - Date.parse(input.current.updatedAt)) / 86_400_000)
+    : 0;
+  const priorEffectiveSampleSize = Math.max(
+    0,
+    input.current?.effectiveSampleSize ?? input.current?.sampleSize ?? 0,
+  );
+  const decayedPriorWeight =
+    priorEffectiveSampleSize * Math.exp(-priorAgeDays / Math.max(1, decayDays));
+  const sampleWeight = Math.max(0, Math.min(1, input.sampleWeight));
+  const hasObservation = BEHAVIOURAL_DIMENSIONS.some(
+    (dimension) => typeof input.observations[dimension] === 'number',
+  );
+  const nextEffectiveSampleSize = decayedPriorWeight + (hasObservation ? sampleWeight : 0);
+  const dimensionDeltas: Record<string, number> = {};
+  const dimensions = Object.fromEntries(
+    BEHAVIOURAL_DIMENSIONS.map((dimension) => {
+      const previous = Math.max(0, Math.min(1, input.current?.[dimension] ?? 0.5));
+      const observed = input.observations[dimension];
+      if (typeof observed !== 'number' || sampleWeight === 0) return [dimension, previous];
+      const next =
+        (previous * decayedPriorWeight + Math.max(0, Math.min(1, observed)) * sampleWeight) /
+        Math.max(Number.EPSILON, nextEffectiveSampleSize);
+      dimensionDeltas[dimension] = next - previous;
+      return [dimension, next];
+    }),
+  ) as Record<BehaviouralDimension, number>;
+  return {
+    profile: {
+      ...dimensions,
+      sampleSize:
+        Math.max(0, Math.floor(input.current?.sampleSize ?? 0)) +
+        (hasObservation && sampleWeight > 0 ? 1 : 0),
+      effectiveSampleSize: nextEffectiveSampleSize,
+      updatedAt: appliedAt,
+    },
+    dimensionDeltas,
+  };
+}
+
+export function deriveBehaviouralObservations(input: {
+  subjectAgentId: string;
+  reports: InteractionCompletionReport[];
+  reviewerFeedback?: InteractionFeedback;
+  conclusion: InteractionConclusion;
+}): BehaviouralObservations {
+  const subjectReport = input.reports.find(
+    (report) => report.reportingAgentId === input.subjectAgentId,
+  );
+  const criteria =
+    subjectReport?.criteria.filter((criterion) => criterion.status !== 'unknown') ?? [];
+  const criterionValue = (status: (typeof criteria)[number]['status']) =>
+    status === 'met' ? 1 : status === 'partially_met' ? 0.5 : 0;
+  const ratings = input.reviewerFeedback?.ratings;
+  const observation: BehaviouralObservations = {
+    ...(subjectReport
+      ? {
+          completion:
+            subjectReport.outcome === 'success' ? 1 : subjectReport.outcome === 'partial' ? 0.5 : 0,
+        }
+      : {}),
+    ...(criteria.length
+      ? {
+          specification:
+            criteria.reduce((total, criterion) => total + criterionValue(criterion.status), 0) /
+            criteria.length,
+        }
+      : {}),
+    ...(typeof ratings?.outcome_satisfaction === 'number'
+      ? { acceptance: ratings.outcome_satisfaction }
+      : {}),
+    ...(typeof ratings?.timeliness === 'number' ? { deadline: ratings.timeliness } : {}),
+    ...(typeof ratings?.communication === 'number' ? { communication: ratings.communication } : {}),
+    ...(typeof ratings?.evidence_quality === 'number'
+      ? { evidence: ratings.evidence_quality }
+      : {}),
+    ...(typeof ratings?.scope_adherence === 'number' ? { scope: ratings.scope_adherence } : {}),
+    disputes: input.conclusion.consensus === 'conflicting' ? 1 : 0,
+  };
+  return Object.fromEntries(
+    Object.entries(observation).map(([key, value]) => [key, Math.max(0, Math.min(1, value))]),
+  );
 }
 
 export interface AuditStore {

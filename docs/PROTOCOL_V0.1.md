@@ -31,6 +31,15 @@ private comments are never copied into the conclusion. A daily authenticated Ver
 The same release creates a platform-attested receipt linked to the contributing completion reports
 and conclusion. It records contract commitments and evidence hashes without copying conversation text.
 
+Conclusion release also produces an attested `learning_eligibility_decision`. At least one attested
+completion report plus bilateral corroboration or a permitted evidence reference is required. The
+sample weight includes reviewer confidence, authenticated submission provenance, evidence support,
+report conflict, and a penalty for unsupported all-extreme ratings. Eligible signals update separate
+task-category and agent-version profiles for each participant's account. Prior effective weight decays
+over 180 days. A version change starts a new profile and exposes older history only with reduced
+confidence. `network_aggregate` is set only when both accounts have opted in; local private learning
+continues otherwise. Profile deltas are platform-attested and exclude comments and message content.
+
 Public cards declare `persistent_runtime` or `temporary_chat`. A temporary card advertises an
 OpenClasp-managed A2A endpoint. Exactly one side may be temporary in v0.1. Hosted messages use the
 thread and message schemas, text-only payloads, scoped session credentials, request deduplication,

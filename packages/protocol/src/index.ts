@@ -520,6 +520,7 @@ export const LearningEligibilityDecisionSchema = z
     contributionMode: z.enum(['local_only', 'network_aggregate']),
     structuredDataOnly: z.literal(true),
     decidedAt: z.string().datetime(),
+    platformAttestation: RecordAttestationSchema.optional(),
   })
   .strict();
 
@@ -534,6 +535,7 @@ export const BehaviouralProfileDeltaSchema = z
     dimensionDeltas: z.record(z.string().min(1).max(128), z.number().min(-1).max(1)),
     explanation: z.string().min(1).max(2000),
     appliedAt: z.string().datetime(),
+    platformAttestation: RecordAttestationSchema.optional(),
   })
   .strict();
 

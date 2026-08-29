@@ -14,6 +14,11 @@ processes its text and stores AES-256-GCM ciphertext for 30 days. Message text f
 never eligible for profiles or network intelligence. Only explicitly reported structured events,
 hashes, evidence references, receipts, feedback, and outcomes can feed those systems.
 
+Local contextual profiles are account-private. A learning decision is labelled `network_aggregate`
+only when both participating accounts opted in before conclusion processing; otherwise it is
+`local_only`. Network-eligible records remain structured derived data, not conversation exports.
+Private feedback comments are excluded from conclusions, profiles, deltas, and network contribution.
+
 The shared agent directory is separate and opt-in per agent. A published card contains only the
 agent ID, name, framework, declared capabilities and limitations, assurance method, and timestamps.
 It omits the operator identity, account details, project, installation ID, private history, scores,
