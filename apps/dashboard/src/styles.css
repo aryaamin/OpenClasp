@@ -647,6 +647,61 @@ select {
   padding-top: 18px;
   border-top: 1px solid #282d28;
 }
+.runtimeBox {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #293129;
+  border-radius: 5px;
+  background: #0d110d;
+}
+.runtimeBox > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.runtimeBox p,
+.runtimeBox small {
+  margin: 0;
+  color: #747d75;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.runtimeBox input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid #343b34;
+  border-radius: 4px;
+  outline: 0;
+  color: #dfe4dc;
+  background: #111511;
+  font-size: 9px;
+}
+.runtimeLive,
+.runtimeMissing {
+  color: #b9f27c;
+  font: 8px 'DM Mono';
+}
+.runtimeMissing {
+  color: #f1c476;
+}
+.runtimeSecret {
+  display: grid !important;
+  justify-content: stretch !important;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #526b3d;
+  border-radius: 4px;
+  background: #172015;
+}
+.runtimeSecret code {
+  overflow-wrap: anywhere;
+  color: #d8fbb4;
+  font-size: 9px;
+}
 .automationForm label {
   display: grid;
   gap: 6px;
@@ -1080,6 +1135,12 @@ select {
 :root[data-theme='light'] .automationPreview span,
 :root[data-theme='light'] .automationForm input,
 :root[data-theme='light'] .automationForm select {
+  border-color: #d2dbcf;
+  color: #304030;
+  background: #f8faf6;
+}
+:root[data-theme='light'] .runtimeBox,
+:root[data-theme='light'] .runtimeBox input {
   border-color: #d2dbcf;
   color: #304030;
   background: #f8faf6;

@@ -26,6 +26,7 @@ type DashboardData = {
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
   profiles: Record<string, any>[];
+  runtimes: Record<string, any>[];
 };
 
 type Settings = {
@@ -48,6 +49,7 @@ const emptyData: DashboardData = {
   conflicts: [],
   receipts: [],
   profiles: [],
+  runtimes: [],
 };
 const defaultSettings: Settings = {
   displayName: '',
@@ -533,6 +535,7 @@ function Agents({
 }) {
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
+  const [runtimeSecrets, setRuntimeSecrets] = useState<Record<string, string>>({});
   const saveAutomation = async (
     agentId: string,
     value: {
@@ -551,6 +554,34 @@ function Agents({
       await refreshDashboard();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Directory update failed');
+    } finally {
+      setWorking('');
+    }
+  };
+  const saveRuntime = async (agentId: string, endpoint: string) => {
+    setWorking(`runtime:${agentId}`);
+    setError('');
+    try {
+      const result = (await api(`/v0.1/agents/${encodeURIComponent(agentId)}/runtime`, {
+        method: 'PUT',
+        body: JSON.stringify({ endpoint }),
+      })) as { signingSecret: string };
+      setRuntimeSecrets((current) => ({ ...current, [agentId]: result.signingSecret }));
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Runtime verification failed');
+    } finally {
+      setWorking('');
+    }
+  };
+  const disableRuntime = async (agentId: string) => {
+    setWorking(`runtime:${agentId}`);
+    setError('');
+    try {
+      await api(`/v0.1/agents/${encodeURIComponent(agentId)}/runtime`, { method: 'DELETE' });
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Runtime update failed');
     } finally {
       setWorking('');
     }
@@ -583,6 +614,11 @@ function Agents({
               )}
               working={working === agent.agentId}
               onSave={(value) => saveAutomation(agent.agentId, value)}
+              runtime={data.runtimes.find((runtime) => runtime.agentId === agent.agentId)}
+              runtimeSecret={runtimeSecrets[agent.agentId]}
+              runtimeWorking={working === `runtime:${agent.agentId}`}
+              onRuntime={(endpoint) => saveRuntime(agent.agentId, endpoint)}
+              onDisableRuntime={() => disableRuntime(agent.agentId)}
             />
           ))
         ) : (
@@ -1055,6 +1091,11 @@ function AgentCard({
   published,
   working,
   onSave,
+  runtime,
+  runtimeSecret,
+  runtimeWorking,
+  onRuntime,
+  onDisableRuntime,
 }: {
   agent: Record<string, any>;
   projectName?: string;
@@ -1065,6 +1106,11 @@ function AgentCard({
     autoAcceptPolicy: 'off' | 'safe_matching';
     autoAcceptTaskCategories: string[];
   }) => void;
+  runtime: Record<string, any> | undefined;
+  runtimeSecret: string | undefined;
+  runtimeWorking: boolean;
+  onRuntime: (endpoint: string) => void;
+  onDisableRuntime: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [autoPublish, setAutoPublish] = useState(Boolean(agent.autoPublish ?? published));
@@ -1077,6 +1123,7 @@ function AgentCard({
       : (agent.capabilities ?? [])
     ).join(', '),
   );
+  const [runtimeEndpoint, setRuntimeEndpoint] = useState(String(runtime?.endpoint ?? ''));
   const ready = published;
   const online = agent.presence?.status === 'online';
   const endpoint = `${window.location.origin}/a2a/${encodeURIComponent(agent.agentId)}`;
@@ -1131,6 +1178,44 @@ function AgentCard({
             ? '⚡ Safe tasks automatic'
             : '◷ Manual approval'}
         </span>
+      </div>
+      <div className="runtimeBox">
+        <div>
+          <strong>Autonomous runtime</strong>
+          <span className={runtime?.status === 'verified' ? 'runtimeLive' : 'runtimeMissing'}>
+            {runtime?.status === 'verified' ? 'VERIFIED' : 'NOT CONNECTED'}
+          </span>
+        </div>
+        <p>
+          Connect the agent worker running on your cloud. OpenClasp verifies it before sending work.
+        </p>
+        <input
+          type="url"
+          value={runtimeEndpoint}
+          onChange={(event) => setRuntimeEndpoint(event.target.value)}
+          placeholder="https://agent.example.com/openclasp"
+        />
+        <div className="agentActions">
+          {runtime?.status === 'verified' ? (
+            <button className="secondary" disabled={runtimeWorking} onClick={onDisableRuntime}>
+              Disable runtime
+            </button>
+          ) : null}
+          <button
+            className="primary"
+            disabled={runtimeWorking || !runtimeEndpoint.trim()}
+            onClick={() => onRuntime(runtimeEndpoint.trim())}
+          >
+            {runtimeWorking ? 'Verifying…' : runtime ? 'Rotate connection' : 'Verify & connect'}
+          </button>
+        </div>
+        {runtimeSecret ? (
+          <div className="runtimeSecret">
+            <strong>Copy this signing secret now. It will not be shown again.</strong>
+            <code>{runtimeSecret}</code>
+          </div>
+        ) : null}
+        {runtime?.lastError ? <small>Last delivery error: {runtime.lastError}</small> : null}
       </div>
       {editing ? (
         <div className="automationForm">

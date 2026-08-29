@@ -3,7 +3,18 @@
   "buildCommand": "corepack pnpm build",
   "outputDirectory": "apps/dashboard/dist",
   "functions": {
-    "api/*.ts": { "maxDuration": 30 }
+    "api/*.ts": { "maxDuration": 30 },
+    "api/agent-delivery.ts": {
+      "maxDuration": 30,
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "openclasp-agent-delivery",
+          "retryAfterSeconds": 30,
+          "initialDelaySeconds": 0
+        }
+      ]
+    }
   },
   "rewrites": [
     { "source": "/health", "destination": "/api/index?path=/health" },

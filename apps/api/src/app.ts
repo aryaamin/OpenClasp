@@ -46,6 +46,8 @@ type DashboardRepository = Pick<
       | 'respondToFederatedInteraction'
       | 'verifyGatewayToken'
       | 'enqueueGatewayMessage'
+      | 'registerAgentRuntime'
+      | 'disableAgentRuntime'
     >
   >;
 
@@ -140,7 +142,7 @@ export function buildApi(
       const body = z
         .object({
           jsonrpc: z.literal('2.0').default('2.0'),
-          id: z.union([z.string(), z.number()]).optional(),
+          id: z.union([z.string().min(1).max(200), z.number().finite()]),
           method: z.literal('message/send'),
           params: z.record(z.string(), z.unknown()),
         })
@@ -151,11 +153,9 @@ export function buildApi(
         recipientAgentId: grant.recipientAgentId,
         payload: body,
         contentType: 'application/json',
-        ...(body.id !== undefined
-          ? { idempotencyKey: `a2a:${grant.interactionId}:${body.id}` }
-          : {}),
+        idempotencyKey: `a2a:${grant.interactionId}:${body.id}`,
       });
-      return { jsonrpc: '2.0', id: body.id ?? null, result: accepted };
+      return { jsonrpc: '2.0', id: body.id, result: accepted };
     });
     router.get('/agents/:id/card.json', async (request) => {
       if (!repository) throw new Error('Hosted persistence is not configured');
@@ -191,6 +191,7 @@ export function buildApi(
         conflicts: [...engine.conflicts.values()],
         receipts: [...engine.receipts.values()],
         profiles: [...engine.profiles.values()],
+        runtimes: [],
       };
     });
     router.get('/v0.1/account', async (request) => {
@@ -344,6 +345,25 @@ export function buildApi(
         });
       }
       return agent;
+    });
+    router.put('/v0.1/agents/:id/runtime', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.registerAgentRuntime || !owner)
+        throw new Error('Hosted runtime delivery is not configured');
+      const endpoint = z
+        .object({ endpoint: z.string().url().max(2048) })
+        .parse(request.body).endpoint;
+      return repository.registerAgentRuntime(
+        owner,
+        (request.params as { id: string }).id,
+        endpoint,
+      );
+    });
+    router.delete('/v0.1/agents/:id/runtime', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.disableAgentRuntime || !owner)
+        throw new Error('Hosted runtime delivery is not configured');
+      return repository.disableAgentRuntime(owner, (request.params as { id: string }).id);
     });
     router.get('/v0.1/directory', async (request) => {
       operatorId(request);

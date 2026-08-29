@@ -14,6 +14,7 @@ import {
   PublicAgentCardSchema,
   ReceiptSchema,
   RiskDecisionSchema,
+  RuntimeDeliverySchema,
   TrustEnvelopeSchema,
 } from '@openclasp/protocol';
 
@@ -30,6 +31,7 @@ const schemas = {
   risk_decision: RiskDecisionSchema,
   agent_transport: AgentTransportSchema,
   agent_presence: AgentPresenceSchema,
+  runtime_delivery: RuntimeDeliverySchema,
   public_agent_card: PublicAgentCardSchema,
   federated_interaction: FederatedInteractionSchema,
 };

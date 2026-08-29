@@ -5,12 +5,15 @@ Queued bodies are encrypted at rest, expire after 24 hours, and stay outside beh
 
 ```text
 Requester agent -> OpenClasp A2A gateway -> encrypted queue -> provider MCP adapter -> provider agent
-                         |                                      |
-                  local policy/events                    local policy/events
-                         +---- permitted structured records ----+
-                                         |
-                              OpenClasp local/network API
+
+Production autonomous path:
+
+OpenClasp gateway -> Vercel durable queue -> signed HTTPS callback -> agent worker on any cloud
+agent worker -> scoped A2A reply grant -> OpenClasp gateway -> counterparty runtime
 ```
+
+The MCP inbox remains an operator/debugging surface. Autonomous runtimes are awakened by durable
+queue delivery and do not require an interactive chat session.
 
 The protocol package owns wire validation and cryptography. The core package is transport-independent and keeps deterministic authorization separate from suggestions. REST, SDK, MCP, sidecar, CLI, and dashboard call the same core behavior. `AuditStore` separates persistence; the MVP supplies memory and SQLite implementations and can later add PostgreSQL without changing policy logic.
 

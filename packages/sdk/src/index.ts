@@ -6,7 +6,10 @@ import {
   type TrustEnvelope,
   type FederatedInteraction,
   type PublicAgentCard,
+  RuntimeDeliverySchema,
+  type RuntimeDelivery,
 } from '../../protocol/src/index.js';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 export { createIdentity } from '../../core/src/index.js';
 export * from '../../protocol/src/index.js';
 
@@ -118,4 +121,82 @@ export function createSignedEnvelope(
   key: KeyPair,
 ): TrustEnvelope {
   return signObject(input, key) as TrustEnvelope;
+}
+
+function validRuntimeSignature(
+  secret: string,
+  deliveryId: string,
+  timestamp: string,
+  body: string,
+  signature: string,
+) {
+  if (Math.abs(Date.now() - Date.parse(timestamp)) > 5 * 60_000) return false;
+  const expected = createHmac('sha256', secret)
+    .update(`${timestamp}.${deliveryId}.${body}`)
+    .digest();
+  const actual = Buffer.from(signature.replace(/^v1=/, ''), 'base64url');
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+export function createOpenClaspRuntimeHandler(input: {
+  signingSecret: string;
+  onDelivery: (delivery: RuntimeDelivery) => Promise<void> | void;
+}) {
+  return async (request: Request): Promise<Response> => {
+    const body = await request.text();
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(body) as Record<string, unknown>;
+    } catch {
+      return Response.json({ error: 'invalid_json' }, { status: 400 });
+    }
+    if (parsed.type === 'openclasp.runtime.verify')
+      return Response.json({
+        type: 'openclasp.runtime.verified',
+        version: '1',
+        agentId: parsed.agentId,
+        challenge: parsed.challenge,
+      });
+    const deliveryId = request.headers.get('openclasp-delivery-id') ?? '';
+    const timestamp = request.headers.get('openclasp-timestamp') ?? '';
+    const signature = request.headers.get('openclasp-signature') ?? '';
+    if (
+      !deliveryId ||
+      !timestamp ||
+      !signature ||
+      !validRuntimeSignature(input.signingSecret, deliveryId, timestamp, body, signature)
+    )
+      return Response.json({ error: 'invalid_openclasp_signature' }, { status: 401 });
+    const deliveryResult = RuntimeDeliverySchema.safeParse(parsed);
+    if (!deliveryResult.success)
+      return Response.json({ error: 'invalid_runtime_delivery' }, { status: 400 });
+    const delivery = deliveryResult.data;
+    if (delivery.deliveryId !== deliveryId)
+      return Response.json({ error: 'delivery_id_mismatch' }, { status: 400 });
+    await input.onDelivery(delivery);
+    return Response.json({ accepted: true, deliveryId }, { status: 202 });
+  };
+}
+
+export async function sendOpenClaspRuntimeReply(
+  delivery: RuntimeDelivery,
+  payload: unknown,
+  requestId = crypto.randomUUID(),
+) {
+  const response = await fetch(delivery.reply.endpoint, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${delivery.reply.bearerToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: requestId,
+      method: 'message/send',
+      params: { message: payload },
+    }),
+  });
+  const result = (await response.json()) as unknown;
+  if (!response.ok) throw new Error(`OpenClasp reply failed with HTTP ${response.status}`);
+  return result;
 }

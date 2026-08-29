@@ -119,6 +119,27 @@ export const AgentPresenceSchema = z.object({
   checkedAt: z.string().datetime(),
 });
 
+export const RuntimeDeliverySchema = z.object({
+  type: z.literal('openclasp.a2a.delivery'),
+  version: z.literal('1'),
+  deliveryId: z.string().uuid(),
+  agentId: z.string().min(1),
+  interactionId: z.string().uuid(),
+  receivedAt: z.string().datetime(),
+  message: z.object({
+    messageId: z.string().uuid(),
+    senderAgentId: z.string().min(1),
+    contentType: z.string().min(1),
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+    payload: z.unknown(),
+  }),
+  reply: z.object({
+    endpoint: z.string().url(),
+    bearerToken: z.string().min(1),
+  }),
+});
+
 export const PublicAgentCardSchema = z.object({
   protocolVersion: z.literal(PROTOCOL_VERSION),
   agentId: z.string().min(1),
@@ -307,6 +328,7 @@ export type FactCheckResult = z.infer<typeof FactCheckResultSchema>;
 export type ExpectationManifest = z.infer<typeof ExpectationManifestSchema>;
 export type AgentTransport = z.infer<typeof AgentTransportSchema>;
 export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
+export type RuntimeDelivery = z.infer<typeof RuntimeDeliverySchema>;
 export type PublicAgentCard = z.infer<typeof PublicAgentCardSchema>;
 export type ContractAcceptance = z.infer<typeof ContractAcceptanceSchema>;
 export type FederatedInteraction = z.infer<typeof FederatedInteractionSchema>;

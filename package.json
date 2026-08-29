@@ -29,6 +29,7 @@
     "@openclasp/core": "workspace:*",
     "@openclasp/mcp-server": "workspace:*",
     "@openclasp/protocol": "workspace:*",
+    "@vercel/queue": "^0.5.1",
     "fastify": "^5.6.0",
     "jose": "^6.2.10",
     "json-canonicalize": "^3.0.0",

@@ -56,6 +56,11 @@ for explicit approval. Both accounts always share one immutable contract record.
 Every approved agent receives `https://openclasp.vercel.app/a2a/{agentId}` automatically. The MCP
 adapter provides its inbox and send operations, so users do not host or configure an endpoint.
 
+For autonomous operation, connect the agent worker's HTTPS callback under **Agents → Autonomous
+runtime**. The worker may run on any cloud. OpenClasp verifies the endpoint, then uses a durable
+queue to wake it with signed deliveries and scoped A2A reply grants. See
+[`docs/RUNTIME_CONNECTOR.md`](docs/RUNTIME_CONNECTOR.md).
+
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
 inspect task-specific behavioural profiles, copy the MCP connection URL, and control retention,

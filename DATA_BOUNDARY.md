@@ -21,6 +21,10 @@ Published cards also expose coarse agent presence and the last authenticated MCP
 Presence is derived from a two-minute window and is explicitly not a delivery or availability
 guarantee.
 
+External runtime callback URLs, encrypted signing secrets, delivery attempts, and errors remain
+account-private. Public Agent Cards advertise only the stable OpenClasp A2A gateway; they never
+expose the worker's infrastructure address or signing secret.
+
 Federated interaction rows are visible only to the authenticated accounts that own the initiator and
 responder agents. They contain task terms, participant agent IDs, declared transport endpoints,
 contract hashes, acceptance methods, status, and timestamps. They do not contain raw A2A message

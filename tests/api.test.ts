@@ -35,6 +35,7 @@ describe('HTTP API', () => {
           conflicts: [],
           receipts: [],
           profiles: [],
+          runtimes: [],
         };
       },
       getSettings: async (operatorId: string) => {
@@ -57,6 +58,23 @@ describe('HTTP API', () => {
       unpublishAgent: async () => true,
       getPublishedAgent: async () => undefined,
       searchPublishedAgents: async () => [],
+      registerAgentRuntime: async (operatorId: string, agentId: string, endpoint: string) => {
+        calls.push(`runtime:${operatorId}:${agentId}:${endpoint}`);
+        return {
+          agentId,
+          endpoint,
+          status: 'verified' as const,
+          verifiedAt: new Date().toISOString(),
+          signingSecret: 'shown-once',
+          secretShownOnce: true,
+          queuedMessages: 0,
+          queueFailures: 0,
+        };
+      },
+      disableAgentRuntime: async (operatorId: string, agentId: string) => {
+        calls.push(`disable-runtime:${operatorId}:${agentId}`);
+        return { agentId, status: 'disabled' as const };
+      },
     };
     const app = buildApi(undefined, undefined, repository);
     await app.ready();
@@ -79,7 +97,21 @@ describe('HTTP API', () => {
         })
       ).statusCode,
     ).toBe(200);
-    expect(calls).toEqual(['dashboard:user-a', 'settings:user-b']);
+    expect(
+      (
+        await app.inject({
+          method: 'PUT',
+          url: '/v0.1/agents/agent-a/runtime',
+          headers: { 'x-openclasp-operator': 'user-a' },
+          payload: { endpoint: 'https://agent.example/openclasp' },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls).toEqual([
+      'dashboard:user-a',
+      'settings:user-b',
+      'runtime:user-a:agent-a:https://agent.example/openclasp',
+    ]);
     await app.close();
   });
 
@@ -193,6 +225,7 @@ describe('HTTP API', () => {
           accepted: true,
           deduplicated: false,
           messageId: 'message-1',
+          runtimeDispatchQueued: false,
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
         };
       },

@@ -11,6 +11,10 @@ Protected paths include:
 - Sensitive logging: configured field redaction and structured logging only.
 - Gateway access: short-lived HMAC grants are scoped to one interaction, sender, and recipient.
 - Gateway storage: AES-256-GCM detects ciphertext tampering; acknowledgement deletes messages and a 24-hour TTL bounds exposure.
+- Runtime callback SSRF: registration requires HTTPS port 443, public DNS, pinned resolved addresses,
+  valid TLS, no redirects, bounded responses, and an echoed ownership challenge.
+- Runtime spoofing and replay: HMAC signatures cover timestamp, delivery ID, and exact body; the SDK
+  enforces a five-minute timestamp window. Runtimes must durably deduplicate delivery IDs.
 - Evidence URLs: production providers must enforce HTTPS, allowlists, size limits, redirects, and timeouts.
 - Review manipulation: only receipt-linked signed feedback affects profiles; future hosted systems add operator correlation, burst, ring, and collusion detection.
 - Version impersonation: envelopes, events, receipts, and profiles bind agent version.

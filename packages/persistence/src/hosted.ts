@@ -1,4 +1,6 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import { send } from '@vercel/queue';
+import { randomBytes } from 'node:crypto';
 import {
   DEFAULT_EXTENSION_URI,
   FederatedInteractionSchema,
@@ -7,6 +9,7 @@ import {
   type FederatedInteraction,
   type AgentPresence,
   type PublicAgentCard,
+  RuntimeDeliverySchema,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
 import {
@@ -16,6 +19,9 @@ import {
   verifyGatewayGrant,
   type GatewayGrant,
 } from './relay.js';
+import { postRuntimeJson, runtimeDeliverySignature } from './runtime.js';
+
+const RUNTIME_DELIVERY_TOPIC = 'openclasp-agent-delivery';
 
 export type HostedRecordKind =
   | 'agent'
@@ -280,6 +286,28 @@ export class HostedRepository {
         CREATE INDEX IF NOT EXISTS openclasp_gateway_messages_inbox
         ON openclasp_gateway_messages(recipient_agent_id, created_at ASC)
       `;
+      await this.sql`
+        ALTER TABLE openclasp_gateway_messages
+        ADD COLUMN IF NOT EXISTS runtime_delivered_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS runtime_delivery_attempts INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS runtime_delivery_error TEXT
+      `;
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_agent_runtimes (
+          agent_id TEXT PRIMARY KEY,
+          operator_id TEXT NOT NULL,
+          endpoint TEXT NOT NULL,
+          secret_ciphertext TEXT NOT NULL,
+          secret_iv TEXT NOT NULL,
+          secret_auth_tag TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('verified', 'disabled')),
+          verified_at TIMESTAMPTZ NOT NULL,
+          last_delivery_at TIMESTAMPTZ,
+          last_error TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
     })());
   }
 
@@ -327,18 +355,42 @@ export class HostedRepository {
       INSERT INTO openclasp_gateway_messages(
         message_id, idempotency_key, interaction_id, sender_agent_id, recipient_agent_id,
         ciphertext, iv, auth_tag, content_type, expires_at
-      ) VALUES (
+      ) SELECT
         ${messageId}, ${input.idempotencyKey ?? null}, ${input.interactionId},
         ${input.senderAgentId}, ${input.recipientAgentId}, ${encrypted.ciphertext},
         ${encrypted.iv}, ${encrypted.authTag}, ${input.contentType ?? 'application/json'}, ${expiresAt}
-      )
+      WHERE (
+        SELECT COUNT(*) FROM openclasp_gateway_messages
+        WHERE interaction_id = ${input.interactionId} AND created_at >= NOW() - INTERVAL '24 hours'
+      ) < 100
       ON CONFLICT (idempotency_key) DO NOTHING
       RETURNING message_id
     `;
+    let storedMessageId = rows.length ? String(rows[0]?.message_id) : undefined;
+    if (!storedMessageId && input.idempotencyKey) {
+      const existing = await this.sql`
+        SELECT message_id FROM openclasp_gateway_messages
+        WHERE idempotency_key = ${input.idempotencyKey}
+      `;
+      storedMessageId = existing[0]?.message_id ? String(existing[0].message_id) : undefined;
+    }
+    if (!storedMessageId)
+      throw new Error('Interaction message limit reached (100 messages per 24 hours)');
+    const runtimes = await this.sql`
+      SELECT status FROM openclasp_agent_runtimes
+      WHERE agent_id = ${input.recipientAgentId} AND status = 'verified'
+    `;
+    if (storedMessageId && runtimes.length)
+      await send(
+        RUNTIME_DELIVERY_TOPIC,
+        { messageId: storedMessageId },
+        { idempotencyKey: `delivery:${storedMessageId}`, retentionSeconds: 86_400 },
+      );
     return {
       accepted: true,
       deduplicated: rows.length === 0,
-      messageId: rows.length ? String(rows[0]?.message_id) : undefined,
+      messageId: storedMessageId,
+      runtimeDispatchQueued: Boolean(storedMessageId && runtimes.length),
       expiresAt,
     };
   }
@@ -428,7 +480,10 @@ export class HostedRepository {
 
   async dashboard(operatorId: string) {
     const rows = await this.list(operatorId);
-    const federatedInteractions = await this.listFederatedInteractions(operatorId);
+    const [federatedInteractions, runtimes] = await Promise.all([
+      this.listFederatedInteractions(operatorId),
+      this.listAgentRuntimes(operatorId),
+    ]);
     const ofKind = (kind: HostedRecordKind) =>
       rows.filter((row) => row.kind === kind).map((row) => row.payload);
     const presence = new Map(
@@ -451,6 +506,7 @@ export class HostedRepository {
       receipts: ofKind('receipt'),
       profiles: ofKind('profile'),
       federatedInteractions,
+      runtimes,
     };
   }
 
@@ -555,6 +611,230 @@ export class HostedRepository {
     if (!rows.length) throw new Error('Published agent not found');
     const lastSeenAt = rows[0]?.payload?.lastSeenAt;
     return resolveAgentPresence(typeof lastSeenAt === 'string' ? lastSeenAt : undefined);
+  }
+
+  async listAgentRuntimes(operatorId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT agent_id, endpoint, status, verified_at, last_delivery_at, last_error, updated_at
+      FROM openclasp_agent_runtimes
+      WHERE operator_id = ${operatorId}
+      ORDER BY updated_at DESC
+    `;
+    return rows.map((row) => ({
+      agentId: String(row.agent_id),
+      endpoint: String(row.endpoint),
+      status: row.status as 'verified' | 'disabled',
+      verifiedAt: new Date(String(row.verified_at)).toISOString(),
+      ...(row.last_delivery_at
+        ? { lastDeliveryAt: new Date(String(row.last_delivery_at)).toISOString() }
+        : {}),
+      ...(row.last_error ? { lastError: String(row.last_error) } : {}),
+      updatedAt: new Date(String(row.updated_at)).toISOString(),
+    }));
+  }
+
+  async registerAgentRuntime(operatorId: string, agentId: string, endpoint: string) {
+    await this.ensureSchema();
+    const owned = await this.sql`
+      SELECT 1 FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+    `;
+    if (!owned.length) throw new Error('Agent is not owned by this account');
+    const challenge = crypto.randomUUID();
+    const verification = await postRuntimeJson(endpoint, {
+      type: 'openclasp.runtime.verify',
+      version: '1',
+      agentId,
+      challenge,
+    });
+    if (
+      verification.status < 200 ||
+      verification.status >= 300 ||
+      !verification.body ||
+      typeof verification.body !== 'object' ||
+      (verification.body as { type?: unknown }).type !== 'openclasp.runtime.verified' ||
+      (verification.body as { version?: unknown }).version !== '1' ||
+      (verification.body as { agentId?: unknown }).agentId !== agentId ||
+      (verification.body as { challenge?: unknown }).challenge !== challenge
+    )
+      throw new Error('Runtime endpoint did not return the verification challenge');
+    const runtimeSecret = randomBytes(32).toString('base64url');
+    const encrypted = encryptGatewayPayload(this.gatewaySecret(), runtimeSecret);
+    const verifiedAt = new Date().toISOString();
+    const saved = await this.sql`
+      INSERT INTO openclasp_agent_runtimes(
+        agent_id, operator_id, endpoint, secret_ciphertext, secret_iv, secret_auth_tag,
+        status, verified_at, updated_at
+      ) VALUES (
+        ${agentId}, ${operatorId}, ${endpoint}, ${encrypted.ciphertext}, ${encrypted.iv},
+        ${encrypted.authTag}, 'verified', ${verifiedAt}, NOW()
+      )
+      ON CONFLICT (agent_id) DO UPDATE SET
+        operator_id = EXCLUDED.operator_id,
+        endpoint = EXCLUDED.endpoint,
+        secret_ciphertext = EXCLUDED.secret_ciphertext,
+        secret_iv = EXCLUDED.secret_iv,
+        secret_auth_tag = EXCLUDED.secret_auth_tag,
+        status = 'verified',
+        verified_at = EXCLUDED.verified_at,
+        last_error = NULL,
+        updated_at = NOW()
+      WHERE openclasp_agent_runtimes.operator_id = ${operatorId}
+      RETURNING agent_id
+    `;
+    if (!saved.length) throw new Error('Agent runtime is owned by another account');
+    const pending = await this.sql`
+      SELECT message_id FROM openclasp_gateway_messages
+      WHERE recipient_agent_id = ${agentId}
+        AND runtime_delivered_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at ASC
+      LIMIT 100
+    `;
+    const queued = await Promise.allSettled(
+      pending.map((row) =>
+        send(
+          RUNTIME_DELIVERY_TOPIC,
+          { messageId: String(row.message_id) },
+          {
+            idempotencyKey: `registration:${verifiedAt}:${row.message_id}`,
+            retentionSeconds: 86_400,
+          },
+        ),
+      ),
+    );
+    return {
+      agentId,
+      endpoint,
+      status: 'verified' as const,
+      verifiedAt,
+      signingSecret: runtimeSecret,
+      secretShownOnce: true,
+      queuedMessages: pending.length,
+      queueFailures: queued.filter((result) => result.status === 'rejected').length,
+    };
+  }
+
+  async disableAgentRuntime(operatorId: string, agentId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      UPDATE openclasp_agent_runtimes
+      SET status = 'disabled', updated_at = NOW()
+      WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
+      RETURNING agent_id
+    `;
+    if (!rows.length) throw new Error('Agent runtime not found');
+    return { agentId, status: 'disabled' as const };
+  }
+
+  async deliverGatewayMessage(messageId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT message.*, runtime.endpoint,
+        runtime.secret_ciphertext, runtime.secret_iv, runtime.secret_auth_tag,
+        interaction.payload AS interaction
+      FROM openclasp_gateway_messages message
+      INNER JOIN openclasp_agent_runtimes runtime
+        ON runtime.agent_id = message.recipient_agent_id AND runtime.status = 'verified'
+      INNER JOIN openclasp_federated_interactions interaction
+        ON interaction.interaction_id = message.interaction_id
+      WHERE message.message_id = ${messageId}
+        AND message.runtime_delivered_at IS NULL
+        AND message.expires_at > NOW()
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return { delivered: false, terminal: true };
+    const runtimeSecret = decryptGatewayPayload(this.gatewaySecret(), {
+      ciphertext: String(row.secret_ciphertext),
+      iv: String(row.secret_iv),
+      authTag: String(row.secret_auth_tag),
+    });
+    if (typeof runtimeSecret !== 'string') throw new Error('Invalid runtime signing secret');
+    const interaction = FederatedInteractionSchema.parse(row.interaction);
+    const expiresAt = new Date(String(row.expires_at)).toISOString();
+    const delivery = RuntimeDeliverySchema.parse({
+      type: 'openclasp.a2a.delivery',
+      version: '1',
+      deliveryId: String(row.message_id),
+      agentId: String(row.recipient_agent_id),
+      interactionId: String(row.interaction_id),
+      receivedAt: new Date().toISOString(),
+      message: {
+        messageId: String(row.message_id),
+        senderAgentId: String(row.sender_agent_id),
+        contentType: String(row.content_type),
+        createdAt: new Date(String(row.created_at)).toISOString(),
+        expiresAt,
+        payload: decryptGatewayPayload(this.gatewaySecret(), {
+          ciphertext: String(row.ciphertext),
+          iv: String(row.iv),
+          authTag: String(row.auth_tag),
+        }),
+      },
+      reply: {
+        endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/a2a/${encodeURIComponent(String(row.sender_agent_id))}`,
+        bearerToken: issueGatewayGrant(this.gatewaySecret(), {
+          interactionId: interaction.interactionId,
+          senderAgentId: String(row.recipient_agent_id),
+          recipientAgentId: String(row.sender_agent_id),
+          expiresAt: Math.min(Date.parse(expiresAt), Date.now() + 60 * 60_000),
+        }),
+      },
+    });
+    const body = JSON.stringify(delivery);
+    const timestamp = new Date().toISOString();
+    try {
+      const response = await postRuntimeJson(String(row.endpoint), delivery, {
+        'openclasp-delivery-id': delivery.deliveryId,
+        'openclasp-timestamp': timestamp,
+        'openclasp-signature': `v1=${runtimeDeliverySignature(runtimeSecret, delivery.deliveryId, timestamp, body)}`,
+      });
+      if (response.status < 200 || response.status >= 300)
+        throw new Error(`Runtime endpoint returned HTTP ${response.status}`);
+      await this.sql`
+        UPDATE openclasp_gateway_messages
+        SET runtime_delivered_at = NOW(), runtime_delivery_attempts = runtime_delivery_attempts + 1,
+          runtime_delivery_error = NULL
+        WHERE message_id = ${messageId} AND runtime_delivered_at IS NULL
+      `;
+      await this.sql`
+        UPDATE openclasp_agent_runtimes
+        SET last_delivery_at = NOW(), last_error = NULL, updated_at = NOW()
+        WHERE agent_id = ${delivery.agentId}
+      `;
+      const runtimeRows = await this.sql`
+        SELECT operator_id FROM openclasp_agent_runtimes WHERE agent_id = ${delivery.agentId}
+      `;
+      if (runtimeRows[0]?.operator_id)
+        await this.touchAgentPresence(String(runtimeRows[0].operator_id), delivery.agentId);
+      return { delivered: true, messageId };
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message.slice(0, 500) : 'Runtime delivery failed';
+      await this.sql`
+        UPDATE openclasp_gateway_messages
+        SET runtime_delivery_attempts = runtime_delivery_attempts + 1,
+          runtime_delivery_error = ${reason}
+        WHERE message_id = ${messageId}
+      `;
+      await this.sql`
+        UPDATE openclasp_agent_runtimes
+        SET last_error = ${reason}, updated_at = NOW()
+        WHERE agent_id = ${delivery.agentId}
+      `;
+      throw error;
+    }
+  }
+
+  async abandonGatewayDelivery(messageId: string, reason: string) {
+    await this.ensureSchema();
+    await this.sql`
+      UPDATE openclasp_gateway_messages
+      SET runtime_delivery_error = ${reason.slice(0, 500)}
+      WHERE message_id = ${messageId} AND runtime_delivered_at IS NULL
+    `;
   }
 
   async createFederatedInteraction(
