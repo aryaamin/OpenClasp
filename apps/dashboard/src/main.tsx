@@ -2050,7 +2050,7 @@ function AgentCard({
               : runtime?.status === 'verified'
                 ? 'ENDPOINT VERIFIED'
                 : providerConnected
-                  ? 'MCP ONLY'
+                  ? 'TOKEN ONLY'
                   : 'ENDPOINT MISSING'}
           </b>
           <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
