@@ -9,6 +9,10 @@ Protected paths include:
 - Duplicate events: same ID with different content is rejected.
 - Prompt injection: untrusted text never changes deterministic policy decisions.
 - Sensitive logging: configured field redaction and structured logging only.
+- Hosted-provider credentials: agent access tokens contain 256 bits of random secret material,
+  persist only as SHA-256 hashes, bind to one owner and agent installation, expire within one year,
+  and are rejected after revocation, expiry, agent revocation, or agent deletion. Their bearer value
+  is returned once and cannot authenticate to the dashboard API.
 - Live-session access: platform-signed short-lived credentials are scoped to one interaction, sender, and recipient and are verified locally by each runtime.
 - Runtime callback SSRF: registration requires HTTPS port 443, public DNS, pinned resolved addresses,
   valid TLS, no redirects, bounded responses, and an echoed ownership challenge.

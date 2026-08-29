@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AuditStore } from '../../core/src/index.js';
 
 export * from './hosted.js';
+export * from './access-token.js';
 export * from './onboarding.js';
 export * from './relay.js';
 export * from './runtime.js';

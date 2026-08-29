@@ -23,6 +23,7 @@ export type DashboardData = {
   receipts: Record<string, any>[];
   profiles: Record<string, any>[];
   runtimes: Record<string, any>[];
+  accessTokens: Record<string, any>[];
 };
 
 export type Settings = {
@@ -248,6 +249,7 @@ export function createPreviewData(): DashboardData {
         verifiedAt: ago(40),
       },
     ],
+    accessTokens: [],
   };
 }
 
@@ -316,6 +318,43 @@ export function applyPreviewRequest(
       result: record,
     };
   }
+  const tokenCollection = path.match(/^\/v0\.1\/agents\/([^/]+)\/access-tokens$/);
+  if (tokenCollection && method === 'POST') {
+    const agentId = decodeURIComponent(tokenCollection[1] ?? '');
+    const tokenId = crypto.randomUUID().replaceAll('-', '').slice(0, 16);
+    const createdAt = new Date();
+    const expiresInDays = Number(body.expiresInDays ?? 365);
+    const record = {
+      tokenId,
+      agentId,
+      name: String(body.name ?? 'Hosted provider'),
+      scopes: ['mcp:access'],
+      createdAt: createdAt.toISOString(),
+      expiresAt: new Date(createdAt.getTime() + expiresInDays * 86_400_000).toISOString(),
+    };
+    return {
+      data: { ...data, accessTokens: [record, ...data.accessTokens] },
+      settings,
+      result: {
+        ...record,
+        token: `oc_at_${tokenId}.preview_agent_access_token_secret_not_for_production`,
+      },
+    };
+  }
+  const tokenItem = path.match(/^\/v0\.1\/agents\/([^/]+)\/access-tokens\/([^/]+)$/);
+  if (tokenItem && method === 'DELETE') {
+    const tokenId = decodeURIComponent(tokenItem[2] ?? '');
+    return {
+      data: {
+        ...data,
+        accessTokens: data.accessTokens.map((token) =>
+          token.tokenId === tokenId ? { ...token, revokedAt: new Date().toISOString() } : token,
+        ),
+      },
+      settings,
+      result: { tokenId, revokedAt: new Date().toISOString() },
+    };
+  }
   const agentDelete = path.match(/^\/v0\.1\/agents\/([^/]+)$/);
   if (agentDelete && method === 'DELETE') {
     const agentId = decodeURIComponent(agentDelete[1] ?? '');
@@ -326,6 +365,7 @@ export function applyPreviewRequest(
         publications: data.publications.filter((item) => item.agentId !== agentId),
         runtimes: data.runtimes.filter((item) => item.agentId !== agentId),
         installations: data.installations.filter((item) => item.agentId !== agentId),
+        accessTokens: data.accessTokens.filter((item) => item.agentId !== agentId),
       },
       settings,
       result: { agentId, deleted: true },

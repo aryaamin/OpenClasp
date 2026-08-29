@@ -38,6 +38,7 @@ describe('HTTP API', () => {
           receipts: [],
           profiles: [],
           runtimes: [],
+          accessTokens: [],
         };
       },
       getSettings: async (operatorId: string) => {
@@ -78,6 +79,30 @@ describe('HTTP API', () => {
       deleteAgent: async (operatorId: string, agentId: string) => {
         calls.push(`delete-agent:${operatorId}:${agentId}`);
         return { agentId, deleted: true as const, historyRetained: true as const };
+      },
+      listAgentAccessTokens: async (operatorId: string, agentId?: string) => {
+        calls.push(`list-tokens:${operatorId}:${agentId ?? '*'}`);
+        return [];
+      },
+      issueAgentAccessToken: async (
+        operatorId: string,
+        agentId: string,
+        value: { name: string; expiresInDays: number },
+      ) => {
+        calls.push(`issue-token:${operatorId}:${agentId}:${value.name}:${value.expiresInDays}`);
+        return {
+          tokenId: 'abcdefghijklmnop',
+          token: 'oc_at_abcdefghijklmnop.abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG',
+          agentId,
+          name: value.name,
+          scopes: ['mcp:access'],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2027-01-01T00:00:00.000Z',
+        };
+      },
+      revokeAgentAccessToken: async (operatorId: string, agentId: string, tokenId: string) => {
+        calls.push(`revoke-token:${operatorId}:${agentId}:${tokenId}`);
+        return { tokenId, agentId, revokedAt: '2026-01-02T00:00:00.000Z' };
       },
       receiveTemporaryMessage: async (
         token: string,
@@ -149,6 +174,29 @@ describe('HTTP API', () => {
       ).json(),
     ).toMatchObject({ agentId: 'agent-a', deleted: true, historyRetained: true });
     expect(calls.at(-1)).toBe('delete-agent:user-a:agent-a');
+    const issuedToken = await app.inject({
+      method: 'POST',
+      url: '/v0.1/agents/agent-a/access-tokens',
+      headers: { 'x-openclasp-operator': 'user-a' },
+      payload: { name: 'Botpress', expiresInDays: 365 },
+    });
+    expect(issuedToken.statusCode).toBe(200);
+    expect(issuedToken.json()).toMatchObject({
+      agentId: 'agent-a',
+      name: 'Botpress',
+      scopes: ['mcp:access'],
+    });
+    expect(calls.at(-1)).toBe('issue-token:user-a:agent-a:Botpress:365');
+    expect(
+      (
+        await app.inject({
+          method: 'DELETE',
+          url: '/v0.1/agents/agent-a/access-tokens/abcdefghijklmnop',
+          headers: { 'x-openclasp-operator': 'user-a' },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe('revoke-token:user-a:agent-a:abcdefghijklmnop');
     expect(
       (
         await app.inject({

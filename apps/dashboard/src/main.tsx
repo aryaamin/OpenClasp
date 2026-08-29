@@ -38,6 +38,7 @@ type DashboardData = {
   receipts: Record<string, any>[];
   profiles: Record<string, any>[];
   runtimes: Record<string, any>[];
+  accessTokens: Record<string, any>[];
 };
 
 type Settings = {
@@ -63,6 +64,7 @@ const emptyData: DashboardData = {
   receipts: [],
   profiles: [],
   runtimes: [],
+  accessTokens: [],
 };
 const defaultSettings: Settings = {
   displayName: '',
@@ -1078,6 +1080,39 @@ function Agents({
       setWorking('');
     }
   };
+  const createAccessToken = async (agentId: string, name: string, expiresInDays: number) => {
+    setWorking(`token:${agentId}`);
+    setError('');
+    try {
+      const created = (await api(`/v0.1/agents/${encodeURIComponent(agentId)}/access-tokens`, {
+        method: 'POST',
+        body: JSON.stringify({ name, expiresInDays }),
+      })) as { token?: string };
+      await refreshDashboard();
+      if (!created.token) throw new Error('The token was not returned');
+      return created.token;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not create agent access token');
+      return undefined;
+    } finally {
+      setWorking('');
+    }
+  };
+  const revokeAccessToken = async (agentId: string, tokenId: string) => {
+    setWorking(`token:${agentId}`);
+    setError('');
+    try {
+      await api(
+        `/v0.1/agents/${encodeURIComponent(agentId)}/access-tokens/${encodeURIComponent(tokenId)}`,
+        { method: 'DELETE' },
+      );
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not revoke agent access token');
+    } finally {
+      setWorking('');
+    }
+  };
   const deleteAgent = async (agent: Record<string, any>) => {
     const agentId = String(agent.agentId);
     if (
@@ -1129,6 +1164,17 @@ function Agents({
               deleteWorking={working === `delete:${agent.agentId}`}
               onRuntime={(endpoint) => saveRuntime(agent.agentId, endpoint)}
               onDisableRuntime={() => disableRuntime(agent.agentId)}
+              accessTokens={data.accessTokens.filter(
+                (token) =>
+                  token.agentId === agent.agentId &&
+                  !token.revokedAt &&
+                  Date.parse(String(token.expiresAt)) > Date.now(),
+              )}
+              accessTokenWorking={working === `token:${agent.agentId}`}
+              onCreateAccessToken={(name, expiresInDays) =>
+                createAccessToken(agent.agentId, name, expiresInDays)
+              }
+              onRevokeAccessToken={(tokenId) => revokeAccessToken(agent.agentId, tokenId)}
               onDelete={() => deleteAgent(agent)}
             />
           ))
@@ -1674,6 +1720,10 @@ function AgentCard({
   deleteWorking,
   onRuntime,
   onDisableRuntime,
+  accessTokens,
+  accessTokenWorking,
+  onCreateAccessToken,
+  onRevokeAccessToken,
   onDelete,
 }: {
   agent: Record<string, any>;
@@ -1690,6 +1740,10 @@ function AgentCard({
   deleteWorking: boolean;
   onRuntime: (endpoint: string) => void;
   onDisableRuntime: () => void;
+  accessTokens: Record<string, any>[];
+  accessTokenWorking: boolean;
+  onCreateAccessToken: (name: string, expiresInDays: number) => Promise<string | undefined>;
+  onRevokeAccessToken: (tokenId: string) => Promise<void>;
   onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -1704,6 +1758,10 @@ function AgentCard({
     ).join(', '),
   );
   const [runtimeEndpoint, setRuntimeEndpoint] = useState(String(runtime?.endpoint ?? ''));
+  const [tokenName, setTokenName] = useState('Botpress');
+  const [tokenLifetime, setTokenLifetime] = useState(365);
+  const [generatedToken, setGeneratedToken] = useState('');
+  const [tokenCopied, setTokenCopied] = useState(false);
   const mode = agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat');
   const temporary = mode === 'temporary_chat';
   const ready = published && (temporary || runtime?.status === 'verified');
@@ -1818,6 +1876,104 @@ function AgentCard({
           </button>
         </div>
         {runtime?.lastError ? <small>Last session error: {runtime.lastError}</small> : null}
+      </div>
+      <div className="accessTokenBox">
+        <div className="accessTokenHead">
+          <div>
+            <strong>Hosted-provider MCP access</strong>
+            <span>{accessTokens.length} ACTIVE</span>
+          </div>
+          <p>
+            Use this when Botpress or another provider accepts a static Bearer token instead of
+            OAuth. Each token is locked to this agent.
+          </p>
+        </div>
+        {generatedToken ? (
+          <div className="generatedToken" role="status">
+            <strong>Copy this token now. It will not be shown again.</strong>
+            <code>{generatedToken}</code>
+            <div className="agentActions">
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(generatedToken);
+                  setTokenCopied(true);
+                  window.setTimeout(() => setTokenCopied(false), 2000);
+                }}
+              >
+                {tokenCopied ? 'Copied' : 'Copy token'}
+              </button>
+              <button className="primary" type="button" onClick={() => setGeneratedToken('')}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="tokenCreateRow">
+            <label>
+              <span>Connection name</span>
+              <input
+                value={tokenName}
+                maxLength={100}
+                onChange={(event) => setTokenName(event.target.value)}
+                placeholder="Botpress"
+              />
+            </label>
+            <label>
+              <span>Expires</span>
+              <select
+                value={tokenLifetime}
+                onChange={(event) => setTokenLifetime(Number(event.target.value))}
+              >
+                <option value={30}>30 days</option>
+                <option value={90}>90 days</option>
+                <option value={365}>1 year</option>
+              </select>
+            </label>
+            <button
+              className="primary"
+              type="button"
+              disabled={accessTokenWorking || !tokenName.trim() || agent.status === 'revoked'}
+              onClick={() =>
+                void onCreateAccessToken(tokenName.trim(), tokenLifetime).then((token) => {
+                  if (token) setGeneratedToken(token);
+                })
+              }
+            >
+              {accessTokenWorking ? 'Creating…' : 'Generate token'}
+            </button>
+          </div>
+        )}
+        {accessTokens.length ? (
+          <div className="tokenList">
+            {accessTokens.map((token) => (
+              <div key={token.tokenId}>
+                <span>
+                  <strong>{token.name}</strong>
+                  <small>
+                    Created {new Date(token.createdAt).toLocaleDateString()} · expires{' '}
+                    {new Date(token.expiresAt).toLocaleDateString()}
+                    {token.lastUsedAt
+                      ? ` · used ${new Date(token.lastUsedAt).toLocaleString()}`
+                      : ' · never used'}
+                  </small>
+                </span>
+                <button
+                  className="secondary dangerButton"
+                  type="button"
+                  disabled={accessTokenWorking}
+                  onClick={() => {
+                    if (window.confirm(`Revoke “${String(token.name)}”? Botpress will disconnect.`))
+                      void onRevokeAccessToken(String(token.tokenId));
+                  }}
+                >
+                  Revoke
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
       {editing ? (
         <div className="automationForm">

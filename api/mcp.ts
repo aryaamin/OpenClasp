@@ -51,6 +51,23 @@ const mcp = createMcpHandler(
 
 async function verifyToken(_request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
   if (!bearerToken) return undefined;
+  if (bearerToken.startsWith('oc_at_')) {
+    if (!repository) throw new Error('Agent access tokens are not configured');
+    const authentication = await repository.verifyAgentAccessToken(bearerToken);
+    if (!authentication.scopes.includes('mcp:access'))
+      throw new Error('Agent access token is missing the MCP scope');
+    return {
+      token: bearerToken,
+      clientId: authentication.clientId,
+      scopes: authentication.scopes,
+      expiresAt: Math.floor(Date.parse(authentication.expiresAt) / 1000),
+      extra: {
+        operatorId: authentication.operatorId,
+        boundAgentId: authentication.agentId,
+        credentialType: 'agent_access_token',
+      },
+    };
+  }
   const authentication = await verifyAuth0Token(bearerToken, {
     dashboard: false,
   });

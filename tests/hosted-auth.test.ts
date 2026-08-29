@@ -32,7 +32,7 @@ describe('hosted MCP authorization', () => {
     await expect(response.json()).resolves.toMatchObject({
       resource: 'https://openclasp.example/mcp',
       authorization_servers: ['https://icfg-0ua6bab8d4omtfolx72mrhzo.us.auth0.com/'],
-      scopes_supported: ['openid', 'profile', 'email'],
+      scopes_supported: ['openid', 'profile', 'email', 'mcp:access'],
     });
   });
 });

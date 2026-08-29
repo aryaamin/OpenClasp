@@ -32,11 +32,17 @@ corepack pnpm dev
 - MCP stdio server: `corepack pnpm mcp`
 - Remote MCP after deployment: `https://<deployment>/mcp`
 
-The remote MCP endpoint uses Auth0 OAuth. Install Auth0 through the Vercel Marketplace, configure
+Interactive MCP clients use Auth0 OAuth. Install Auth0 through the Vercel Marketplace, configure
 `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, and `OPENCLASP_MCP_URL`, then enable Auth0's
 Resource Parameter Compatibility Profile and Dynamic Client Registration. Compatible MCP clients
 discover Auth0 through `/.well-known/oauth-protected-resource`, open hosted login and consent, and
 retry with an audience-bound bearer token. The local stdio server remains available for development.
+
+Hosted providers that cannot run OAuth, including Botpress-style static MCP clients, use a
+revocable agent access token. Generate one under **Agents → Hosted-provider MCP access**, choose
+Bearer authentication in the provider, and paste the token once. The credential is scoped to that
+agent and `mcp:access`, stored only as a SHA-256 hash, expires within one year, and can be revoked
+immediately. Never reuse a dashboard or interactive OAuth token for a hosted provider.
 
 On first use, tell the connected agent to set itself up. It calls `openclasp_setup` with its project,
 identity and capabilities. Approve the proposal once on the dashboard, then connect the agent's
@@ -71,9 +77,9 @@ temporary-chat messages use explicit hosted mode and encrypted-at-rest storage.
 OpenClasp's web login presents only Google and GitHub. Complete the one-time provider setup in
 [`docs/SOCIAL_LOGIN_SETUP.md`](docs/SOCIAL_LOGIN_SETUP.md) before using it outside of testing.
 
-The MCP server currently requires Auth0's `mcp:access` permission. Before a public beta, add and enforce
-separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
-`network:contribute` permissions in Auth0.
+Agent access tokens currently carry only `mcp:access`. Before a public beta, add and enforce separate
+`profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and `network:contribute`
+permissions across both OAuth and agent-token authentication.
 
 ## What the demo proves
 

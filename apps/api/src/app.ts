@@ -51,6 +51,9 @@ type DashboardRepository = Pick<
       | 'registerAgentRuntime'
       | 'disableAgentRuntime'
       | 'deleteAgent'
+      | 'issueAgentAccessToken'
+      | 'listAgentAccessTokens'
+      | 'revokeAgentAccessToken'
       | 'receiveTemporaryMessage'
       | 'sendTemporaryMessage'
       | 'listHostedThreads'
@@ -403,6 +406,31 @@ export function buildApi(
       if (!repository?.disableAgentRuntime || !owner)
         throw new Error('Hosted runtime delivery is not configured');
       return repository.disableAgentRuntime(owner, (request.params as { id: string }).id);
+    });
+    router.get('/v0.1/agents/:id/access-tokens', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listAgentAccessTokens || !owner)
+        throw new Error('Agent access tokens are not configured');
+      return repository.listAgentAccessTokens(owner, (request.params as { id: string }).id);
+    });
+    router.post('/v0.1/agents/:id/access-tokens', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.issueAgentAccessToken || !owner)
+        throw new Error('Agent access tokens are not configured');
+      const value = z
+        .object({
+          name: z.string().trim().min(1).max(100),
+          expiresInDays: z.number().int().min(1).max(365).default(365),
+        })
+        .parse(request.body);
+      return repository.issueAgentAccessToken(owner, (request.params as { id: string }).id, value);
+    });
+    router.delete('/v0.1/agents/:id/access-tokens/:tokenId', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.revokeAgentAccessToken || !owner)
+        throw new Error('Agent access tokens are not configured');
+      const params = request.params as { id: string; tokenId: string };
+      return repository.revokeAgentAccessToken(owner, params.id, params.tokenId);
     });
     router.delete('/v0.1/agents/:id', async (request) => {
       const owner = operatorId(request);

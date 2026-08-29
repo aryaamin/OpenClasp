@@ -165,7 +165,14 @@ function installationContext(context: ToolContext) {
   const clientId = context.http?.authInfo?.clientId;
   if (typeof operatorId !== 'string' || typeof clientId !== 'string')
     throw new Error('Authenticated MCP installation context is required');
-  return { operatorId, clientId };
+  const boundAgentId = context.http?.authInfo?.extra?.boundAgentId;
+  const credentialType = context.http?.authInfo?.extra?.credentialType;
+  return {
+    operatorId,
+    clientId,
+    ...(typeof boundAgentId === 'string' ? { boundAgentId } : {}),
+    ...(typeof credentialType === 'string' ? { credentialType } : {}),
+  };
 }
 
 export function registerOpenClaspTools(
@@ -189,14 +196,25 @@ export function registerOpenClaspTools(
       await recordHosted(operatorId, kind, id, value);
   };
 
-  const requireBoundAgent = async (context: ToolContext, claimedAgentId?: string) => {
-    if (!onboardingStore) return undefined;
+  const resolveAuthenticatedInstallation = async (context: ToolContext) => {
+    if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
     const connection = installationContext(context);
     const binding = await resolveInstallation(
       onboardingStore,
       connection.operatorId,
       connection.clientId,
     );
+    if (
+      connection.boundAgentId &&
+      (binding.status !== 'connected' || binding.agent.agentId !== connection.boundAgentId)
+    )
+      throw new Error('Agent access token binding is invalid');
+    return { connection, binding };
+  };
+
+  const requireBoundAgent = async (context: ToolContext, claimedAgentId?: string) => {
+    if (!onboardingStore) return undefined;
+    const { connection, binding } = await resolveAuthenticatedInstallation(context);
     if (binding.status !== 'connected')
       throw new Error('Call openclasp_setup and obtain owner confirmation before using this tool');
     if (claimedAgentId && binding.agent.agentId !== claimedAgentId)
@@ -497,12 +515,7 @@ export function registerOpenClaspTools(
     },
     async (input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
-      const connection = installationContext(context);
-      const current = await resolveInstallation(
-        onboardingStore,
-        connection.operatorId,
-        connection.clientId,
-      );
+      const { connection, binding: current } = await resolveAuthenticatedInstallation(context);
       if (current.status === 'connected') {
         await agentDirectory?.touchAgentPresence(connection.operatorId, current.agent.agentId);
         return text(current);
@@ -531,12 +544,7 @@ export function registerOpenClaspTools(
     },
     async (_input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
-      const connection = installationContext(context);
-      const binding = await resolveInstallation(
-        onboardingStore,
-        connection.operatorId,
-        connection.clientId,
-      );
+      const { connection, binding } = await resolveAuthenticatedInstallation(context);
       if (binding.status === 'connected')
         await agentDirectory?.touchAgentPresence(connection.operatorId, binding.agent.agentId);
       return text(binding);
@@ -554,6 +562,8 @@ export function registerOpenClaspTools(
     async (input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
       const connection = installationContext(context);
+      if (connection.credentialType === 'agent_access_token')
+        throw new Error('Agent access tokens cannot switch agent identity');
       const request = await requestAgentSetup(onboardingStore, connection.operatorId, {
         clientId: connection.clientId,
         action: 'switch',
@@ -588,7 +598,7 @@ export function registerOpenClaspTools(
     },
     async (input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
-      const connection = installationContext(context);
+      const { connection } = await resolveAuthenticatedInstallation(context);
       const agent = await updateAgentProfile(
         onboardingStore,
         connection.operatorId,
@@ -621,12 +631,7 @@ export function registerOpenClaspTools(
     },
     async (_input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
-      const connection = installationContext(context);
-      const binding = await resolveInstallation(
-        onboardingStore,
-        connection.operatorId,
-        connection.clientId,
-      );
+      const { connection, binding } = await resolveAuthenticatedInstallation(context);
       if (binding.status === 'connected') {
         await agentDirectory?.touchAgentPresence(connection.operatorId, binding.agent.agentId);
         return text(binding);
@@ -1132,12 +1137,7 @@ export function registerOpenClaspTools(
     async (_input, context) => {
       if (!agentDirectory) throw new Error('Hosted agent presence is not configured');
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
-      const connection = installationContext(context);
-      const binding = await resolveInstallation(
-        onboardingStore,
-        connection.operatorId,
-        connection.clientId,
-      );
+      const { connection, binding } = await resolveAuthenticatedInstallation(context);
       if (binding.status !== 'connected')
         throw new Error('Call openclasp_setup and obtain owner confirmation first');
       return text({

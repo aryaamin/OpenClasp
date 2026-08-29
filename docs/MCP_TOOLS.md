@@ -10,7 +10,14 @@ The hosted server exposes five onboarding tools in addition to the assurance too
 - `openclasp_switch_agent` proposes binding the installation to another owned agent.
 - `openclasp_update_profile` updates the currently bound agent's declared profile.
 
-Creating or switching a binding is never silent. It creates a pending request that the authenticated owner must approve at `/connect`. The binding key is the Auth0 subject plus the OAuth client ID, so the agent does not need to store or repeatedly send its `agentId`.
+Creating or switching an interactive OAuth binding is never silent. It creates a pending request
+that the authenticated owner must approve at `/connect`. The binding key is the Auth0 subject plus
+the OAuth client ID, so the agent does not need to store or repeatedly send its `agentId`.
+
+Hosted providers without OAuth use an owner-generated `oc_at_...` Bearer token instead. It creates a
+binding directly to one existing agent, carries only `mcp:access`, expires, and is revocable. The
+plaintext credential is returned once; OpenClasp persists only its SHA-256 hash. Agent access tokens
+cannot authenticate to dashboard REST endpoints.
 
 The assurance tools cover cryptographic identity registration, delegation, contextual profiles,
 counterparty assessment, interaction creation, fully signed contracts, structured events, claim

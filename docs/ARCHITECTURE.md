@@ -46,7 +46,9 @@ profiles and network contribution even though it is retained for user-visible th
 The protocol package owns wire validation and cryptography. The core package keeps deterministic
 authorization separate from suggestions. REST, SDK, MCP, sidecar, CLI, and dashboard call the same
 core behaviour. Hosted ownership is `Auth0 user → project → agent → MCP installation`; unrelated
-agents retain separate project context and history.
+agents retain separate project context and history. Interactive installations authenticate through
+Auth0 OAuth. Non-interactive hosted providers can use a hashed, expiring, revocable access token
+bound to exactly one existing agent.
 
 Deterministic failures return `DENY`. Evidence or behavioural uncertainty returns `CHALLENGE`.
 `ALLOW` remains contextual to task, authority, data, version, and evidence.

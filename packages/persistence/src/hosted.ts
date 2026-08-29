@@ -21,6 +21,14 @@ import {
   type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
+import type { AgentInstallation } from './onboarding.js';
+import {
+  agentAccessTokenClientId,
+  agentAccessTokenId,
+  createAgentAccessToken,
+  matchesAgentAccessToken,
+  type AgentAccessTokenMetadata,
+} from './access-token.js';
 import {
   decryptGatewayPayload,
   encryptGatewayPayload,
@@ -308,6 +316,24 @@ export class HostedRepository {
         )
       `;
       await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_agent_access_tokens (
+          token_id TEXT PRIMARY KEY,
+          operator_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          token_hash TEXT NOT NULL,
+          scopes JSONB NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL,
+          last_used_at TIMESTAMPTZ,
+          revoked_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `;
+      await this.sql`
+        CREATE INDEX IF NOT EXISTS openclasp_agent_access_tokens_owner_agent
+        ON openclasp_agent_access_tokens(operator_id, agent_id, created_at DESC)
+      `;
+      await this.sql`
         ALTER TABLE openclasp_agent_runtimes
         ADD COLUMN IF NOT EXISTS a2a_endpoint TEXT,
         ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ
@@ -428,10 +454,12 @@ export class HostedRepository {
 
   async dashboard(operatorId: string) {
     const rows = await this.list(operatorId);
-    const [federatedInteractions, runtimes, liveSessionRows, liveEventRows] = await Promise.all([
-      this.listFederatedInteractions(operatorId),
-      this.listAgentRuntimes(operatorId),
-      this.sql`
+    const [federatedInteractions, runtimes, accessTokens, liveSessionRows, liveEventRows] =
+      await Promise.all([
+        this.listFederatedInteractions(operatorId),
+        this.listAgentRuntimes(operatorId),
+        this.listAgentAccessTokens(operatorId),
+        this.sql`
         SELECT session.interaction_id, session.initiator_agent_id, session.responder_agent_id,
           session.status, session.created_at, session.activated_at, session.completed_at,
           session.expires_at, session.last_error
@@ -442,7 +470,7 @@ export class HostedRepository {
            OR interaction.responder_operator_id = ${operatorId}
         ORDER BY session.created_at DESC
       `,
-      this.sql`
+        this.sql`
         SELECT events.event
         FROM openclasp_live_session_events events
         INNER JOIN openclasp_federated_interactions interaction
@@ -451,7 +479,7 @@ export class HostedRepository {
            OR interaction.responder_operator_id = ${operatorId}
         ORDER BY events.created_at ASC
       `,
-    ]);
+      ]);
     const ofKind = (kind: HostedRecordKind) =>
       rows.filter((row) => row.kind === kind).map((row) => row.payload);
     const agentProfiles = ofKind('agent_profile') as AgentProfile[];
@@ -503,6 +531,148 @@ export class HostedRepository {
       })),
       hostedThreads,
       runtimes,
+      accessTokens,
+    };
+  }
+
+  async issueAgentAccessToken(
+    operatorId: string,
+    agentId: string,
+    input: { name: string; expiresInDays: number },
+  ): Promise<AgentAccessTokenMetadata & { token: string }> {
+    await this.ensureSchema();
+    const agents = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+      LIMIT 1
+    `;
+    const agent = agents[0]?.payload as AgentProfile | undefined;
+    if (!agent) throw new Error('Owned agent not found');
+    if (agent.status !== 'active') throw new Error('Revoked agents cannot receive access tokens');
+    const name = input.name.trim();
+    if (!name) throw new Error('Token name is required');
+    const { tokenId, token, tokenHash } = createAgentAccessToken();
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + input.expiresInDays * 86_400_000);
+    const scopes = ['mcp:access'];
+    await this.sql`
+      INSERT INTO openclasp_agent_access_tokens(
+        token_id, operator_id, agent_id, name, token_hash, scopes, expires_at, created_at
+      ) VALUES (
+        ${tokenId}, ${operatorId}, ${agentId}, ${name}, ${tokenHash},
+        ${JSON.stringify(scopes)}::jsonb, ${expiresAt.toISOString()}, ${createdAt.toISOString()}
+      )
+    `;
+    const clientId = agentAccessTokenClientId(tokenId);
+    await this.upsert(operatorId, 'installation', clientId, {
+      installationId: `install_${tokenId}`,
+      clientId,
+      agentId,
+      projectId: agent.projectId,
+      connectedAt: createdAt.toISOString(),
+      updatedAt: createdAt.toISOString(),
+    } satisfies AgentInstallation);
+    return {
+      tokenId,
+      token,
+      agentId,
+      name,
+      scopes,
+      createdAt: createdAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async listAgentAccessTokens(
+    operatorId: string,
+    agentId?: string,
+  ): Promise<AgentAccessTokenMetadata[]> {
+    await this.ensureSchema();
+    const rows = agentId
+      ? await this.sql`
+          SELECT token_id, agent_id, name, scopes, expires_at, last_used_at, revoked_at, created_at
+          FROM openclasp_agent_access_tokens
+          WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
+          ORDER BY created_at DESC
+        `
+      : await this.sql`
+          SELECT token_id, agent_id, name, scopes, expires_at, last_used_at, revoked_at, created_at
+          FROM openclasp_agent_access_tokens
+          WHERE operator_id = ${operatorId}
+          ORDER BY created_at DESC
+        `;
+    return rows.map((row) => ({
+      tokenId: String(row.token_id),
+      agentId: String(row.agent_id),
+      name: String(row.name),
+      scopes: Array.isArray(row.scopes)
+        ? row.scopes.filter((scope): scope is string => typeof scope === 'string')
+        : [],
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      expiresAt: new Date(String(row.expires_at)).toISOString(),
+      ...(row.last_used_at ? { lastUsedAt: new Date(String(row.last_used_at)).toISOString() } : {}),
+      ...(row.revoked_at ? { revokedAt: new Date(String(row.revoked_at)).toISOString() } : {}),
+    }));
+  }
+
+  async revokeAgentAccessToken(operatorId: string, agentId: string, tokenId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      UPDATE openclasp_agent_access_tokens
+      SET revoked_at = COALESCE(revoked_at, NOW())
+      WHERE token_id = ${tokenId} AND operator_id = ${operatorId} AND agent_id = ${agentId}
+      RETURNING revoked_at
+    `;
+    if (!rows.length) throw new Error('Agent access token not found');
+    const clientId = agentAccessTokenClientId(tokenId);
+    await this.sql`
+      DELETE FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'installation' AND record_id = ${clientId}
+    `;
+    return {
+      tokenId,
+      agentId,
+      revokedAt: new Date(String(rows[0]?.revoked_at)).toISOString(),
+    };
+  }
+
+  async verifyAgentAccessToken(token: string) {
+    await this.ensureSchema();
+    const tokenId = agentAccessTokenId(token);
+    if (!tokenId) throw new Error('Invalid agent access token');
+    const rows = await this.sql`
+      SELECT tokens.operator_id, tokens.agent_id, tokens.token_hash, tokens.scopes,
+        tokens.expires_at, profile.payload AS profile
+      FROM openclasp_agent_access_tokens tokens
+      INNER JOIN openclasp_records profile
+        ON profile.operator_id = tokens.operator_id
+        AND profile.kind = 'agent_profile'
+        AND profile.record_id = tokens.agent_id
+      WHERE tokens.token_id = ${tokenId} AND tokens.revoked_at IS NULL
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row || !matchesAgentAccessToken(token, String(row.token_hash)))
+      throw new Error('Invalid agent access token');
+    if (Date.parse(String(row.expires_at)) <= Date.now())
+      throw new Error('Agent access token has expired');
+    const profile = row.profile as Partial<AgentProfile>;
+    if (profile.status !== 'active') throw new Error('Agent access token is disabled');
+    await this.sql`
+      UPDATE openclasp_agent_access_tokens
+      SET last_used_at = NOW()
+      WHERE token_id = ${tokenId}
+        AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minutes')
+    `;
+    return {
+      tokenId,
+      operatorId: String(row.operator_id),
+      agentId: String(row.agent_id),
+      clientId: agentAccessTokenClientId(tokenId),
+      scopes: Array.isArray(row.scopes)
+        ? row.scopes.filter((scope): scope is string => typeof scope === 'string')
+        : [],
+      expiresAt: new Date(String(row.expires_at)).toISOString(),
     };
   }
 
@@ -871,6 +1041,10 @@ export class HostedRepository {
     `;
     await this.sql`
       DELETE FROM openclasp_agent_runtimes
+      WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
+    `;
+    await this.sql`
+      DELETE FROM openclasp_agent_access_tokens
       WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
     `;
     await this.sql`
