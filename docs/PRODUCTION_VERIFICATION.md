@@ -66,10 +66,10 @@ Docker daemon; source compilation and connector bundling remain part of the auto
 
 ## Required production configuration
 
-- Auth0: Google and GitHub connections, API audience, `mcp:access`, Resource Parameter Compatibility
-  Profile, and Dynamic Client Registration;
-- Vercel: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_MCP_URL`, `DATABASE_URL`,
-  `OPENCLASP_RELAY_ENCRYPTION_KEY`, and sensitive `CRON_SECRET`;
+- Auth0: Google and GitHub connections, API audience, `mcp:access`, and the exact production
+  `/sso-callback` URL on the existing SPA application; Auth0 DCR is not used;
+- Vercel: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_PUBLIC_URL`,
+  `OPENCLASP_MCP_URL`, `DATABASE_URL`, `OPENCLASP_RELAY_ENCRYPTION_KEY`, and sensitive `CRON_SECRET`;
 - Vercel Cron: `0 0 * * *` for `/api/cron-feedback`;
 - generic sidecar deployments: stable `OPENCLASP_SESSION_SECRET` and the connector variables in
   [`CONNECTORS.md`](CONNECTORS.md);

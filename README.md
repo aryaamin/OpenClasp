@@ -32,11 +32,12 @@ corepack pnpm dev
 - MCP stdio server: `corepack pnpm mcp`
 - Remote MCP after deployment: `https://<deployment>/mcp`
 
-Interactive MCP clients use Auth0 OAuth. Install Auth0 through the Vercel Marketplace, configure
-`AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, and `OPENCLASP_MCP_URL`, then enable Auth0's
-Resource Parameter Compatibility Profile and Dynamic Client Registration. Compatible MCP clients
-discover Auth0 through `/.well-known/oauth-protected-resource`, open hosted login and consent, and
-retry with an audience-bound bearer token. The local stdio server remains available for development.
+Interactive MCP clients use OpenClasp OAuth with Auth0 as the Google/GitHub identity provider.
+Configure `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_PUBLIC_URL`, and
+`OPENCLASP_MCP_URL`. Compatible clients discover OpenClasp through
+`/.well-known/oauth-protected-resource`; public PKCE clients, codes, and hashed tokens are stored in
+Neon. Auth0 Dynamic Client Registration is not used. The local stdio server remains available for
+development.
 
 Hosted providers that cannot run OAuth, including Botpress-style static MCP clients, use a
 revocable agent access token. Use **Connect → Hosted provider → Botpress** to create a separate agent

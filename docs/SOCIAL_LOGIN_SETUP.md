@@ -1,7 +1,8 @@
 # Auth0 login and MCP OAuth setup
 
-OpenClasp uses Auth0 for both human dashboard sessions and agent MCP OAuth. Vercel provisions the
-tenant and application; OpenClasp does not store social-provider secrets.
+OpenClasp uses Auth0 for Google/GitHub identity. OpenClasp itself is the MCP OAuth authorization
+server and stores public client registrations plus hashed tokens in Neon. Vercel provisions the
+Auth0 tenant and application; OpenClasp does not store social-provider secrets.
 
 ## Vercel
 
@@ -14,7 +15,7 @@ tenant and application; OpenClasp does not store social-provider secrets.
 
 1. Open the linked tenant in Auth0 Dashboard.
 2. Under **Authentication → Social**, configure Google and GitHub.
-3. Promote both connections to domain level so DCR-created clients can use them.
+3. Enable both connections for the OpenClasp SPA application.
 4. Disable the database connection for the OpenClasp dashboard application.
 5. Configure `/sso-callback`, `/login`, and the production origin in the SPA application settings.
 
@@ -25,10 +26,11 @@ The app starts each provider directly and returns through `/sso-callback` to `/d
 1. Create an Auth0 API with identifier `https://openclasp.vercel.app/mcp`.
 2. Keep standard OIDC scopes enabled. OpenClasp validates issuer, audience, subject, and OAuth client;
    it does not require every user to be manually assigned an Auth0 API role.
-3. Enable Dynamic Client Registration and the Resource Parameter Compatibility Profile.
-4. Keep `https://openclasp.vercel.app/mcp` as `OPENCLASP_MCP_URL` in Vercel.
-5. Connect an MCP client to `https://openclasp.vercel.app/mcp`. It discovers Auth0, opens consent,
-   and sends an OAuth access token. Dashboard session tokens are rejected at this endpoint.
+3. Dynamic Client Registration in Auth0 is not required. OpenClasp registers MCP clients in Neon.
+4. Keep `https://openclasp.vercel.app` as `OPENCLASP_PUBLIC_URL` and
+   `https://openclasp.vercel.app/mcp` as `OPENCLASP_MCP_URL` in Vercel.
+5. Connect an MCP client to `https://openclasp.vercel.app/mcp`. It discovers OpenClasp OAuth,
+   authenticates the user through Auth0, and receives a hashed, revocable OpenClasp bearer token.
 
 ## Hosted providers without OAuth
 

@@ -7,6 +7,7 @@ import {
 } from '../packages/mcp-server/src/server.js';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
 import { verifyAuth0Token } from './auth0.js';
+import { oauthStore } from './oauth-store.js';
 
 const repository = process.env.DATABASE_URL
   ? new HostedRepository(process.env.DATABASE_URL)
@@ -51,6 +52,21 @@ const mcp = createMcpHandler(
 
 async function verifyToken(_request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
   if (!bearerToken) return undefined;
+  if (bearerToken.startsWith('oc_oat_')) {
+    const authentication = await oauthStore().verifyAccessToken(bearerToken);
+    if (!authentication || !authentication.scopes.includes('mcp:access'))
+      throw new Error('OpenClasp OAuth token is invalid or missing the MCP scope');
+    return {
+      token: bearerToken,
+      clientId: authentication.clientId,
+      scopes: authentication.scopes,
+      expiresAt: Math.floor(Date.parse(authentication.expiresAt) / 1000),
+      extra: {
+        operatorId: authentication.operatorId,
+        credentialType: 'oauth_access_token',
+      },
+    };
+  }
   if (bearerToken.startsWith('oc_at_')) {
     if (!repository) throw new Error('Agent access tokens are not configured');
     const authentication = await repository.verifyAgentAccessToken(bearerToken);

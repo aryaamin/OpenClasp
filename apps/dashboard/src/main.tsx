@@ -163,7 +163,7 @@ async function beginAuth(provider: 'google' | 'github') {
   sessionStorage.setItem(authTransactionKey, JSON.stringify(transaction));
   const parameters = new URLSearchParams({
     client_id: __AUTH0_CLIENT_ID__,
-    redirect_uri: `${location.origin}/sso-callback`,
+    redirect_uri: `${new URL(__AUTH0_AUDIENCE__).origin}/sso-callback`,
     response_type: 'code',
     scope: 'openid profile email',
     audience: __AUTH0_AUDIENCE__,
@@ -185,7 +185,7 @@ async function signOut(preview: boolean) {
   await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin' });
   const parameters = new URLSearchParams({
     client_id: __AUTH0_CLIENT_ID__,
-    returnTo: `${location.origin}/login`,
+    returnTo: `${new URL(__AUTH0_AUDIENCE__).origin}/login`,
   });
   location.assign(`https://${__AUTH0_DOMAIN__}/v2/logout?${parameters}`);
 }
@@ -566,6 +566,20 @@ function AuthCallback() {
       if (oauthError) throw new Error(oauthError);
       const code = query.get('code');
       const returnedState = query.get('state');
+      if (code && returnedState?.startsWith('oc_tx_')) {
+        const response = await fetch('/api/oauth-callback', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ code, state: returnedState }),
+        });
+        if (!response.ok) throw new Error('MCP authorization failed');
+        const result = (await response.json()) as { redirectTo?: unknown };
+        if (typeof result.redirectTo !== 'string')
+          throw new Error('Invalid MCP authorization response');
+        location.replace(result.redirectTo);
+        return;
+      }
       const rawTransaction = sessionStorage.getItem(authTransactionKey);
       if (!code || !returnedState || !rawTransaction) throw new Error('Missing OAuth transaction');
       const transaction = JSON.parse(rawTransaction) as AuthTransaction;

@@ -15,10 +15,14 @@ export function auth0Config() {
   )
     .replace(/^https?:\/\//, '')
     .replace(/\/$/, '');
+  const audience = process.env.AUTH0_AUDIENCE ?? process.env.OPENCLASP_MCP_URL ?? defaultAudience;
   return {
     domain,
     issuer: `https://${domain}/`,
-    audience: process.env.AUTH0_AUDIENCE ?? process.env.OPENCLASP_MCP_URL ?? defaultAudience,
+    audience,
+    publicOrigin: new URL(
+      process.env.OPENCLASP_PUBLIC_URL ?? (URL.canParse(audience) ? audience : defaultAudience),
+    ).origin,
     dashboardClientId:
       process.env.AUTH0_CLIENT_ID ??
       process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID ??

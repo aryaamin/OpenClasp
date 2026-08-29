@@ -22,7 +22,7 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof input.code !== 'string' || typeof input.codeVerifier !== 'string')
     return Response.json({ error: 'invalid_callback' }, { status: 400 });
   const config = auth0Config();
-  const redirectUri = `${new URL(request.url).origin}/sso-callback`;
+  const redirectUri = `${config.publicOrigin}/sso-callback`;
   const tokenResponse = await fetch(`${config.issuer}oauth/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },

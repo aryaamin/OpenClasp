@@ -1,22 +1,16 @@
-import { auth0Config } from './auth0.js';
-
 export async function GET(request: Request): Promise<Response> {
-  const { audience, issuer } = auth0Config();
-  const response = await fetch(`${issuer}.well-known/oauth-authorization-server`);
-  if (!response.ok)
-    return Response.json({ error: 'authorization_server_metadata_unavailable' }, { status: 502 });
-
-  const metadata = (await response.json()) as Record<string, unknown>;
   const origin = new URL(request.url).origin;
-  const authorizationEndpoint = new URL(String(metadata.authorization_endpoint));
-  authorizationEndpoint.searchParams.set('audience', audience);
   return Response.json(
     {
-      ...metadata,
       issuer: origin,
-      authorization_endpoint: authorizationEndpoint.href,
+      authorization_endpoint: `${origin}/oauth/authorize`,
+      token_endpoint: `${origin}/oauth/token`,
       registration_endpoint: `${origin}/oauth/register`,
       scopes_supported: ['mcp:access'],
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
     },
     {
       headers: {
