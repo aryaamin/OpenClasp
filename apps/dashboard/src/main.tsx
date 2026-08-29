@@ -604,7 +604,9 @@ function PageContent({
     return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'insights') return <Insights data={data} />;
   if (page === 'connect')
-    return <Connect data={data} refreshDashboard={refreshDashboard} api={api} />;
+    return (
+      <Connect data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />
+    );
   if (page === 'settings')
     return <SettingsPage settings={settings} setSettings={setSettings} api={api} />;
   return <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
@@ -1080,24 +1082,6 @@ function Agents({
       setWorking('');
     }
   };
-  const createAccessToken = async (agentId: string, name: string, expiresInDays: number) => {
-    setWorking(`token:${agentId}`);
-    setError('');
-    try {
-      const created = (await api(`/v0.1/agents/${encodeURIComponent(agentId)}/access-tokens`, {
-        method: 'POST',
-        body: JSON.stringify({ name, expiresInDays }),
-      })) as { token?: string };
-      await refreshDashboard();
-      if (!created.token) throw new Error('The token was not returned');
-      return created.token;
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not create agent access token');
-      return undefined;
-    } finally {
-      setWorking('');
-    }
-  };
   const revokeAccessToken = async (agentId: string, tokenId: string) => {
     setWorking(`token:${agentId}`);
     setError('');
@@ -1171,9 +1155,6 @@ function Agents({
                   Date.parse(String(token.expiresAt)) > Date.now(),
               )}
               accessTokenWorking={working === `token:${agent.agentId}`}
-              onCreateAccessToken={(name, expiresInDays) =>
-                createAccessToken(agent.agentId, name, expiresInDays)
-              }
               onRevokeAccessToken={(tokenId) => revokeAccessToken(agent.agentId, tokenId)}
               onDelete={() => deleteAgent(agent)}
             />
@@ -1325,17 +1306,34 @@ function Insights({ data }: { data: DashboardData }) {
 
 function Connect({
   data,
+  navigate,
   refreshDashboard,
   api,
 }: {
   data: DashboardData;
+  navigate: (page: Page) => void;
   refreshDashboard: () => Promise<void>;
   api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const endpoint = 'https://openclasp.vercel.app/mcp';
+  const [connectionType, setConnectionType] = useState<'interactive' | 'hosted'>('hosted');
   const [copied, setCopied] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
   const [working, setWorking] = useState('');
   const [decisionError, setDecisionError] = useState('');
+  const [providerError, setProviderError] = useState('');
+  const [providerForm, setProviderForm] = useState({
+    agentName: '',
+    projectName: '',
+    description: '',
+    capabilities: '',
+    limitations: '',
+    expiresInDays: 365,
+  });
+  const [providerResult, setProviderResult] = useState<{
+    agent: { agentId: string; name: string };
+    accessToken: { token: string; expiresAt: string };
+  }>();
   const pending = data.setupRequests.filter((request) => request.status === 'pending');
   useEffect(() => {
     const poll = () => void refreshDashboard().catch(() => undefined);
@@ -1353,6 +1351,39 @@ function Connect({
       await refreshDashboard();
     } catch (reason) {
       setDecisionError(reason instanceof Error ? reason.message : 'Could not update setup request');
+    } finally {
+      setWorking('');
+    }
+  };
+  const connectHostedProvider = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setWorking('hosted-provider');
+    setProviderError('');
+    try {
+      const list = (value: string) =>
+        value
+          .split(/[,\n]/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      const created = (await api('/v0.1/provider-connections', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: 'botpress',
+          agentName: providerForm.agentName,
+          projectName: providerForm.projectName,
+          description: providerForm.description,
+          capabilities: list(providerForm.capabilities),
+          limitations: list(providerForm.limitations),
+          expiresInDays: providerForm.expiresInDays,
+        }),
+      })) as {
+        agent: { agentId: string; name: string };
+        accessToken: { token: string; expiresAt: string };
+      };
+      setProviderResult(created);
+      await refreshDashboard().catch(() => undefined);
+    } catch (reason) {
+      setProviderError(reason instanceof Error ? reason.message : 'Could not create connection');
     } finally {
       setWorking('');
     }
@@ -1427,54 +1458,233 @@ function Connect({
           )}
         </section>
       )}
-      <section className="connectLayout">
-        <Panel title="Connect once" subtitle="OpenClasp handles the routine steps afterward">
-          <div className="endpoint">
-            <code>{endpoint}</code>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(endpoint);
-                setCopied(true);
-                window.setTimeout(() => setCopied(false), 2000);
-              }}
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          <div className="connectSteps">
-            <div className="connectStep">
-              <b>1</b>
-              <span>Add this MCP URL and complete the OAuth sign-in.</span>
-            </div>
-            <div className="connectStep">
-              <b>2</b>
-              <span>
-                Tell the agent: <code>Set yourself up on OpenClasp</code>.
-              </span>
-            </div>
-            <div className="connectStep">
-              <b>3</b>
-              <span>
-                Approve its identity, temporary/direct mode, privacy and automation policy here.
-              </span>
-            </div>
-          </div>
-        </Panel>
-        <Panel
-          title="What becomes automatic"
-          subtitle="Safe defaults with deterministic approval boundaries"
+      <div className="connectionTypePicker" role="tablist" aria-label="Agent connection type">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={connectionType === 'hosted'}
+          className={connectionType === 'hosted' ? 'active' : ''}
+          onClick={() => setConnectionType('hosted')}
         >
-          <ul className="checkList">
-            <li>Agent Card publication and discovery</li>
-            <li>Contract defaults inferred from the task</li>
-            <li>Safe matching invitations accepted immediately</li>
-            <li>Ready-to-send A2A endpoint, headers, and metadata</li>
-            <li>Hosted encrypted history only for temporary chat identities</li>
-            <li>Risky requests routed to human review</li>
-          </ul>
-        </Panel>
-      </section>
+          Hosted provider
+          <small>Botpress and similar platforms</small>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={connectionType === 'interactive'}
+          className={connectionType === 'interactive' ? 'active' : ''}
+          onClick={() => setConnectionType('interactive')}
+        >
+          Interactive agent
+          <small>Codex, Cursor, and OAuth clients</small>
+        </button>
+      </div>
+      {connectionType === 'hosted' ? (
+        <section className="connectLayout providerConnectLayout">
+          <Panel
+            title="Add a Botpress agent"
+            subtitle="Creates a separate OpenClasp identity and credential"
+          >
+            {providerResult ? (
+              <div className="providerResult">
+                <div className="successBanner">
+                  <strong>{providerResult.agent.name} created</strong>
+                  <span>{providerResult.agent.agentId}</span>
+                </div>
+                <label>
+                  <span>MCP URL</span>
+                  <code>{endpoint}</code>
+                </label>
+                <label>
+                  <span>Bearer token — copy it now; it will not be shown again</span>
+                  <code>{providerResult.accessToken.token}</code>
+                </label>
+                <div className="agentActions">
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(providerResult.accessToken.token);
+                      setTokenCopied(true);
+                      window.setTimeout(() => setTokenCopied(false), 2000);
+                    }}
+                  >
+                    {tokenCopied ? 'Copied' : 'Copy token'}
+                  </button>
+                  <button className="primary" type="button" onClick={() => navigate('agents')}>
+                    View agent
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                className="providerForm"
+                onSubmit={(event) => void connectHostedProvider(event)}
+              >
+                <label>
+                  <span>Provider</span>
+                  <select value="botpress" disabled>
+                    <option value="botpress">Botpress</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Agent name</span>
+                  <input
+                    required
+                    maxLength={100}
+                    value={providerForm.agentName}
+                    onChange={(event) =>
+                      setProviderForm((value) => ({ ...value, agentName: event.target.value }))
+                    }
+                    placeholder="Recruiting agent"
+                  />
+                </label>
+                <label>
+                  <span>Project</span>
+                  <input
+                    required
+                    maxLength={100}
+                    value={providerForm.projectName}
+                    onChange={(event) =>
+                      setProviderForm((value) => ({ ...value, projectName: event.target.value }))
+                    }
+                    placeholder="Recruiting"
+                  />
+                </label>
+                <label className="fullWidth">
+                  <span>Purpose</span>
+                  <textarea
+                    maxLength={500}
+                    value={providerForm.description}
+                    onChange={(event) =>
+                      setProviderForm((value) => ({ ...value, description: event.target.value }))
+                    }
+                    placeholder="Matches suitable candidates with open roles"
+                  />
+                </label>
+                <label>
+                  <span>Capabilities, comma-separated</span>
+                  <input
+                    value={providerForm.capabilities}
+                    onChange={(event) =>
+                      setProviderForm((value) => ({ ...value, capabilities: event.target.value }))
+                    }
+                    placeholder="candidate matching, interview coordination"
+                  />
+                </label>
+                <label>
+                  <span>Limitations, comma-separated</span>
+                  <input
+                    value={providerForm.limitations}
+                    onChange={(event) =>
+                      setProviderForm((value) => ({ ...value, limitations: event.target.value }))
+                    }
+                    placeholder="no final hiring decisions"
+                  />
+                </label>
+                <label>
+                  <span>Credential expiry</span>
+                  <select
+                    value={providerForm.expiresInDays}
+                    onChange={(event) =>
+                      setProviderForm((value) => ({
+                        ...value,
+                        expiresInDays: Number(event.target.value),
+                      }))
+                    }
+                  >
+                    <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
+                    <option value={365}>1 year</option>
+                  </select>
+                </label>
+                <div className="providerSubmit fullWidth">
+                  <p>This does not reuse or modify your Codex agent.</p>
+                  <button
+                    className="primary"
+                    type="submit"
+                    disabled={working === 'hosted-provider'}
+                  >
+                    {working === 'hosted-provider' ? 'Creating…' : 'Create Botpress connection'}
+                  </button>
+                </div>
+                {providerError ? (
+                  <div className="loginError fullWidth" role="alert">
+                    {providerError}
+                  </div>
+                ) : null}
+              </form>
+            )}
+          </Panel>
+          <Panel title="Configure Botpress" subtitle="Use the generated identity only in Botpress">
+            <div className="connectSteps">
+              <div className="connectStep">
+                <b>1</b>
+                <span>Add an MCP server using the displayed OpenClasp URL.</span>
+              </div>
+              <div className="connectStep">
+                <b>2</b>
+                <span>
+                  Select Bearer token and paste only the generated <code>oc_at_…</code>.
+                </span>
+              </div>
+              <div className="connectStep">
+                <b>3</b>
+                <span>
+                  Test with <code>openclasp_get_identity</code>.
+                </span>
+              </div>
+            </div>
+            <div className="notice providerNotice">
+              MCP access does not create inbound A2A by itself. The agent remains private until its
+              Botpress webhook/runtime connector is verified.
+            </div>
+          </Panel>
+        </section>
+      ) : (
+        <section className="connectLayout">
+          <Panel title="Connect with OAuth" subtitle="For interactive MCP clients">
+            <div className="endpoint">
+              <code>{endpoint}</code>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(endpoint);
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 2000);
+                }}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <div className="connectSteps">
+              <div className="connectStep">
+                <b>1</b>
+                <span>Add this MCP URL and complete OAuth.</span>
+              </div>
+              <div className="connectStep">
+                <b>2</b>
+                <span>
+                  Tell the agent: <code>Set yourself up on OpenClasp</code>.
+                </span>
+              </div>
+              <div className="connectStep">
+                <b>3</b>
+                <span>Approve the proposed identity and mode here.</span>
+              </div>
+            </div>
+          </Panel>
+          <Panel title="Interactive clients" subtitle="Best for temporary user-driven sessions">
+            <ul className="checkList">
+              <li>OAuth opens in the browser</li>
+              <li>Each installation is explicitly approved</li>
+              <li>Temporary chats receive hosted A2A history</li>
+              <li>Persistent runtimes can switch to direct A2A</li>
+            </ul>
+          </Panel>
+        </section>
+      )}
     </>
   );
 }
@@ -1722,7 +1932,6 @@ function AgentCard({
   onDisableRuntime,
   accessTokens,
   accessTokenWorking,
-  onCreateAccessToken,
   onRevokeAccessToken,
   onDelete,
 }: {
@@ -1742,7 +1951,6 @@ function AgentCard({
   onDisableRuntime: () => void;
   accessTokens: Record<string, any>[];
   accessTokenWorking: boolean;
-  onCreateAccessToken: (name: string, expiresInDays: number) => Promise<string | undefined>;
   onRevokeAccessToken: (tokenId: string) => Promise<void>;
   onDelete: () => void;
 }) {
@@ -1758,10 +1966,6 @@ function AgentCard({
     ).join(', '),
   );
   const [runtimeEndpoint, setRuntimeEndpoint] = useState(String(runtime?.endpoint ?? ''));
-  const [tokenName, setTokenName] = useState('Botpress');
-  const [tokenLifetime, setTokenLifetime] = useState(365);
-  const [generatedToken, setGeneratedToken] = useState('');
-  const [tokenCopied, setTokenCopied] = useState(false);
   const mode = agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat');
   const temporary = mode === 'temporary_chat';
   const ready = published && (temporary || runtime?.status === 'verified');
@@ -1773,9 +1977,11 @@ function AgentCard({
   );
   const identityLabel = agent.revoked
     ? 'REVOKED'
-    : agent.identityMode === 'oauth_installation'
-      ? 'AUTHENTICATED'
-      : 'VERIFIED';
+    : agent.identityMode === 'owner_managed'
+      ? 'OWNER VERIFIED'
+      : agent.identityMode === 'oauth_installation'
+        ? 'AUTHENTICATED'
+        : 'VERIFIED';
   return (
     <article className="agentCard">
       <div className="agentTop">
@@ -1805,8 +2011,12 @@ function AgentCard({
       </div>
       <small>
         {agent.framework ? `${agent.framework} · ` : ''}
-        {agent.identityMode === 'oauth_installation' ? 'OAuth-bound · ' : 'Ed25519 · '}Created{' '}
-        {new Date(agent.createdAt).toLocaleDateString()}
+        {agent.identityMode === 'owner_managed'
+          ? 'Owner-created · '
+          : agent.identityMode === 'oauth_installation'
+            ? 'OAuth-bound · '
+            : 'Ed25519 · '}
+        Created {new Date(agent.createdAt).toLocaleDateString()}
       </small>
       <small>
         {agent.presence?.lastSeenAt
@@ -1877,75 +2087,15 @@ function AgentCard({
         </div>
         {runtime?.lastError ? <small>Last session error: {runtime.lastError}</small> : null}
       </div>
-      <div className="accessTokenBox">
-        <div className="accessTokenHead">
-          <div>
-            <strong>Hosted-provider MCP access</strong>
-            <span>{accessTokens.length} ACTIVE</span>
-          </div>
-          <p>
-            Use this when Botpress or another provider accepts a static Bearer token instead of
-            OAuth. Each token is locked to this agent.
-          </p>
-        </div>
-        {generatedToken ? (
-          <div className="generatedToken" role="status">
-            <strong>Copy this token now. It will not be shown again.</strong>
-            <code>{generatedToken}</code>
-            <div className="agentActions">
-              <button
-                className="secondary"
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(generatedToken);
-                  setTokenCopied(true);
-                  window.setTimeout(() => setTokenCopied(false), 2000);
-                }}
-              >
-                {tokenCopied ? 'Copied' : 'Copy token'}
-              </button>
-              <button className="primary" type="button" onClick={() => setGeneratedToken('')}>
-                Done
-              </button>
+      {accessTokens.length ? (
+        <div className="accessTokenBox">
+          <div className="accessTokenHead">
+            <div>
+              <strong>Provider connections</strong>
+              <span>{accessTokens.length} ACTIVE</span>
             </div>
+            <p>Created through Connect. Revoke a provider here if its credential is exposed.</p>
           </div>
-        ) : (
-          <div className="tokenCreateRow">
-            <label>
-              <span>Connection name</span>
-              <input
-                value={tokenName}
-                maxLength={100}
-                onChange={(event) => setTokenName(event.target.value)}
-                placeholder="Botpress"
-              />
-            </label>
-            <label>
-              <span>Expires</span>
-              <select
-                value={tokenLifetime}
-                onChange={(event) => setTokenLifetime(Number(event.target.value))}
-              >
-                <option value={30}>30 days</option>
-                <option value={90}>90 days</option>
-                <option value={365}>1 year</option>
-              </select>
-            </label>
-            <button
-              className="primary"
-              type="button"
-              disabled={accessTokenWorking || !tokenName.trim() || agent.status === 'revoked'}
-              onClick={() =>
-                void onCreateAccessToken(tokenName.trim(), tokenLifetime).then((token) => {
-                  if (token) setGeneratedToken(token);
-                })
-              }
-            >
-              {accessTokenWorking ? 'Creating…' : 'Generate token'}
-            </button>
-          </div>
-        )}
-        {accessTokens.length ? (
           <div className="tokenList">
             {accessTokens.map((token) => (
               <div key={token.tokenId}>
@@ -1973,8 +2123,8 @@ function AgentCard({
               </div>
             ))}
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       {editing ? (
         <div className="automationForm">
           <label>

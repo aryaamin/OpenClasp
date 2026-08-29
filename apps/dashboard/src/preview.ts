@@ -273,6 +273,63 @@ export function applyPreviewRequest(
     return { data, settings: next, result: next };
   }
 
+  if (path === '/v0.1/provider-connections' && method === 'POST') {
+    const suffix = crypto.randomUUID();
+    const projectName = String(body.projectName ?? 'Hosted agents');
+    const existingProject = data.projects.find(
+      (project) => String(project.name).toLowerCase() === projectName.toLowerCase(),
+    );
+    const project = existingProject ?? {
+      projectId: `project_${suffix}`,
+      name: projectName,
+      createdAt: new Date().toISOString(),
+    };
+    const agentId = `agent_${suffix}`;
+    const createdAt = new Date();
+    const tokenId = suffix.replaceAll('-', '').slice(0, 16);
+    const agent = {
+      agentId,
+      projectId: project.projectId,
+      name: String(body.agentName ?? 'Botpress agent'),
+      description: String(body.description ?? ''),
+      framework: 'Botpress',
+      agentVersion: '1.0.0',
+      agentMode: 'persistent_runtime',
+      transport: 'direct_a2a',
+      autoPublish: false,
+      autoAcceptPolicy: 'off',
+      autoAcceptTaskCategories: [],
+      capabilities: body.capabilities ?? [],
+      limitations: body.limitations ?? [],
+      identityMode: 'owner_managed',
+      status: 'active',
+      createdAt: createdAt.toISOString(),
+      updatedAt: createdAt.toISOString(),
+      presence: { status: 'offline' },
+    };
+    const accessToken = {
+      tokenId,
+      token: `oc_at_${tokenId}.preview_agent_access_token_secret_not_for_production`,
+      agentId,
+      name: 'Botpress',
+      scopes: ['mcp:access'],
+      createdAt: createdAt.toISOString(),
+      expiresAt: new Date(
+        createdAt.getTime() + Number(body.expiresInDays ?? 365) * 86_400_000,
+      ).toISOString(),
+    };
+    return {
+      data: {
+        ...data,
+        projects: existingProject ? data.projects : [...data.projects, project],
+        agents: [...data.agents, agent],
+        accessTokens: [accessToken, ...data.accessTokens],
+      },
+      settings,
+      result: { agent, project, accessToken },
+    };
+  }
+
   const automation = path.match(/^\/v0\.1\/agents\/([^/]+)\/automation$/);
   if (automation && method === 'PUT') {
     const agentId = decodeURIComponent(automation[1] ?? '');

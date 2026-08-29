@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   approveAgentSetup,
+  createHostedProviderAgent,
   getOnboardingState,
   requestAgentSetup,
   resolveInstallation,
@@ -24,6 +25,32 @@ class MemoryOnboardingStore implements OnboardingStore {
 }
 
 describe('agent self-onboarding', () => {
+  it('creates a separate owner-managed identity for a hosted provider', async () => {
+    const store = new MemoryOnboardingStore();
+    const created = await createHostedProviderAgent(store, 'owner', {
+      provider: 'botpress',
+      agentName: 'Recruiting agent',
+      projectName: 'Recruiting',
+      description: 'Matches candidates to roles',
+      capabilities: ['candidate matching'],
+      limitations: ['no final hiring decisions'],
+    });
+    expect(created.agent).toMatchObject({
+      name: 'Recruiting agent',
+      framework: 'Botpress',
+      identityMode: 'owner_managed',
+      agentMode: 'persistent_runtime',
+      autoPublish: false,
+      capabilities: ['candidate matching'],
+    });
+    const state = await getOnboardingState(store, 'owner');
+    expect(state.projects).toEqual([expect.objectContaining({ name: 'Recruiting' })]);
+    expect(state.agentProfiles).toEqual([
+      expect.objectContaining({ agentId: created.agent.agentId }),
+    ]);
+    expect(state.installations).toEqual([]);
+  });
+
   it('requires owner confirmation before binding an installation', async () => {
     const store = new MemoryOnboardingStore();
     const request = await requestAgentSetup(store, 'owner-a', {

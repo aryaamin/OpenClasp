@@ -22,6 +22,7 @@ import type { AgentProfile, HostedRepository } from '../../../packages/persisten
 import { toA2AAgentCard } from '../../../packages/sidecar/src/index.js';
 import {
   approveAgentSetup,
+  createHostedProviderAgent,
   getOnboardingState,
   rejectAgentSetup,
 } from '../../../packages/persistence/src/onboarding.js';
@@ -299,6 +300,34 @@ export function buildApi(
         })
         .parse(request.body);
       return repository.saveSettings(owner, value);
+    });
+    router.post('/v0.1/provider-connections', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.issueAgentAccessToken || !owner)
+        throw new Error('Hosted provider connections are not configured');
+      const value = z
+        .object({
+          provider: z.literal('botpress'),
+          agentName: z.string().trim().min(1).max(100),
+          projectName: z.string().trim().min(1).max(100),
+          description: z.string().trim().max(500).optional(),
+          capabilities: z.array(z.string().trim().min(1).max(100)).max(100).default([]),
+          limitations: z.array(z.string().trim().min(1).max(300)).max(100).default([]),
+          expiresInDays: z.number().int().min(1).max(365).default(365),
+        })
+        .parse(request.body);
+      const created = await createHostedProviderAgent(repository, owner, value);
+      try {
+        const accessToken = await repository.issueAgentAccessToken(owner, created.agent.agentId, {
+          name: 'Botpress',
+          expiresInDays: value.expiresInDays,
+        });
+        return { ...created, accessToken };
+      } catch (error) {
+        if (repository.deleteAgent)
+          await repository.deleteAgent(owner, created.agent.agentId).catch(() => undefined);
+        throw error;
+      }
     });
     router.post('/v0.1/agents', async (request) => {
       const owner = operatorId(request);

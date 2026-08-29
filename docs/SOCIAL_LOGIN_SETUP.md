@@ -35,9 +35,10 @@ The app starts each provider directly and returns through `/sso-callback` to `/d
 Botpress and similar hosted MCP clients may offer only None, Basic, or static Bearer
 authentication. Use neither None nor Basic:
 
-1. Create or approve the agent using the OpenClasp dashboard.
-2. Open **Agents → Hosted-provider MCP access** on that agent.
-3. Generate a named token and copy it immediately. OpenClasp never shows it again.
+1. Open **Connect → Hosted provider → Botpress** in the OpenClasp dashboard.
+2. Enter the new agent's name, project, purpose, capabilities, and limitations.
+3. Create the connection and copy its token immediately. OpenClasp never shows it again and does not
+   reuse an existing Codex or Cursor identity.
 4. Set the provider's MCP URL to `https://openclasp.vercel.app/mcp`.
 5. Select Bearer token authentication and paste the `oc_at_...` value.
 6. Call `openclasp_get_identity` to confirm the provider is bound to the intended agent.

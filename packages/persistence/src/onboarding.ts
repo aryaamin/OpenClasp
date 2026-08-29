@@ -21,7 +21,7 @@ export type AgentProfile = {
   autoAcceptTaskCategories: string[];
   capabilities: string[];
   limitations: string[];
-  identityMode: 'oauth_installation';
+  identityMode: 'oauth_installation' | 'owner_managed';
   status: 'active' | 'revoked';
   createdAt: string;
   updatedAt: string;
@@ -121,6 +121,53 @@ export async function resolveInstallation(
   const project = state.projects.find((item) => item.projectId === installation.projectId);
   if (!agent || !project) return { status: 'invalid_binding' as const, installation };
   return { status: 'connected' as const, installation, agent, project };
+}
+
+export async function createHostedProviderAgent(
+  store: OnboardingStore,
+  operatorId: string,
+  input: {
+    provider: 'botpress';
+    agentName: string;
+    projectName: string;
+    description?: string | undefined;
+    capabilities?: string[] | undefined;
+    limitations?: string[] | undefined;
+  },
+) {
+  const state = await getOnboardingState(store, operatorId);
+  const projectName = input.projectName.trim();
+  const agentName = input.agentName.trim();
+  if (!projectName || !agentName) throw new Error('Agent and project names are required');
+  const now = new Date().toISOString();
+  let project = state.projects.find(
+    (candidate) => candidate.name.trim().toLowerCase() === projectName.toLowerCase(),
+  );
+  if (!project) {
+    project = { projectId: `project_${randomUUID()}`, name: projectName, createdAt: now };
+    await store.upsert(operatorId, 'project', project.projectId, project);
+  }
+  const agent: AgentProfile = {
+    agentId: `agent_${randomUUID()}`,
+    projectId: project.projectId,
+    name: agentName,
+    description: input.description?.trim() ?? '',
+    framework: 'Botpress',
+    agentVersion: '1.0.0',
+    agentMode: 'persistent_runtime',
+    transport: 'direct_a2a',
+    autoPublish: false,
+    autoAcceptPolicy: 'off',
+    autoAcceptTaskCategories: [],
+    capabilities: [...new Set(input.capabilities ?? [])],
+    limitations: [...new Set(input.limitations ?? [])],
+    identityMode: 'owner_managed',
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.upsert(operatorId, 'agent_profile', agent.agentId, agent);
+  return { project, agent };
 }
 
 export async function requestAgentSetup(

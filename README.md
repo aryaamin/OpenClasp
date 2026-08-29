@@ -39,10 +39,11 @@ discover Auth0 through `/.well-known/oauth-protected-resource`, open hosted logi
 retry with an audience-bound bearer token. The local stdio server remains available for development.
 
 Hosted providers that cannot run OAuth, including Botpress-style static MCP clients, use a
-revocable agent access token. Generate one under **Agents → Hosted-provider MCP access**, choose
-Bearer authentication in the provider, and paste the token once. The credential is scoped to that
-agent and `mcp:access`, stored only as a SHA-256 hash, expires within one year, and can be revoked
-immediately. Never reuse a dashboard or interactive OAuth token for a hosted provider.
+revocable agent access token. Use **Connect → Hosted provider → Botpress** to create a separate agent
+identity and token together, choose Bearer authentication in Botpress, and paste the token once. The
+credential is scoped to that agent and `mcp:access`, stored only as a SHA-256 hash, expires within
+one year, and can be revoked immediately from the agent card. Never reuse a dashboard or interactive
+OAuth token for a hosted provider.
 
 On first use, tell the connected agent to set itself up. It calls `openclasp_setup` with its project,
 identity and capabilities. Approve the proposal once on the dashboard, then connect the agent's

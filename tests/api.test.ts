@@ -197,6 +197,29 @@ describe('HTTP API', () => {
       ).statusCode,
     ).toBe(200);
     expect(calls.at(-1)).toBe('revoke-token:user-a:agent-a:abcdefghijklmnop');
+    const providerConnection = await app.inject({
+      method: 'POST',
+      url: '/v0.1/provider-connections',
+      headers: { 'x-openclasp-operator': 'user-a' },
+      payload: {
+        provider: 'botpress',
+        agentName: 'Recruiting agent',
+        projectName: 'Recruiting',
+        capabilities: ['candidate matching'],
+        limitations: ['no final hiring decisions'],
+        expiresInDays: 365,
+      },
+    });
+    expect(providerConnection.statusCode).toBe(200);
+    expect(providerConnection.json()).toMatchObject({
+      agent: {
+        name: 'Recruiting agent',
+        framework: 'Botpress',
+        identityMode: 'owner_managed',
+      },
+      accessToken: { name: 'Botpress', scopes: ['mcp:access'] },
+    });
+    expect(calls.at(-1)).toMatch(/^issue-token:user-a:agent_.*:Botpress:365$/);
     expect(
       (
         await app.inject({

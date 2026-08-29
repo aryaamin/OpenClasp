@@ -1110,50 +1110,6 @@ textarea {
   line-height: 1.5;
 }
 
-.tokenCreateRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px auto;
-  align-items: end;
-  gap: 8px;
-}
-
-.tokenCreateRow label {
-  display: grid;
-  gap: 5px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.tokenCreateRow input,
-.tokenCreateRow select {
-  min-width: 0;
-  width: 100%;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  background: var(--bg-input);
-}
-
-.generatedToken {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--warn);
-  border-radius: var(--radius-sm);
-  background: var(--warn-dim);
-}
-
-.generatedToken > strong {
-  color: var(--warn);
-  font-size: 12px;
-}
-
-.generatedToken code {
-  overflow-wrap: anywhere;
-  user-select: all;
-}
-
 .tokenList {
   display: grid;
   border-top: 1px solid var(--border);
@@ -1258,8 +1214,124 @@ textarea {
   color: var(--text);
 }
 
+.connectionTypePicker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.connectionTypePicker button {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-card);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.connectionTypePicker button.active {
+  border-color: var(--accent-line);
+  background: var(--accent-dim);
+}
+
+.connectionTypePicker small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .connectLayout {
   margin-top: 18px;
+}
+
+.providerForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.providerForm label,
+.providerResult label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.providerForm input,
+.providerForm select,
+.providerForm textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-input);
+  font: inherit;
+}
+
+.providerForm textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.providerForm .fullWidth {
+  grid-column: 1 / -1;
+}
+
+.providerSubmit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.providerSubmit p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.providerResult {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.providerResult code {
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  background: var(--bg-input);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.successBanner {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim);
+}
+
+.successBanner span {
+  color: var(--text-muted);
+  font: 11px/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.providerNotice {
+  margin-bottom: 0;
 }
 
 .endpoint {
@@ -1772,8 +1844,14 @@ textarea {
     gap: 12px;
   }
 
-  .tokenCreateRow {
+  .connectionTypePicker,
+  .providerForm {
     grid-template-columns: 1fr;
+  }
+
+  .providerSubmit {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .tokenList > div {
