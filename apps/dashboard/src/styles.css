@@ -584,7 +584,9 @@ select {
   gap: 7px;
 }
 .agentTop .readyBadge,
-.agentTop .needsBadge {
+.agentTop .needsBadge,
+.agentTop .onlineBadge,
+.agentTop .offlineBadge {
   padding: 5px 7px;
   border: 1px solid #3d5931;
   border-radius: 99px;
@@ -595,6 +597,16 @@ select {
   border-color: #5b4931;
   color: #f1c476;
   background: #211b12;
+}
+.agentTop .onlineBadge {
+  border-color: #3d5931;
+  color: #b9f27c;
+  background: #172015;
+}
+.agentTop .offlineBadge {
+  border-color: #414741;
+  color: #858d85;
+  background: #181b18;
 }
 .agentCard h2 {
   margin: 24px 0 4px;

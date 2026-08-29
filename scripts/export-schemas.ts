@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   AgentIdentitySchema,
+  AgentPresenceSchema,
   AgentTransportSchema,
   DelegationCredentialSchema,
   ExpectationManifestSchema,
@@ -28,6 +29,7 @@ const schemas = {
   feedback: FeedbackSchema,
   risk_decision: RiskDecisionSchema,
   agent_transport: AgentTransportSchema,
+  agent_presence: AgentPresenceSchema,
   public_agent_card: PublicAgentCardSchema,
   federated_interaction: FederatedInteractionSchema,
 };

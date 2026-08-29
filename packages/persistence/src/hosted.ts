@@ -5,6 +5,7 @@ import {
   PublicAgentCardSchema,
   canonicalHash,
   type FederatedInteraction,
+  type AgentPresence,
   type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
@@ -32,7 +33,8 @@ export type HostedRecordKind =
   | 'agent_profile'
   | 'installation'
   | 'setup_request'
-  | 'publication';
+  | 'publication'
+  | 'presence';
 
 export type { PublicAgentCard, FederatedInteraction } from '../../protocol/src/index.js';
 
@@ -126,6 +128,19 @@ const normalized = (value: string) =>
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_');
+
+export const AGENT_ONLINE_WINDOW_MS = 2 * 60_000;
+
+export function resolveAgentPresence(lastSeenAt?: string, now = new Date()): AgentPresence {
+  const online = Boolean(
+    lastSeenAt && now.getTime() - Date.parse(lastSeenAt) <= AGENT_ONLINE_WINDOW_MS,
+  );
+  return {
+    status: online ? 'online' : 'offline',
+    ...(lastSeenAt ? { lastSeenAt } : {}),
+    checkedAt: now.toISOString(),
+  };
+}
 
 export function canAutoAcceptInteraction(
   agent: AgentProfile,
@@ -416,8 +431,16 @@ export class HostedRepository {
     const federatedInteractions = await this.listFederatedInteractions(operatorId);
     const ofKind = (kind: HostedRecordKind) =>
       rows.filter((row) => row.kind === kind).map((row) => row.payload);
+    const presence = new Map(
+      rows
+        .filter((row) => row.kind === 'presence')
+        .map((row) => [row.recordId, String(row.payload.lastSeenAt)]),
+    );
     return {
-      agents: [...ofKind('agent_profile'), ...ofKind('agent')],
+      agents: [...ofKind('agent_profile'), ...ofKind('agent')].map((agent) => ({
+        ...agent,
+        presence: resolveAgentPresence(presence.get(String(agent.agentId))),
+      })),
       projects: ofKind('project'),
       installations: ofKind('installation'),
       setupRequests: ofKind('setup_request'),
@@ -464,7 +487,9 @@ export class HostedRepository {
     const rows = await this.sql`
       SELECT card FROM openclasp_public_agents WHERE agent_id = ${agentId}
     `;
-    return rows[0]?.card ? normalizePublicAgentCard(rows[0].card) : undefined;
+    if (!rows[0]?.card) return undefined;
+    const card = normalizePublicAgentCard(rows[0].card);
+    return { ...card, presence: await this.getAgentPresence(agentId) };
   }
 
   async searchPublishedAgents(input: {
@@ -478,8 +503,20 @@ export class HostedRepository {
     `;
     const query = input.query?.trim().toLowerCase();
     const capability = input.capability?.trim().toLowerCase();
+    const presenceRows = await this.sql`
+      SELECT records.record_id, records.payload
+      FROM openclasp_records records
+      INNER JOIN openclasp_public_agents agents ON agents.agent_id = records.record_id
+      WHERE records.kind = 'presence'
+    `;
+    const presence = new Map(
+      presenceRows.map((row) => [String(row.record_id), String(row.payload.lastSeenAt)]),
+    );
     return rows
-      .map((row) => normalizePublicAgentCard(row.card))
+      .map((row) => {
+        const card = normalizePublicAgentCard(row.card);
+        return { ...card, presence: resolveAgentPresence(presence.get(card.agentId)) };
+      })
       .filter(
         (card) =>
           (!query ||
@@ -489,6 +526,35 @@ export class HostedRepository {
             card.capabilities.some((value) => value.toLowerCase().includes(capability))),
       )
       .slice(0, Math.min(Math.max(input.limit ?? 20, 1), 50));
+  }
+
+  async touchAgentPresence(operatorId: string, agentId: string): Promise<AgentPresence> {
+    await this.ensureSchema();
+    const owned = await this.sql`
+      SELECT 1 FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+    `;
+    if (!owned.length) throw new Error('Agent is not owned by this account');
+    const lastSeenAt = new Date().toISOString();
+    await this.upsert(operatorId, 'presence', agentId, { lastSeenAt });
+    return resolveAgentPresence(lastSeenAt);
+  }
+
+  async getAgentPresence(agentId: string): Promise<AgentPresence> {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT records.payload
+      FROM openclasp_public_agents agents
+      LEFT JOIN openclasp_records records
+        ON records.operator_id = agents.operator_id
+        AND records.kind = 'presence'
+        AND records.record_id = agents.agent_id
+      WHERE agents.agent_id = ${agentId}
+      LIMIT 1
+    `;
+    if (!rows.length) throw new Error('Published agent not found');
+    const lastSeenAt = rows[0]?.payload?.lastSeenAt;
+    return resolveAgentPresence(typeof lastSeenAt === 'string' ? lastSeenAt : undefined);
   }
 
   async createFederatedInteraction(

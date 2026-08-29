@@ -398,6 +398,7 @@ function Overview({
       .map((publication) => String(publication.agentId)),
   );
   const readyAgents = data.agents.filter((agent) => publishedIds.has(String(agent.agentId))).length;
+  const onlineAgents = data.agents.filter((agent) => agent.presence?.status === 'online').length;
   const pendingInvitations = data.federatedInteractions.filter(
     (interaction) => interaction.status === 'pending',
   ).length;
@@ -430,7 +431,11 @@ function Overview({
         </button>
       </section>
       <section className="metrics">
-        <Metric label="Connected agents" value={data.agents.length} note="bound identities" />
+        <Metric
+          label="Online agents"
+          value={onlineAgents}
+          note={`${data.agents.length - onlineAgents} offline · 2 min window`}
+        />
         <Metric
           label="Interactions"
           value={data.interactions.length + data.federatedInteractions.length}
@@ -1073,6 +1078,7 @@ function AgentCard({
     ).join(', '),
   );
   const ready = published;
+  const online = agent.presence?.status === 'online';
   const endpoint = `${window.location.origin}/a2a/${encodeURIComponent(agent.agentId)}`;
   const identityLabel = agent.revoked
     ? 'REVOKED'
@@ -1084,6 +1090,9 @@ function AgentCard({
       <div className="agentTop">
         <span className="agentGlyph">◇</span>
         <div className="agentBadges">
+          <b className={online ? 'onlineBadge' : 'offlineBadge'}>
+            ● {online ? 'ONLINE' : 'OFFLINE'}
+          </b>
           <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
           <b className={ready ? 'readyBadge' : 'needsBadge'}>{ready ? 'READY' : 'SETUP NEEDED'}</b>
         </div>
@@ -1099,6 +1108,11 @@ function AgentCard({
         {agent.framework ? `${agent.framework} · ` : ''}
         {agent.identityMode === 'oauth_installation' ? 'OAuth-bound · ' : 'Ed25519 · '}Created{' '}
         {new Date(agent.createdAt).toLocaleDateString()}
+      </small>
+      <small>
+        {agent.presence?.lastSeenAt
+          ? `Last MCP activity ${new Date(agent.presence.lastSeenAt).toLocaleString()}`
+          : 'No MCP activity recorded yet'}
       </small>
       {published ? (
         <a

@@ -17,6 +17,10 @@ agent ID, name, framework, declared capabilities and limitations, assurance meth
 It omits the operator identity, account details, project, installation ID, private history, scores,
 evidence, and conversations. Removing a card deletes the global publication.
 
+Published cards also expose coarse agent presence and the last authenticated MCP activity time.
+Presence is derived from a two-minute window and is explicitly not a delivery or availability
+guarantee.
+
 Federated interaction rows are visible only to the authenticated accounts that own the initiator and
 responder agents. They contain task terms, participant agent IDs, declared transport endpoints,
 contract hashes, acceptance methods, status, and timestamps. They do not contain raw A2A message

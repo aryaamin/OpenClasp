@@ -113,6 +113,12 @@ export const AgentTransportSchema = z.object({
   managedBy: z.literal('openclasp').default('openclasp'),
 });
 
+export const AgentPresenceSchema = z.object({
+  status: z.enum(['online', 'offline']),
+  lastSeenAt: z.string().datetime().optional(),
+  checkedAt: z.string().datetime(),
+});
+
 export const PublicAgentCardSchema = z.object({
   protocolVersion: z.literal(PROTOCOL_VERSION),
   agentId: z.string().min(1),
@@ -127,6 +133,7 @@ export const PublicAgentCardSchema = z.object({
   cardUrl: z.string().url(),
   a2aAgentCardUrl: z.string().url(),
   extensionUri: z.string().url(),
+  presence: AgentPresenceSchema.optional(),
   publishedAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -299,6 +306,7 @@ export type RiskDecision = z.infer<typeof RiskDecisionSchema>;
 export type FactCheckResult = z.infer<typeof FactCheckResultSchema>;
 export type ExpectationManifest = z.infer<typeof ExpectationManifestSchema>;
 export type AgentTransport = z.infer<typeof AgentTransportSchema>;
+export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
 export type PublicAgentCard = z.infer<typeof PublicAgentCardSchema>;
 export type ContractAcceptance = z.infer<typeof ContractAcceptanceSchema>;
 export type FederatedInteraction = z.infer<typeof FederatedInteractionSchema>;

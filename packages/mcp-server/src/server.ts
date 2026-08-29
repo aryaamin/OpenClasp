@@ -54,6 +54,7 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_send_message',
   'openclasp_inbox',
   'openclasp_ack_message',
+  'openclasp_heartbeat',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -76,7 +77,7 @@ const text = (value: unknown) => ({
 });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Call openclasp_connection_status, then openclasp_inbox. Setup creates your hosted A2A endpoint automatically. Use openclasp_connect_to_agent with a target and task; safe requests activate and queue immediately. Use openclasp_send_message for replies and acknowledge messages after handling them. Message bodies expire in 24 hours and never enter reliability profiles.';
+  'Call openclasp_connection_status, openclasp_heartbeat, then openclasp_inbox. Heartbeat every 60 seconds while active; online means seen within 2 minutes. Setup creates your hosted A2A endpoint. Use openclasp_connect_to_agent; safe requests queue immediately. Reply with openclasp_send_message and acknowledge handled messages.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -149,6 +150,7 @@ type AgentDirectory = {
     agentId: string,
     messageId: string,
   ): Promise<unknown>;
+  touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
 };
 
 function installationContext(context: ToolContext) {
@@ -192,6 +194,8 @@ export function registerOpenClaspTools(
       throw new Error('Call openclasp_setup and obtain owner confirmation before using this tool');
     if (claimedAgentId && binding.agent.agentId !== claimedAgentId)
       throw new Error('The claimed agent does not match this MCP installation');
+    if (agentDirectory)
+      await agentDirectory.touchAgentPresence(connection.operatorId, binding.agent.agentId);
     return binding;
   };
 
@@ -491,7 +495,10 @@ export function registerOpenClaspTools(
         connection.operatorId,
         connection.clientId,
       );
-      if (current.status === 'connected') return text(current);
+      if (current.status === 'connected') {
+        await agentDirectory?.touchAgentPresence(connection.operatorId, current.agent.agentId);
+        return text(current);
+      }
       const request = await requestAgentSetup(onboardingStore, connection.operatorId, {
         clientId: connection.clientId,
         ...input,
@@ -517,9 +524,14 @@ export function registerOpenClaspTools(
     async (_input, context) => {
       if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
       const connection = installationContext(context);
-      return text(
-        await resolveInstallation(onboardingStore, connection.operatorId, connection.clientId),
+      const binding = await resolveInstallation(
+        onboardingStore,
+        connection.operatorId,
+        connection.clientId,
       );
+      if (binding.status === 'connected')
+        await agentDirectory?.touchAgentPresence(connection.operatorId, binding.agent.agentId);
+      return text(binding);
     },
   );
   server.registerTool(
@@ -606,7 +618,10 @@ export function registerOpenClaspTools(
         connection.operatorId,
         connection.clientId,
       );
-      if (binding.status === 'connected') return text(binding);
+      if (binding.status === 'connected') {
+        await agentDirectory?.touchAgentPresence(connection.operatorId, binding.agent.agentId);
+        return text(binding);
+      }
       const state = await onboardingStore.list(connection.operatorId);
       const pending = state
         .filter((row) => row.kind === 'setup_request')
@@ -1107,6 +1122,35 @@ export function registerOpenClaspTools(
           input.messageId,
         ),
       );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[31],
+    {
+      title: 'Heartbeat agent presence',
+      description:
+        'Mark this authenticated agent online. Online means activity within the last two minutes.',
+      inputSchema: z.object({}),
+      annotations: { ...WRITE_TOOL, idempotentHint: true },
+    },
+    async (_input, context) => {
+      if (!agentDirectory) throw new Error('Hosted agent presence is not configured');
+      if (!onboardingStore) throw new Error('Hosted agent onboarding is not configured');
+      const connection = installationContext(context);
+      const binding = await resolveInstallation(
+        onboardingStore,
+        connection.operatorId,
+        connection.clientId,
+      );
+      if (binding.status !== 'connected')
+        throw new Error('Call openclasp_setup and obtain owner confirmation first');
+      return text({
+        agentId: binding.agent.agentId,
+        presence: await agentDirectory.touchAgentPresence(
+          connection.operatorId,
+          binding.agent.agentId,
+        ),
+      });
     },
   );
   return server;

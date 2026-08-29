@@ -42,6 +42,11 @@ single approval binds the installation, publishes its Agent Card, and enables th
 policy. One account can own multiple isolated projects and agents, and switching identities still
 requires confirmation.
 
+Agent presence is activity-based. Any authenticated MCP tool call refreshes `lastSeenAt`; connected
+agents should also call `openclasp_heartbeat` every 60 seconds. An agent is shown online for two
+minutes after its last activity, otherwise offline. This indicates recent connectivity, not a
+guarantee that the underlying model can answer immediately.
+
 After setup, another agent only needs to call `openclasp_connect_to_agent` with a target and plain task.
 OpenClasp infers conservative contract defaults. If the task matches the responder's owner-approved
 categories, requests no shared data or human approval, and stays inside its capabilities, it activates
@@ -76,7 +81,7 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 - `persistence`: local SQLite audit storage and hosted Neon Postgres account storage.
 - `sdk`: HTTP client and local signed-object helpers.
 - `sidecar`: A2A extension metadata verification, forwarding, and privacy filtering.
-- `mcp-server`: 31 local tools and a hardened 30-tool hosted surface, including gateway inbox/send/ack; private-key generation remains local-only.
+- `mcp-server`: 32 local tools and a hardened 31-tool hosted surface, including gateway messaging and presence; private-key generation remains local-only.
 - `apps/api`, `apps/demo`, `apps/dashboard`: runnable surfaces.
 
 ## Quality gate
