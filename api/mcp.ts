@@ -82,12 +82,40 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
   };
 }
 
-const handler = withMcpAuth(mcp, verifyToken, {
+const resourceMetadataPath = '/.well-known/oauth-protected-resource/mcp';
+
+const authenticatedHandler = withMcpAuth(mcp, verifyToken, {
   required: true,
-  resourceMetadataPath: '/.well-known/oauth-protected-resource',
+  resourceMetadataPath,
   ...(process.env.OPENCLASP_MCP_URL
     ? { resourceUrl: new URL(process.env.OPENCLASP_MCP_URL).origin }
     : {}),
 });
+
+async function handler(request: Request): Promise<Response> {
+  const response = await authenticatedHandler(request);
+  if (response.status !== 401 || request.headers.get('authorization')?.trim()) return response;
+
+  // A missing credential is an authentication discovery challenge, not an invalid token.
+  // Cursor's V2 MCP client treats `invalid_token` while auth is still unknown as a
+  // transient connection failure instead of starting OAuth.
+  const configuredResource = process.env.OPENCLASP_MCP_URL;
+  const publicOrigin = configuredResource
+    ? new URL(configuredResource).origin
+    : new URL(request.url).origin;
+  const headers = new Headers(response.headers);
+  headers.set(
+    'www-authenticate',
+    `Bearer resource_metadata="${new URL(resourceMetadataPath, publicOrigin).href}"`,
+  );
+  headers.set('cache-control', 'no-store');
+  headers.delete('content-length');
+  headers.delete('content-type');
+  return new Response(null, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 export { handler as GET, handler as POST };

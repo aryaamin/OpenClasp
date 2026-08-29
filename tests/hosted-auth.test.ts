@@ -19,9 +19,12 @@ describe('hosted MCP authorization', () => {
       }),
     );
     expect(response.status).toBe(401);
-    expect(response.headers.get('www-authenticate')).toContain(
-      'resource_metadata="https://openclasp.example/.well-known/oauth-protected-resource"',
+    expect(response.headers.get('www-authenticate')).toBe(
+      'Bearer resource_metadata="https://openclasp.example/.well-known/oauth-protected-resource/mcp"',
     );
+    expect(response.headers.get('www-authenticate')).not.toContain('invalid_token');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.text()).toBe('');
   });
 
   it('publishes Auth0 protected-resource metadata', async () => {
