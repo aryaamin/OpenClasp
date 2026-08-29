@@ -1323,6 +1323,7 @@ function Connect({
   const [decisionError, setDecisionError] = useState('');
   const [providerError, setProviderError] = useState('');
   const [providerForm, setProviderForm] = useState({
+    provider: 'botpress' as 'botpress' | 'custom',
     agentName: '',
     projectName: '',
     description: '',
@@ -1331,7 +1332,8 @@ function Connect({
     expiresInDays: 365,
   });
   const [providerResult, setProviderResult] = useState<{
-    agent: { agentId: string; name: string };
+    provider: 'botpress' | 'custom';
+    agent: { agentId: string; name: string; framework: string };
     accessToken: { token: string; expiresAt: string };
   }>();
   const pending = data.setupRequests.filter((request) => request.status === 'pending');
@@ -1368,7 +1370,7 @@ function Connect({
       const created = (await api('/v0.1/provider-connections', {
         method: 'POST',
         body: JSON.stringify({
-          provider: 'botpress',
+          provider: providerForm.provider,
           agentName: providerForm.agentName,
           projectName: providerForm.projectName,
           description: providerForm.description,
@@ -1377,7 +1379,8 @@ function Connect({
           expiresInDays: providerForm.expiresInDays,
         }),
       })) as {
-        agent: { agentId: string; name: string };
+        provider: 'botpress' | 'custom';
+        agent: { agentId: string; name: string; framework: string };
         accessToken: { token: string; expiresAt: string };
       };
       setProviderResult(created);
@@ -1482,10 +1485,7 @@ function Connect({
       </div>
       {connectionType === 'hosted' ? (
         <section className="connectLayout providerConnectLayout">
-          <Panel
-            title="Add a Botpress agent"
-            subtitle="Creates a separate OpenClasp identity and credential"
-          >
+          <Panel title="Add a hosted agent" subtitle="Creates an isolated identity and credential">
             {providerResult ? (
               <div className="providerResult">
                 <div className="successBanner">
@@ -1497,9 +1497,13 @@ function Connect({
                   <code>{endpoint}</code>
                 </label>
                 <label>
-                  <span>Bearer token — copy it now; it will not be shown again</span>
+                  <span>Agent token — copy it now; it will not be shown again</span>
                   <code>{providerResult.accessToken.token}</code>
                 </label>
+                <small>
+                  This agent-bound token authorizes MCP and automatic runtime registration. It
+                  cannot connect or manage another agent.
+                </small>
                 <div className="agentActions">
                   <button
                     className="secondary"
@@ -1524,8 +1528,17 @@ function Connect({
               >
                 <label>
                   <span>Provider</span>
-                  <select value="botpress" disabled>
+                  <select
+                    value={providerForm.provider}
+                    onChange={(event) =>
+                      setProviderForm((value) => ({
+                        ...value,
+                        provider: event.target.value as 'botpress' | 'custom',
+                      }))
+                    }
+                  >
                     <option value="botpress">Botpress</option>
+                    <option value="custom">Custom / self-hosted</option>
                   </select>
                 </label>
                 <label>
@@ -1606,7 +1619,7 @@ function Connect({
                     type="submit"
                     disabled={working === 'hosted-provider'}
                   >
-                    {working === 'hosted-provider' ? 'Creating…' : 'Create Botpress connection'}
+                    {working === 'hosted-provider' ? 'Creating…' : 'Create agent credentials'}
                   </button>
                 </div>
                 {providerError ? (
@@ -1617,29 +1630,68 @@ function Connect({
               </form>
             )}
           </Panel>
-          <Panel title="Configure Botpress" subtitle="Use the generated identity only in Botpress">
-            <div className="connectSteps">
-              <div className="connectStep">
-                <b>1</b>
-                <span>Add an MCP server using the displayed OpenClasp URL.</span>
-              </div>
-              <div className="connectStep">
-                <b>2</b>
-                <span>
-                  Select Bearer token and paste only the generated <code>oc_at_…</code>.
-                </span>
-              </div>
-              <div className="connectStep">
-                <b>3</b>
-                <span>
-                  Test with <code>openclasp_get_identity</code>.
-                </span>
-              </div>
-            </div>
-            <div className="notice providerNotice">
-              MCP access does not create inbound A2A by itself. The agent remains private until its
-              Botpress webhook/runtime connector is verified.
-            </div>
+          <Panel
+            title={
+              providerForm.provider === 'botpress' ? 'Configure Botpress' : 'Deploy the sidecar'
+            }
+            subtitle={
+              providerForm.provider === 'botpress'
+                ? 'MCP and inbound runtime are separate connections'
+                : 'Runs beside an agent on any cloud'
+            }
+          >
+            {providerForm.provider === 'botpress' ? (
+              <>
+                <div className="connectSteps">
+                  <div className="connectStep">
+                    <b>1</b>
+                    <span>Add the displayed MCP URL with Bearer authentication.</span>
+                  </div>
+                  <div className="connectStep">
+                    <b>2</b>
+                    <span>
+                      Paste the generated <code>oc_at_…</code> agent token.
+                    </span>
+                  </div>
+                  <div className="connectStep">
+                    <b>3</b>
+                    <span>Install the OpenClasp Botpress runtime integration for inbound A2A.</span>
+                  </div>
+                </div>
+                <div className="notice providerNotice">
+                  MCP proves outbound tool access only. Autonomous runtime becomes connected only
+                  after the Botpress integration registers its webhook successfully.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="connectSteps">
+                  <div className="connectStep">
+                    <b>1</b>
+                    <span>
+                      Deploy <code>Dockerfile.sidecar</code> beside the agent.
+                    </span>
+                  </div>
+                  <div className="connectStep">
+                    <b>2</b>
+                    <span>
+                      Set <code>OPENCLASP_AGENT_TOKEN</code>, <code>OPENCLASP_RUNTIME_URL</code>,
+                      and <code>AGENT_ADAPTER_URL</code>.
+                    </span>
+                  </div>
+                  <div className="connectStep">
+                    <b>3</b>
+                    <span>
+                      The sidecar verifies and registers itself; no endpoint paste is needed.
+                    </span>
+                  </div>
+                </div>
+                <div className="notice providerNotice">
+                  The application implements three internal POST hooks: session-offer,
+                  session-activated, and message. Agent-to-agent content remains off OpenClasp.
+                </div>
+              </>
+            )}
           </Panel>
         </section>
       ) : (
@@ -1970,6 +2022,7 @@ function AgentCard({
   const temporary = mode === 'temporary_chat';
   const ready = published && (temporary || runtime?.status === 'verified');
   const online = agent.presence?.status === 'online';
+  const providerConnected = accessTokens.length > 0;
   const endpoint = String(
     temporary
       ? `/a2a/temporary/${encodeURIComponent(agent.agentId)}`
@@ -1996,7 +2049,9 @@ function AgentCard({
                 : 'CHAT IDLE'
               : runtime?.status === 'verified'
                 ? 'ENDPOINT VERIFIED'
-                : 'ENDPOINT MISSING'}
+                : providerConnected
+                  ? 'MCP ONLY'
+                  : 'ENDPOINT MISSING'}
           </b>
           <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
           <b className={ready ? 'readyBadge' : 'needsBadge'}>{ready ? 'READY' : 'SETUP NEEDED'}</b>
@@ -2057,7 +2112,11 @@ function AgentCard({
         <p>
           {temporary
             ? 'OpenClasp receives A2A for this temporary identity and encrypts its history at rest. Connect a runtime below to switch to direct A2A.'
-            : 'Connect the worker running on your cloud. OpenClasp prepares the live session, then messages travel directly between agents.'}
+            : runtime?.status === 'verified'
+              ? 'The agent runtime registered itself successfully. Live message bodies travel directly between agents.'
+              : providerConnected
+                ? 'MCP is connected, but inbound A2A is not. Install the provider connector or deploy the sidecar; it registers this endpoint automatically.'
+                : 'Install a provider connector, deploy the sidecar, or register a native A2A endpoint.'}
         </p>
         <input
           type="url"
@@ -2065,6 +2124,9 @@ function AgentCard({
           onChange={(event) => setRuntimeEndpoint(event.target.value)}
           placeholder="https://agent.example.com/openclasp"
         />
+        <small>
+          Manual registration is only for a runtime that already implements OpenClasp A2A.
+        </small>
         <div className="agentActions">
           {runtime?.status === 'verified' ? (
             <button

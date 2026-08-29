@@ -29,7 +29,9 @@ export class OpenClaspClient {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...init,
       headers: {
-        'content-type': 'application/json',
+        ...(init?.body !== undefined && init.body !== null
+          ? { 'content-type': 'application/json' }
+          : {}),
         ...(this.accessToken ? { authorization: `Bearer ${this.accessToken}` } : {}),
         ...init?.headers,
       },
@@ -149,7 +151,36 @@ export class OpenClaspClient {
       { method: 'POST' },
     );
   }
+  getRuntimeBootstrap(): Promise<RuntimeBootstrap> {
+    return this.request('/runtime/bootstrap');
+  }
+  connectRuntime(endpoint: string): Promise<RuntimeConnection> {
+    return this.request('/runtime', {
+      method: 'PUT',
+      body: JSON.stringify({ endpoint }),
+    });
+  }
+  heartbeatRuntime(): Promise<{ status: 'online' | 'offline'; checkedAt: string }> {
+    return this.request('/runtime/heartbeat', { method: 'POST' });
+  }
 }
+
+export type RuntimeBootstrap = {
+  agentId: string;
+  openClaspUrl: string;
+  runtimeRegistrationEndpoint: string;
+  protocol: 'A2A/1.0';
+  controlProtocol: 'OpenClasp/0.1';
+};
+
+export type RuntimeConnection = {
+  agentId: string;
+  endpoint: string;
+  a2aEndpoint: string;
+  status: 'verified';
+  verifiedAt: string;
+  verificationKey: string;
+};
 
 export function createSignedEvent(
   input: Omit<InteractionEvent, 'payloadHash' | 'signature'>,
@@ -289,6 +320,137 @@ export function createOpenClaspRuntimeHandler(input: {
 }
 
 type RuntimeHandlerInput = Parameters<typeof createOpenClaspRuntimeHandler>[0];
+
+export interface RuntimeSessionStore {
+  get(interactionId: string): Promise<LiveSessionActivation | undefined>;
+  put(interactionId: string, session: LiveSessionActivation): Promise<void>;
+}
+
+export interface AgentRuntimeAdapter {
+  readonly name: string;
+  prepareSession(
+    offer: LiveSessionOffer,
+  ): Promise<{ accepted: boolean; sessionId?: string }> | { accepted: boolean; sessionId?: string };
+  activateSession(session: LiveSessionActivation): Promise<void> | void;
+  receiveMessage(input: {
+    session: LiveSessionActivation;
+    requestId: string | number;
+    message: unknown;
+  }): Promise<unknown> | unknown;
+}
+
+/** In-memory storage is useful for tests only. Production runtimes must use durable storage. */
+export class MemoryRuntimeSessionStore implements RuntimeSessionStore {
+  readonly sessions = new Map<string, LiveSessionActivation>();
+
+  async get(interactionId: string) {
+    return this.sessions.get(interactionId);
+  }
+
+  async put(interactionId: string, session: LiveSessionActivation) {
+    this.sessions.set(interactionId, session);
+  }
+}
+
+export function createAgentRuntimeConnector(input: {
+  agentId: string;
+  a2aEndpoint: string;
+  adapter: AgentRuntimeAdapter;
+  sessions: RuntimeSessionStore;
+  openClaspUrl?: string;
+  openClaspVerificationKey?: string;
+}) {
+  return createOpenClaspRuntimeHandler({
+    agentId: input.agentId,
+    a2aEndpoint: input.a2aEndpoint,
+    ...(input.openClaspUrl ? { openClaspUrl: input.openClaspUrl } : {}),
+    ...(input.openClaspVerificationKey
+      ? { openClaspVerificationKey: input.openClaspVerificationKey }
+      : {}),
+    async onSessionOffer(offer) {
+      const decision = await input.adapter.prepareSession(offer);
+      return decision.accepted
+        ? { accepted: true, sessionId: decision.sessionId ?? crypto.randomUUID() }
+        : { accepted: false };
+    },
+    async onSessionActivated(session) {
+      await input.sessions.put(session.interactionId, session);
+      await input.adapter.activateSession(session);
+    },
+    loadSession: (interactionId) => input.sessions.get(interactionId),
+    onMessage: (message) => input.adapter.receiveMessage(message),
+  });
+}
+
+export class HttpAgentRuntimeAdapter implements AgentRuntimeAdapter {
+  readonly name = 'http-webhook';
+  private readonly baseUrl: string;
+
+  constructor(
+    baseUrl: string,
+    private readonly options: {
+      bearerToken?: string;
+      timeoutMs?: number;
+    } = {},
+  ) {
+    this.baseUrl = baseUrl.replace(/\/$/, '');
+  }
+
+  private async post<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(this.options.bearerToken
+          ? { authorization: `Bearer ${this.options.bearerToken}` }
+          : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(this.options.timeoutMs ?? 30_000),
+    });
+    const text = await response.text();
+    let value: unknown = {};
+    if (text) {
+      try {
+        value = JSON.parse(text);
+      } catch {
+        throw new Error(`Agent adapter returned non-JSON from ${path}`);
+      }
+    }
+    if (!response.ok) {
+      const error = value as { error?: unknown };
+      throw new Error(
+        typeof error.error === 'string'
+          ? error.error
+          : `Agent adapter ${path} returned HTTP ${response.status}`,
+      );
+    }
+    return value as T;
+  }
+
+  async prepareSession(offer: LiveSessionOffer) {
+    const decision = await this.post<{ accepted?: unknown; sessionId?: unknown }>(
+      '/openclasp/session-offer',
+      offer,
+    );
+    return {
+      accepted: decision.accepted === true,
+      ...(typeof decision.sessionId === 'string' ? { sessionId: decision.sessionId } : {}),
+    };
+  }
+
+  async activateSession(session: LiveSessionActivation) {
+    await this.post('/openclasp/session-activated', session);
+  }
+
+  receiveMessage(input: {
+    session: LiveSessionActivation;
+    requestId: string | number;
+    message: unknown;
+  }) {
+    return this.post('/openclasp/message', input);
+  }
+}
 
 function decodeSessionCredential(token: string) {
   const [payload, signature] = token.split('.');

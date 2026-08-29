@@ -554,7 +554,9 @@ export class HostedRepository {
     const { tokenId, token, tokenHash } = createAgentAccessToken();
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + input.expiresInDays * 86_400_000);
-    const scopes = ['mcp:access'];
+    // The credential is bound to one agent. It may use MCP outbound and let that
+    // same agent register its own inbound runtime; it cannot manage other agents.
+    const scopes = ['mcp:access', 'runtime:connect'];
     await this.sql`
       INSERT INTO openclasp_agent_access_tokens(
         token_id, operator_id, agent_id, name, token_hash, scopes, expires_at, created_at

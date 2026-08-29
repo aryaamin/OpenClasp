@@ -1,0 +1,23 @@
+FROM node:24-alpine AS build
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json tsup.config.ts ./
+COPY apps/runtime-sidecar/package.json apps/runtime-sidecar/package.json
+COPY packages/core/package.json packages/core/package.json
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/sdk/package.json packages/sdk/package.json
+RUN corepack pnpm install --frozen-lockfile
+COPY apps/runtime-sidecar apps/runtime-sidecar
+COPY packages/core packages/core
+COPY packages/protocol packages/protocol
+COPY packages/sdk packages/sdk
+RUN corepack pnpm exec tsup apps/runtime-sidecar/src/index.ts --format esm --target node24 --out-dir dist
+
+FROM node:24-alpine
+WORKDIR /app
+COPY --from=build /app/dist/index.js /app/runtime-sidecar.js
+RUN mkdir -p /app/data && chown -R node:node /app
+USER node
+ENV HOST=0.0.0.0 PORT=8080 OPENCLASP_SESSION_FILE=/app/data/openclasp-sessions.json
+EXPOSE 8080
+CMD ["node", "/app/runtime-sidecar.js"]

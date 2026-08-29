@@ -287,12 +287,13 @@ export function applyPreviewRequest(
     const agentId = `agent_${suffix}`;
     const createdAt = new Date();
     const tokenId = suffix.replaceAll('-', '').slice(0, 16);
+    const provider = body.provider === 'custom' ? 'custom' : 'botpress';
     const agent = {
       agentId,
       projectId: project.projectId,
       name: String(body.agentName ?? 'Botpress agent'),
       description: String(body.description ?? ''),
-      framework: 'Botpress',
+      framework: provider === 'botpress' ? 'Botpress' : 'Custom runtime',
       agentVersion: '1.0.0',
       agentMode: 'persistent_runtime',
       transport: 'direct_a2a',
@@ -311,8 +312,8 @@ export function applyPreviewRequest(
       tokenId,
       token: `oc_at_${tokenId}.preview_agent_access_token_secret_not_for_production`,
       agentId,
-      name: 'Botpress',
-      scopes: ['mcp:access'],
+      name: provider === 'botpress' ? 'Botpress' : 'Custom runtime',
+      scopes: ['mcp:access', 'runtime:connect'],
       createdAt: createdAt.toISOString(),
       expiresAt: new Date(
         createdAt.getTime() + Number(body.expiresInDays ?? 365) * 86_400_000,
@@ -326,7 +327,7 @@ export function applyPreviewRequest(
         accessTokens: [accessToken, ...data.accessTokens],
       },
       settings,
-      result: { agent, project, accessToken },
+      result: { agent, project, provider, accessToken },
     };
   }
 
@@ -385,7 +386,7 @@ export function applyPreviewRequest(
       tokenId,
       agentId,
       name: String(body.name ?? 'Hosted provider'),
-      scopes: ['mcp:access'],
+      scopes: ['mcp:access', 'runtime:connect'],
       createdAt: createdAt.toISOString(),
       expiresAt: new Date(createdAt.getTime() + expiresInDays * 86_400_000).toISOString(),
     };

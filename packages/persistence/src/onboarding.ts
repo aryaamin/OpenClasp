@@ -127,7 +127,7 @@ export async function createHostedProviderAgent(
   store: OnboardingStore,
   operatorId: string,
   input: {
-    provider: 'botpress';
+    provider: 'botpress' | 'custom';
     agentName: string;
     projectName: string;
     description?: string | undefined;
@@ -152,7 +152,7 @@ export async function createHostedProviderAgent(
     projectId: project.projectId,
     name: agentName,
     description: input.description?.trim() ?? '',
-    framework: 'Botpress',
+    framework: input.provider === 'botpress' ? 'Botpress' : 'Custom runtime',
     agentVersion: '1.0.0',
     agentMode: 'persistent_runtime',
     transport: 'direct_a2a',

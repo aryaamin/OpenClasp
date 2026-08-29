@@ -109,6 +109,15 @@ importers:
 
   apps/demo: {}
 
+  apps/runtime-sidecar:
+    dependencies:
+      '@openclasp/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@openclasp/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+
   packages/core:
     dependencies:
       '@openclasp/protocol':

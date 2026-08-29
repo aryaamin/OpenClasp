@@ -25,12 +25,29 @@ export default async function handler(request: IncomingMessage, response: Server
       return;
     }
     try {
-      const authentication = await verifyAuth0Token(token, { dashboard: true });
-      request.headers['x-openclasp-operator'] = authentication.payload.sub!;
-      if ((request.url ?? '').startsWith('/v0.1/account')) {
-        const user = await loadAuth0Profile(token);
-        request.headers['x-openclasp-email'] = encodeURIComponent(user.email ?? '');
-        request.headers['x-openclasp-name'] = encodeURIComponent(user.name ?? '');
+      const runtimeSelfService = /^\/v0\.1\/runtime(?:\/bootstrap|\/heartbeat)?(?:\?|$)/.test(
+        request.url ?? '',
+      );
+      if (token.startsWith('oc_at_') && runtimeSelfService) {
+        if (!repository) throw new Error('Agent access tokens are not configured');
+        const authentication = await repository.verifyAgentAccessToken(token);
+        // Existing beta tokens had only mcp:access. They remain accepted because
+        // they are already cryptographically bound to the same agent.
+        if (
+          !authentication.scopes.includes('runtime:connect') &&
+          !authentication.scopes.includes('mcp:access')
+        )
+          throw new Error('Agent token cannot connect a runtime');
+        request.headers['x-openclasp-operator'] = authentication.operatorId;
+        request.headers['x-openclasp-bound-agent'] = authentication.agentId;
+      } else {
+        const authentication = await verifyAuth0Token(token, { dashboard: true });
+        request.headers['x-openclasp-operator'] = authentication.payload.sub!;
+        if ((request.url ?? '').startsWith('/v0.1/account')) {
+          const user = await loadAuth0Profile(token);
+          request.headers['x-openclasp-email'] = encodeURIComponent(user.email ?? '');
+          request.headers['x-openclasp-name'] = encodeURIComponent(user.name ?? '');
+        }
       }
     } catch {
       response.statusCode = 401;

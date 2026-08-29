@@ -48,6 +48,7 @@ type DashboardRepository = Pick<
       | 'respondToFederatedInteraction'
       | 'getLiveSession'
       | 'recordLiveSessionEvent'
+      | 'touchAgentPresence'
       | 'getRuntimeVerificationKey'
       | 'registerAgentRuntime'
       | 'disableAgentRuntime'
@@ -94,6 +95,15 @@ export function buildApi(
         throw error;
       }
       return typeof value === 'string' ? value : undefined;
+    };
+    const boundAgentId = (request: { headers: Record<string, unknown> }) => {
+      const value = request.headers['x-openclasp-bound-agent'];
+      if (typeof value !== 'string' || !value) {
+        const error = new Error('Agent-bound authentication required');
+        Object.assign(error, { statusCode: 401 });
+        throw error;
+      }
+      return value;
     };
     const scopedEngine = async (request: { headers: Record<string, unknown> }) => {
       const owner = operatorId(request);
@@ -262,6 +272,32 @@ export function buildApi(
       if (!repository || !owner) throw new Error('Hosted persistence is not configured');
       return getOnboardingState(repository, owner);
     });
+    router.get('/v0.1/runtime/bootstrap', async (request) => {
+      operatorId(request);
+      const agentId = boundAgentId(request);
+      return {
+        agentId,
+        openClaspUrl: publicBaseUrl(request),
+        runtimeRegistrationEndpoint: `${publicBaseUrl(request)}/v0.1/runtime`,
+        protocol: 'A2A/1.0',
+        controlProtocol: 'OpenClasp/0.1',
+      };
+    });
+    router.put('/v0.1/runtime', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.registerAgentRuntime || !owner)
+        throw new Error('Hosted runtime delivery is not configured');
+      const endpoint = z
+        .object({ endpoint: z.string().url().max(2048) })
+        .parse(request.body).endpoint;
+      return repository.registerAgentRuntime(owner, boundAgentId(request), endpoint);
+    });
+    router.post('/v0.1/runtime/heartbeat', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.touchAgentPresence || !owner)
+        throw new Error('Agent presence is not configured');
+      return repository.touchAgentPresence(owner, boundAgentId(request));
+    });
     router.post('/v0.1/onboarding/:id/approve', async (request) => {
       const owner = operatorId(request);
       if (!repository || !owner) throw new Error('Hosted persistence is not configured');
@@ -307,7 +343,7 @@ export function buildApi(
         throw new Error('Hosted provider connections are not configured');
       const value = z
         .object({
-          provider: z.literal('botpress'),
+          provider: z.enum(['botpress', 'custom']),
           agentName: z.string().trim().min(1).max(100),
           projectName: z.string().trim().min(1).max(100),
           description: z.string().trim().max(500).optional(),
@@ -322,7 +358,7 @@ export function buildApi(
           name: 'Botpress',
           expiresInDays: value.expiresInDays,
         });
-        return { ...created, accessToken };
+        return { ...created, provider: value.provider, accessToken };
       } catch (error) {
         if (repository.deleteAgent)
           await repository.deleteAgent(owner, created.agent.agentId).catch(() => undefined);

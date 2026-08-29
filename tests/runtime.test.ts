@@ -6,7 +6,12 @@ import {
   signSessionControl,
 } from '../packages/persistence/src/relay.js';
 import { resolvePublicRuntimeEndpoint } from '../packages/persistence/src/runtime.js';
-import { createOpenClaspRuntimeHandler } from '../packages/sdk/src/index.js';
+import {
+  createAgentRuntimeConnector,
+  createOpenClaspRuntimeHandler,
+  MemoryRuntimeSessionStore,
+  OpenClaspClient,
+} from '../packages/sdk/src/index.js';
 
 describe('direct live agent runtime connector', () => {
   const platformSecret = 'platform-secret-long-enough-for-testing';
@@ -178,6 +183,60 @@ describe('direct live agent runtime connector', () => {
     });
     expect(onMessage).toHaveBeenCalledOnce();
   });
+});
+
+it('adapts a provider runtime and persists activation before delivering messages', async () => {
+  const sessions = new MemoryRuntimeSessionStore();
+  const calls: string[] = [];
+  const handler = createAgentRuntimeConnector({
+    agentId: 'agent-provider',
+    a2aEndpoint: 'https://provider.example/a2a',
+    openClaspVerificationKey: getSessionVerificationKey('provider-test-secret'),
+    sessions,
+    adapter: {
+      name: 'test-provider',
+      prepareSession: () => ({ accepted: true }),
+      activateSession: async (session) => {
+        calls.push(`activate:${session.interactionId}`);
+        expect(await sessions.get(session.interactionId)).toEqual(session);
+      },
+      receiveMessage: ({ requestId }) => ({ task: { id: String(requestId), state: 'submitted' } }),
+    },
+  });
+  const verified = await handler(
+    new Request('https://provider.example/a2a', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'openclasp.runtime.verify',
+        version: '1',
+        agentId: 'agent-provider',
+        challenge: 'provider-challenge',
+      }),
+    }),
+  );
+  expect(verified.status).toBe(200);
+  await expect(verified.json()).resolves.toMatchObject({
+    type: 'openclasp.runtime.verified',
+    agentId: 'agent-provider',
+    a2aEndpoint: 'https://provider.example/a2a',
+  });
+  expect(calls).toEqual([]);
+});
+
+it('uses an agent token for bodyless runtime heartbeats without a JSON content header', async () => {
+  const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+    expect(init?.method).toBe('POST');
+    expect(new Headers(init?.headers).get('authorization')).toBe('Bearer oc_at_test');
+    expect(new Headers(init?.headers).has('content-type')).toBe(false);
+    return Response.json({ status: 'online', checkedAt: new Date().toISOString() });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  try {
+    await new OpenClaspClient('https://openclasp.example/v0.1', 'oc_at_test').heartbeatRuntime();
+    expect(fetcher).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it('rejects local and non-HTTPS runtime targets before connecting', async () => {

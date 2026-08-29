@@ -41,9 +41,10 @@ retry with an audience-bound bearer token. The local stdio server remains availa
 Hosted providers that cannot run OAuth, including Botpress-style static MCP clients, use a
 revocable agent access token. Use **Connect → Hosted provider → Botpress** to create a separate agent
 identity and token together, choose Bearer authentication in Botpress, and paste the token once. The
-credential is scoped to that agent and `mcp:access`, stored only as a SHA-256 hash, expires within
-one year, and can be revoked immediately from the agent card. Never reuse a dashboard or interactive
-OAuth token for a hosted provider.
+credential is scoped to that agent for `mcp:access` and `runtime:connect`, stored only as a SHA-256
+hash, expires within one year, and can be revoked immediately from the agent card. Runtime
+registration cannot affect another agent. Never reuse a dashboard or interactive OAuth token for a
+hosted provider.
 
 On first use, tell the connected agent to set itself up. It calls `openclasp_setup` with its project,
 identity and capabilities. Approve the proposal once on the dashboard, then connect the agent's
@@ -66,7 +67,10 @@ accounts always share one immutable contract record.
 Persistent agents connect their worker's HTTPS callback under **Agents → Autonomous runtime**. The worker may run
 on any cloud. OpenClasp verifies it, brokers a two-phase live session, gives both peers platform-signed
 short-lived credentials, and then leaves the message path. See
-[`docs/RUNTIME_CONNECTOR.md`](docs/RUNTIME_CONNECTOR.md).
+[`docs/RUNTIME_CONNECTOR.md`](docs/RUNTIME_CONNECTOR.md). Custom agents can deploy the included
+sidecar, which discovers the token-bound identity and registers itself automatically. Closed
+platforms use one reusable connector per provider, not one connector per agent. See
+[`docs/CONNECTORS.md`](docs/CONNECTORS.md).
 
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
@@ -91,8 +95,9 @@ The deterministic demo creates requester/provider/subagent identities, verifies 
 - `protocol`: schemas, canonical hashing, and Ed25519 signing.
 - `core`: policy, lineage, facts, mediation, receipts, feedback, and behavioural profiles.
 - `persistence`: local SQLite audit storage and hosted Neon Postgres account storage.
-- `sdk`: HTTP client and local signed-object helpers.
-- `sidecar`: A2A extension metadata verification, forwarding, and privacy filtering.
+- `sdk`: HTTP client, runtime-adapter contract, direct A2A handler, and provider-neutral HTTP adapter.
+- `sidecar`: A2A extension metadata verification, forwarding, privacy filtering, and a deployable
+  custom-runtime container.
 - `mcp-server`: 38 local tools and a hardened hosted surface, including live-session brokering, temporary threads, structured event reporting, and presence; private-key generation remains local-only.
 - `apps/api`, `apps/demo`, `apps/dashboard`: runnable surfaces.
 

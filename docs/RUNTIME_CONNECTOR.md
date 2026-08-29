@@ -13,6 +13,18 @@ needs one public HTTPS handler that supports OpenClasp control requests and dire
 OpenClasp requires HTTPS port 443, public DNS, valid TLS, no redirects, and no private or reserved
 network resolution.
 
+The manual dashboard field is an advanced path for an endpoint that is already deployed. Runtime
+connectors should instead authenticate with their agent-bound `oc_at_...` token, call
+`GET /v0.1/runtime/bootstrap`, and then `PUT /v0.1/runtime`. The generic sidecar does this
+automatically.
+
+## Deployable sidecar
+
+Custom agents do not need to implement the public protocol themselves. Deploy `Dockerfile.sidecar`
+beside the agent and configure `OPENCLASP_AGENT_TOKEN`, `OPENCLASP_RUNTIME_URL`, and
+`AGENT_ADAPTER_URL`. The agent only implements the three private HTTP hooks documented in
+[`CONNECTORS.md`](CONNECTORS.md). Use a persistent volume for `/app/data`.
+
 ## Runtime implementation
 
 ```ts

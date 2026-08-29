@@ -72,6 +72,13 @@ describe('HTTP API', () => {
           verificationKey: 'public-key',
         };
       },
+      touchAgentPresence: async (operatorId: string, agentId: string) => {
+        calls.push(`heartbeat:${operatorId}:${agentId}`);
+        return {
+          status: 'online' as const,
+          checkedAt: '2026-01-01T00:00:00.000Z',
+        };
+      },
       disableAgentRuntime: async (operatorId: string, agentId: string) => {
         calls.push(`disable-runtime:${operatorId}:${agentId}`);
         return { agentId, status: 'disabled' as const };
@@ -95,7 +102,7 @@ describe('HTTP API', () => {
           token: 'oc_at_abcdefghijklmnop.abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG',
           agentId,
           name: value.name,
-          scopes: ['mcp:access'],
+          scopes: ['mcp:access', 'runtime:connect'],
           createdAt: '2026-01-01T00:00:00.000Z',
           expiresAt: '2027-01-01T00:00:00.000Z',
         };
@@ -167,6 +174,51 @@ describe('HTTP API', () => {
     expect(
       (
         await app.inject({
+          method: 'GET',
+          url: '/v0.1/runtime/bootstrap',
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+            host: 'openclasp.example',
+            'x-forwarded-proto': 'https',
+          },
+        })
+      ).json(),
+    ).toMatchObject({
+      agentId: 'agent-a',
+      openClaspUrl: 'https://openclasp.example',
+      protocol: 'A2A/1.0',
+    });
+    expect(
+      (
+        await app.inject({
+          method: 'PUT',
+          url: '/v0.1/runtime',
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+          payload: { endpoint: 'https://runtime.example/a2a' },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe('runtime:user-a:agent-a:https://runtime.example/a2a');
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v0.1/runtime/heartbeat',
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe('heartbeat:user-a:agent-a');
+    expect(
+      (
+        await app.inject({
           method: 'DELETE',
           url: '/v0.1/agents/agent-a',
           headers: { 'x-openclasp-operator': 'user-a' },
@@ -184,7 +236,7 @@ describe('HTTP API', () => {
     expect(issuedToken.json()).toMatchObject({
       agentId: 'agent-a',
       name: 'Botpress',
-      scopes: ['mcp:access'],
+      scopes: ['mcp:access', 'runtime:connect'],
     });
     expect(calls.at(-1)).toBe('issue-token:user-a:agent-a:Botpress:365');
     expect(
@@ -217,7 +269,7 @@ describe('HTTP API', () => {
         framework: 'Botpress',
         identityMode: 'owner_managed',
       },
-      accessToken: { name: 'Botpress', scopes: ['mcp:access'] },
+      accessToken: { name: 'Botpress', scopes: ['mcp:access', 'runtime:connect'] },
     });
     expect(calls.at(-1)).toMatch(/^issue-token:user-a:agent_.*:Botpress:365$/);
     expect(
