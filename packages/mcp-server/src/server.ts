@@ -90,6 +90,34 @@ const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
 });
 
+const LiveSessionEventInputSchema = z
+  .object({
+    interactionId: LiveSessionEventSchema.shape.interactionId,
+    sequence: LiveSessionEventSchema.shape.sequence,
+    type: LiveSessionEventSchema.shape.type,
+    occurredAt: LiveSessionEventSchema.shape.occurredAt,
+    messageHash: LiveSessionEventSchema.shape.messageHash,
+    evidenceReferences: LiveSessionEventSchema.shape.evidenceReferences,
+    outcome: LiveSessionEventSchema.shape.outcome,
+    checkpoint: LiveSessionEventSchema.shape.checkpoint,
+    details: LiveSessionEventSchema.shape.details,
+  })
+  .strict()
+  .superRefine((event, context) => {
+    if (event.type === 'progress_checkpoint' && !event.checkpoint)
+      context.addIssue({
+        code: 'custom',
+        path: ['checkpoint'],
+        message: 'Progress checkpoint events require structured checkpoint data',
+      });
+    if (event.type !== 'progress_checkpoint' && event.checkpoint)
+      context.addIssue({
+        code: 'custom',
+        path: ['checkpoint'],
+        message: 'Checkpoint data is only valid on progress checkpoint events',
+      });
+  });
+
 export const OPENCLASP_MCP_INSTRUCTIONS =
   'Start with openclasp_connection_status and heartbeat while active. Persistent runtimes use direct A2A; temporary agents use hosted thread tools. For longer tasks, call openclasp_checkpoint about every five meaningful exchanges or when blocked, drifting, or nearly done. At a terminal outcome call openclasp_complete_live_session with an honest assessment and feedback; it triggers peer finalization. Submit structured evidence only; never upload transcripts or invent feedback.';
 
@@ -1084,7 +1112,7 @@ export function registerOpenClaspTools(
       title: 'Record structured session event',
       description:
         'Record signed session metadata, hashes, evidence, corrections, or results without uploading raw messages.',
-      inputSchema: LiveSessionEventSchema.omit({ eventId: true, agentId: true }),
+      inputSchema: LiveSessionEventInputSchema,
       annotations: WRITE_TOOL,
     },
     async (input, context) => {

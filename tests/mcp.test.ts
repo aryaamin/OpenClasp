@@ -3,9 +3,14 @@ import {
   HOSTED_OPENCLASP_TOOL_NAMES,
   OPENCLASP_MCP_INSTRUCTIONS,
   OPENCLASP_TOOL_NAMES,
+  buildMcpServer,
 } from '../packages/mcp-server/src/server.js';
 
 describe('MCP surface', () => {
+  it('constructs the complete server without schema composition failures', () => {
+    expect(() => buildMcpServer()).not.toThrow();
+  });
+
   it('exposes the complete documented tool set', () => {
     expect(OPENCLASP_TOOL_NAMES).toHaveLength(42);
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toHaveLength(41);
