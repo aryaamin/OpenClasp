@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import {
+  applyPreviewRequest,
+  createPreviewData,
+  defaultPreviewSettings,
+  disablePreview,
+  enablePreview,
+  isPreviewActive,
+  previewSession,
+} from './preview.js';
 import './styles.css';
 
 declare const __AUTH0_DOMAIN__: string;
@@ -62,6 +71,44 @@ const defaultSettings: Settings = {
 };
 const pages = ['dashboard', 'history', 'agents', 'insights', 'connect', 'settings'] as const;
 type Page = (typeof pages)[number];
+const pageMeta: Record<Page, { label: string; title: string; lede: string; eyebrow: string }> = {
+  dashboard: {
+    label: 'Overview',
+    title: 'Overview',
+    lede: 'Agent readiness, signed outcomes, and anything waiting on you.',
+    eyebrow: 'Network',
+  },
+  history: {
+    label: 'History',
+    title: 'History',
+    lede: 'Structured events, receipts, and shared contracts — never raw messages.',
+    eyebrow: 'Audit',
+  },
+  agents: {
+    label: 'Agents',
+    title: 'Agents',
+    lede: 'Identities, runtimes, and the automation each agent is allowed to do.',
+    eyebrow: 'Registry',
+  },
+  insights: {
+    label: 'Insights',
+    title: 'Insights',
+    lede: 'Task-specific reliability from signed outcomes. No universal score.',
+    eyebrow: 'Context',
+  },
+  connect: {
+    label: 'Connect',
+    title: 'Connect',
+    lede: 'Add an agent once. Approve its identity, then OpenClasp handles the routine work.',
+    eyebrow: 'Setup',
+  },
+  settings: {
+    label: 'Settings',
+    title: 'Settings',
+    lede: 'Privacy, retention, and what this account may contribute to the network.',
+    eyebrow: 'Account',
+  },
+};
 
 function base64Url(bytes: Uint8Array) {
   let binary = '';
@@ -93,7 +140,12 @@ async function beginAuth(provider: 'google' | 'github') {
   location.assign(`https://${__AUTH0_DOMAIN__}/authorize?${parameters}`);
 }
 
-async function signOut() {
+async function signOut(preview: boolean) {
+  if (preview) {
+    disablePreview();
+    location.replace('/login');
+    return;
+  }
   await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin' });
   const parameters = new URLSearchParams({
     client_id: __AUTH0_CLIENT_ID__,
@@ -102,7 +154,7 @@ async function signOut() {
   location.assign(`https://${__AUTH0_DOMAIN__}/v2/logout?${parameters}`);
 }
 
-async function api(path: string, init?: RequestInit) {
+async function remoteApi(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has('content-type')) headers.set('content-type', 'application/json');
   return fetch(path, {
@@ -129,29 +181,74 @@ function initialTheme(): Theme {
 
 function App() {
   const [session, setSession] = useState<AuthSession | null>();
+  const [preview, setPreview] = useState(false);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [page, setPage] = useState<Page>(route());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const api = useCallback(
+    async (path: string, init?: RequestInit) => {
+      if (preview) {
+        const next = applyPreviewRequest(data, settings, path, init);
+        setData(next.data);
+        setSettings(next.settings);
+        return next.result;
+      }
+      return remoteApi(path, init);
+    },
+    [data, preview, settings],
+  );
   const refreshDashboard = useCallback(async () => {
-    setData((await api('/v0.1/dashboard')) as DashboardData);
-  }, []);
+    if (preview) return;
+    setData((await remoteApi('/v0.1/dashboard')) as DashboardData);
+  }, [preview]);
 
   useEffect(() => {
-    fetch('/api/session', { credentials: 'same-origin' })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return (await response.json()) as AuthSession;
-      })
-      .then(setSession)
-      .catch(() => setSession(null));
+    document.title = session
+      ? `${pageMeta[page].label} · OpenClasp`
+      : session === null
+        ? 'Sign in · OpenClasp'
+        : 'OpenClasp';
+  }, [page, session]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const boot = async () => {
+      if (import.meta.env.DEV && isPreviewActive()) {
+        if (cancelled) return;
+        setPreview(true);
+        setSession(previewSession);
+        setData(createPreviewData());
+        setSettings(defaultPreviewSettings);
+        setLoading(false);
+        return;
+      }
+      try {
+        const response = await fetch('/api/session', { credentials: 'same-origin' });
+        if (!response.ok) {
+          if (!cancelled && !(import.meta.env.DEV && isPreviewActive())) setSession(null);
+          return;
+        }
+        if (!cancelled && !(import.meta.env.DEV && isPreviewActive())) {
+          setSession((await response.json()) as AuthSession);
+        }
+      } catch {
+        if (!cancelled && !(import.meta.env.DEV && isPreviewActive())) setSession(null);
+      }
+    };
+    void boot();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(themeKey, theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#f4f6f1' : '#0b0d0b');
   }, [theme]);
 
   useEffect(() => {
@@ -166,7 +263,11 @@ function App() {
     if (!session) return;
     if (location.pathname === '/login') history.replaceState({}, '', '/dashboard');
     setPage(route());
-    Promise.all([api('/v0.1/dashboard'), api('/v0.1/settings')])
+    if (preview) {
+      setLoading(false);
+      return;
+    }
+    Promise.all([remoteApi('/v0.1/dashboard'), remoteApi('/v0.1/settings')])
       .then(([dashboard, accountSettings]) => {
         setData(dashboard as DashboardData);
         setSettings(accountSettings as Settings);
@@ -175,10 +276,10 @@ function App() {
         setError(reason instanceof Error ? reason.message : 'Load failed'),
       )
       .finally(() => setLoading(false));
-  }, [session]);
+  }, [preview, session]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || preview) return;
     const refresh = () => {
       if (document.visibilityState === 'visible') void refreshDashboard().catch(() => undefined);
     };
@@ -188,18 +289,41 @@ function App() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [session, refreshDashboard]);
+  }, [preview, refreshDashboard, session]);
 
   const navigate = (next: Page) => {
     history.pushState({}, '', `/${next}`);
     setPage(next);
   };
+  const pendingSetup = data.setupRequests.filter((request) => request.status === 'pending').length;
+  const pendingInvites = data.federatedInteractions.filter(
+    (interaction) => interaction.status === 'pending',
+  ).length;
 
   if (session === undefined) return <Loading />;
-  if (!session) return <Login />;
+  if (!session)
+    return import.meta.env.DEV ? (
+      <Login
+        onPreview={() => {
+          enablePreview();
+          setPreview(true);
+          setSession(previewSession);
+          setData(createPreviewData());
+          setSettings(defaultPreviewSettings);
+          setLoading(false);
+          history.replaceState({}, '', '/dashboard');
+          setPage('dashboard');
+        }}
+      />
+    ) : (
+      <Login />
+    );
 
   return (
     <div className="appShell">
+      <a className="skipLink" href="#main">
+        Skip to content
+      </a>
       <aside>
         <div className="brand">
           <div className="mark">OC</div>
@@ -208,20 +332,35 @@ function App() {
             <small>ASSURANCE NETWORK</small>
           </div>
         </div>
-        <nav>
-          <Nav page="dashboard" active={page} onClick={navigate} label="Overview" glyph="⌂" />
-          <Nav page="history" active={page} onClick={navigate} label="History" glyph="≡" />
-          <Nav page="agents" active={page} onClick={navigate} label="Agents" glyph="◇" />
-          <Nav page="insights" active={page} onClick={navigate} label="Insights" glyph="⌁" />
-          <Nav page="connect" active={page} onClick={navigate} label="Connect" glyph="+" />
-          <Nav page="settings" active={page} onClick={navigate} label="Settings" glyph="⚙" />
+        <nav aria-label="Dashboard">
+          <Nav
+            page="dashboard"
+            active={page}
+            onClick={navigate}
+            label="Overview"
+            icon="home"
+            badge={pendingInvites || pendingSetup ? pendingInvites + pendingSetup : 0}
+          />
+          <Nav page="history" active={page} onClick={navigate} label="History" icon="history" />
+          <Nav page="agents" active={page} onClick={navigate} label="Agents" icon="agents" />
+          <Nav page="insights" active={page} onClick={navigate} label="Insights" icon="insights" />
+          <Nav
+            page="connect"
+            active={page}
+            onClick={navigate}
+            label="Connect"
+            icon="connect"
+            badge={pendingSetup}
+          />
+          <Nav page="settings" active={page} onClick={navigate} label="Settings" icon="settings" />
         </nav>
         <button
           className="themeSwitch"
+          type="button"
           onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
           aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
         >
-          <span>{theme === 'dark' ? '☼' : '◐'}</span>
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
           {theme === 'dark' ? 'Light theme' : 'Dark theme'}
         </button>
         <div className="privacyStamp">
@@ -231,35 +370,77 @@ function App() {
             <small>Raw messages never stored</small>
           </div>
         </div>
-        <button className="account" onClick={() => void signOut()}>
+        <button
+          className="account"
+          type="button"
+          onClick={() => void signOut(preview)}
+          title="Sign out"
+        >
           <span>{initials(session.user.name || session.user.email || 'OC')}</span>
           <div>
             <strong>{session.user.name || 'OpenClasp user'}</strong>
-            <small>{session.user.email || 'Sign out'}</small>
+            <small>{session.user.email || 'Signed in'}</small>
           </div>
-          <b>↗</b>
+          <b>Sign out</b>
         </button>
       </aside>
-      <main>
-        {error && <div className="errorBar">{error}</div>}
-        {loading ? (
-          <Loading compact />
-        ) : (
-          <PageContent
-            page={page}
-            data={data}
-            settings={settings}
-            setSettings={setSettings}
-            navigate={navigate}
-            refreshDashboard={refreshDashboard}
-          />
-        )}
-      </main>
+      <div>
+        <div className="mobileBar">
+          <div className="brand">
+            <div className="mark">OC</div>
+            <div>
+              <strong>OpenClasp</strong>
+              <small>ASSURANCE</small>
+            </div>
+          </div>
+          <div className="mobileActions">
+            <button
+              className="iconButton"
+              type="button"
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            >
+              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
+            </button>
+            <button
+              className="iconButton"
+              type="button"
+              aria-label="Sign out"
+              onClick={() => void signOut(preview)}
+            >
+              <span>{initials(session.user.name || session.user.email || 'OC')}</span>
+            </button>
+          </div>
+        </div>
+        <main id="main">
+          {preview && (
+            <div className="previewBanner">Local preview with sample data. Changes stay here.</div>
+          )}
+          {error && (
+            <div className="errorBar" role="alert">
+              {error}
+            </div>
+          )}
+          {loading ? (
+            <Loading compact />
+          ) : (
+            <PageContent
+              page={page}
+              data={data}
+              settings={settings}
+              setSettings={setSettings}
+              navigate={navigate}
+              refreshDashboard={refreshDashboard}
+              api={api}
+            />
+          )}
+        </main>
+      </div>
     </div>
   );
 }
 
-function Login() {
+function Login({ onPreview }: { onPreview?: () => void }) {
   const [error, setError] = useState('');
   const continueWith = async (provider: 'google' | 'github') => {
     setError('');
@@ -285,8 +466,9 @@ function Login() {
           </p>
         </div>
         <div className="loginProof">
-          <span>01</span> User-owned history<span>02</span> No universal trust score<span>03</span>{' '}
-          Explicit network consent
+          <span>01</span> User-owned history
+          <span>02</span> No universal trust score
+          <span>03</span> Explicit network consent
         </div>
       </section>
       <section className="loginCard">
@@ -299,14 +481,23 @@ function Login() {
           </p>
         </div>
         <div className="socialButtons">
-          <button onClick={() => void continueWith('google')}>
-            <span className="google">G</span> Continue with Google
+          <button type="button" onClick={() => void continueWith('google')}>
+            <GoogleMark /> Continue with Google
           </button>
-          <button onClick={() => void continueWith('github')}>
-            <span>◉</span> Continue with GitHub
+          <button type="button" onClick={() => void continueWith('github')}>
+            <GitHubMark /> Continue with GitHub
           </button>
+          {onPreview && (
+            <button type="button" onClick={() => void onPreview()}>
+              Continue with local preview
+            </button>
+          )}
         </div>
-        {error && <div className="loginError">{error}</div>}
+        {error && (
+          <div className="loginError" role="alert">
+            {error}
+          </div>
+        )}
         <small>
           Google and GitHub handle authentication. OpenClasp never receives your password.
         </small>
@@ -366,6 +557,7 @@ function PageContent({
   setSettings,
   navigate,
   refreshDashboard,
+  api,
 }: {
   page: Page;
   data: DashboardData;
@@ -373,24 +565,29 @@ function PageContent({
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   navigate: (page: Page) => void;
   refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   if (page === 'history') return <History data={data} />;
   if (page === 'agents')
-    return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} />;
+    return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'insights') return <Insights data={data} />;
-  if (page === 'connect') return <Connect data={data} refreshDashboard={refreshDashboard} />;
-  if (page === 'settings') return <SettingsPage settings={settings} setSettings={setSettings} />;
-  return <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} />;
+  if (page === 'connect')
+    return <Connect data={data} refreshDashboard={refreshDashboard} api={api} />;
+  if (page === 'settings')
+    return <SettingsPage settings={settings} setSettings={setSettings} api={api} />;
+  return <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
 }
 
 function Overview({
   data,
   navigate,
   refreshDashboard,
+  api,
 }: {
   data: DashboardData;
   navigate: (page: Page) => void;
   refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const completed = data.receipts.filter((item) => item.outcome === 'success').length;
   const warnings = data.events.filter((item) =>
@@ -406,14 +603,24 @@ function Overview({
   const pendingInvitations = data.federatedInteractions.filter(
     (interaction) => interaction.status === 'pending',
   ).length;
+  const pendingSetup = data.setupRequests.filter((request) => request.status === 'pending').length;
+  const reviewCount = warnings + pendingInvitations;
   return (
     <>
-      <PageHead
-        eyebrow="NETWORK OVERVIEW"
-        title="Assurance, at a glance."
-        action="Connect agent"
-        onAction={() => navigate('connect')}
-      />
+      <PageHead page="dashboard" action="Connect agent" onAction={() => navigate('connect')} />
+      {pendingSetup > 0 && (
+        <button className="attentionBanner" type="button" onClick={() => navigate('connect')}>
+          <div>
+            <span className="statusOrb">{pendingSetup}</span>
+            <div>
+              <strong>
+                {pendingSetup} setup request{pendingSetup === 1 ? '' : 's'} waiting
+              </strong>
+              <small>Approve the proposed identity before the agent can be bound.</small>
+            </div>
+          </div>
+        </button>
+      )}
       <section
         className={`readiness ${readyAgents === data.agents.length && readyAgents ? 'ready' : ''}`}
       >
@@ -430,7 +637,7 @@ function Overview({
             </small>
           </div>
         </div>
-        <button className="secondary" onClick={() => navigate('agents')}>
+        <button className="secondary" type="button" onClick={() => navigate('agents')}>
           Manage automation
         </button>
       </section>
@@ -448,16 +655,16 @@ function Overview({
         <Metric label="Successful outcomes" value={completed} note="receipt-backed" />
         <Metric
           label="Needs review"
-          value={warnings + pendingInvitations}
+          value={reviewCount}
           note="warnings or approvals"
-          warn={warnings + pendingInvitations > 0}
+          warn={reviewCount > 0}
         />
       </section>
-      <Invitations data={data} refreshDashboard={refreshDashboard} />
+      <Invitations data={data} refreshDashboard={refreshDashboard} api={api} />
       <section className="contentGrid">
         <Panel title="Recent activity" subtitle="Structured events and signed outcomes">
           <Timeline events={data.events.slice(-6).reverse()} />
-          <TextButton onClick={() => navigate('history')}>View complete history →</TextButton>
+          <TextButton onClick={() => navigate('history')}>View complete history</TextButton>
         </Panel>
         <Panel
           title="Reliability context"
@@ -481,7 +688,11 @@ function Overview({
   );
 }
 
+type HistoryFilter = 'all' | 'interaction' | 'event' | 'receipt' | 'dispute';
+
 function History({ data }: { data: DashboardData }) {
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<HistoryFilter>('all');
   const records = useMemo(
     () =>
       [
@@ -496,29 +707,99 @@ function History({ data }: { data: DashboardData }) {
       ].sort((a, b) => Date.parse(timestamp(b)) - Date.parse(timestamp(a))),
     [data],
   );
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return records.filter((item) => {
+      const kind = String(item._kind);
+      if (filter === 'interaction' && !kind.includes('interaction')) return false;
+      if (filter === 'event' && kind !== 'event') return false;
+      if (filter === 'receipt' && kind !== 'receipt') return false;
+      if (filter === 'dispute' && kind !== 'dispute') return false;
+      if (!needle) return true;
+      const record = item as Record<string, any>;
+      const hay = [
+        record.eventType,
+        record._kind,
+        record.agentId,
+        record.interactionId,
+        record.receiptId,
+        record.outcome,
+        record.status,
+        record.visibility,
+        record.contract?.purpose,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [filter, query, records]);
+  const count = (value: HistoryFilter) =>
+    value === 'all'
+      ? records.length
+      : records.filter((item) =>
+          value === 'interaction'
+            ? String(item._kind).includes('interaction')
+            : item._kind === value,
+        ).length;
   return (
     <>
-      <PageHead eyebrow="AUDIT HISTORY" title="What happened, and what proves it." />
+      <PageHead page="history" />
       <Panel
         title="Account history"
         subtitle="Only structured metadata, signatures, hashes, and permitted evidence are hosted"
       >
-        {records.length ? (
-          records.map((item, index) => (
+        <div className="toolbar">
+          <input
+            className="searchField"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search agents, contracts, or statuses"
+            aria-label="Search history"
+          />
+          <div className="filterRow" role="tablist" aria-label="History filters">
+            {(
+              [
+                ['all', 'All'],
+                ['interaction', 'Interactions'],
+                ['event', 'Events'],
+                ['receipt', 'Receipts'],
+                ['dispute', 'Disputes'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                className={filter === value ? 'filterChip active' : 'filterChip'}
+                type="button"
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+              >
+                {label} {count(value)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {filtered.length ? (
+          filtered.map((item, index) => (
             <HistoryRow
-              key={String(
+              key={`${String(item._kind)}-${String(
                 (item as Record<string, any>).eventId ??
                   (item as Record<string, any>).receiptId ??
+                  (item as Record<string, any>).conflictId ??
                   (item as Record<string, any>).interactionId ??
                   index,
-              )}
+              )}`}
               item={item}
             />
           ))
         ) : (
           <Empty
-            title="No interactions recorded"
-            text="Connect an agent and start an assured interaction. Raw message bodies will not appear here."
+            title={records.length ? 'No matching records' : 'No interactions recorded'}
+            text={
+              records.length
+                ? 'Try another filter or clear the search.'
+                : 'Connect an agent and start an assured interaction. Raw message bodies will not appear here.'
+            }
           />
         )}
       </Panel>
@@ -530,10 +811,12 @@ function Agents({
   data,
   navigate,
   refreshDashboard,
+  api,
 }: {
   data: DashboardData;
   navigate: (page: Page) => void;
   refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
@@ -553,8 +836,10 @@ function Agents({
         body: JSON.stringify(value),
       });
       await refreshDashboard();
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Directory update failed');
+      return false;
     } finally {
       setWorking('');
     }
@@ -607,18 +892,17 @@ function Agents({
   };
   return (
     <>
-      <PageHead
-        eyebrow="IDENTITY REGISTRY"
-        title="Your connected agents."
-        action="Connect agent"
-        onAction={() => navigate('connect')}
-      />
+      <PageHead page="agents" action="Connect agent" onAction={() => navigate('connect')} />
       <div className="notice">
         <strong>Direct live sessions.</strong> OpenClasp verifies both runtimes, brokers scoped
         credentials, then gets out of the message path. Safe matching tasks can be accepted
         automatically; sensitive or mismatched requests still require review.
       </div>
-      {error && <div className="errorBar">{error}</div>}
+      {error && (
+        <div className="errorBar" role="alert">
+          {error}
+        </div>
+      )}
       <section className="agentGrid">
         {data.agents.length ? (
           data.agents.map((agent) => (
@@ -657,9 +941,11 @@ function Agents({
 function Invitations({
   data,
   refreshDashboard,
+  api,
 }: {
   data: DashboardData;
   refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
@@ -692,7 +978,11 @@ function Invitations({
       title={incoming.length ? `Agent invitations (${incoming.length})` : 'Shared interactions'}
       subtitle="Both accounts see the same immutable contract and acceptance state"
     >
-      {error ? <div className="errorBar">{error}</div> : null}
+      {error ? (
+        <div className="errorBar" role="alert">
+          {error}
+        </div>
+      ) : null}
       {(incoming.length ? incoming : data.federatedInteractions.slice(0, 5)).map((interaction) => (
         <article className="setupRequest" key={interaction.interactionId}>
           <div>
@@ -724,6 +1014,7 @@ function Invitations({
             <div className="decisionButtons">
               <button
                 className="secondary"
+                type="button"
                 disabled={working === interaction.interactionId}
                 onClick={() =>
                   void respond(interaction.interactionId, interaction.responderAgentId, 'reject')
@@ -733,6 +1024,7 @@ function Invitations({
               </button>
               <button
                 className="primary"
+                type="button"
                 disabled={working === interaction.interactionId}
                 onClick={() =>
                   void respond(interaction.interactionId, interaction.responderAgentId, 'accept')
@@ -751,7 +1043,7 @@ function Invitations({
 function Insights({ data }: { data: DashboardData }) {
   return (
     <>
-      <PageHead eyebrow="BEHAVIOURAL CONTEXT" title="Evidence, not reputation theatre." />
+      <PageHead page="insights" />
       <div className="notice">
         <strong>Context matters.</strong> OpenClasp profiles an agent by task category and version.
         It does not produce a single universal trust score.
@@ -781,9 +1073,11 @@ function Insights({ data }: { data: DashboardData }) {
 function Connect({
   data,
   refreshDashboard,
+  api,
 }: {
   data: DashboardData;
   refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const endpoint = 'https://openclasp.vercel.app/mcp';
   const [copied, setCopied] = useState(false);
@@ -812,7 +1106,7 @@ function Connect({
   };
   return (
     <>
-      <PageHead eyebrow="AGENT CONNECTION" title="Add OpenClasp to an agent." />
+      <PageHead page="connect" />
       {pending.length > 0 && (
         <section className="setupRequests">
           <div>
@@ -851,6 +1145,7 @@ function Connect({
               <div className="decisionButtons">
                 <button
                   className="secondary"
+                  type="button"
                   disabled={working === request.requestId}
                   onClick={() => void decide(request.requestId, 'reject')}
                 >
@@ -858,6 +1153,7 @@ function Connect({
                 </button>
                 <button
                   className="primary"
+                  type="button"
                   disabled={working === request.requestId}
                   onClick={() => void decide(request.requestId, 'approve')}
                 >
@@ -866,7 +1162,11 @@ function Connect({
               </div>
             </article>
           ))}
-          {decisionError && <div className="loginError">{decisionError}</div>}
+          {decisionError && (
+            <div className="loginError" role="alert">
+              {decisionError}
+            </div>
+          )}
         </section>
       )}
       <section className="connectLayout">
@@ -874,24 +1174,35 @@ function Connect({
           <div className="endpoint">
             <code>{endpoint}</code>
             <button
+              type="button"
               onClick={() => {
                 void navigator.clipboard.writeText(endpoint);
                 setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
               }}
             >
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <ol>
-            <li>Add this MCP URL and complete the OAuth sign-in.</li>
-            <li>
-              Tell the agent: <code>Set yourself up on OpenClasp</code>.
-            </li>
-            <li>
-              Approve its identity and automation policy here once. That is the last routine manual
-              step.
-            </li>
-          </ol>
+          <div className="connectSteps">
+            <div className="connectStep">
+              <b>1</b>
+              <span>Add this MCP URL and complete the OAuth sign-in.</span>
+            </div>
+            <div className="connectStep">
+              <b>2</b>
+              <span>
+                Tell the agent: <code>Set yourself up on OpenClasp</code>.
+              </span>
+            </div>
+            <div className="connectStep">
+              <b>3</b>
+              <span>
+                Approve its identity and automation policy here once. That is the last routine
+                manual step.
+              </span>
+            </div>
+          </div>
         </Panel>
         <Panel
           title="What becomes automatic"
@@ -913,26 +1224,35 @@ function Connect({
 function SettingsPage({
   settings,
   setSettings,
+  api,
 }: {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
   const save = useCallback(async () => {
     setSaving(true);
     setSaved(false);
-    const updated = (await api('/v0.1/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    })) as Settings;
-    setSettings(updated);
-    setSaving(false);
-    setSaved(true);
-  }, [settings, setSettings]);
+    setError('');
+    try {
+      const updated = (await api('/v0.1/settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+      })) as Settings;
+      setSettings(updated);
+      setSaved(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not save settings');
+    } finally {
+      setSaving(false);
+    }
+  }, [api, settings, setSettings]);
   return (
     <>
-      <PageHead eyebrow="ACCOUNT CONTROLS" title="Privacy and network settings." />
+      <PageHead page="settings" />
       <section className="settingsCard">
         <Setting label="Display name" description="Shown only inside your OpenClasp account.">
           <input
@@ -949,6 +1269,7 @@ function SettingsPage({
         >
           <Toggle
             checked={settings.contributionEnabled}
+            label="Network contribution"
             onChange={(checked) =>
               setSettings((value) => ({ ...value, contributionEnabled: checked }))
             }
@@ -996,10 +1317,15 @@ function SettingsPage({
           <span className="locked">NOT STORED</span>
         </Setting>
         <div className="saveRow">
-          <button className="primary" onClick={() => void save()} disabled={saving}>
+          <button className="primary" type="button" onClick={() => void save()} disabled={saving}>
             {saving ? 'Saving…' : 'Save settings'}
           </button>
-          {saved && <span>Saved</span>}
+          {saved && <span role="status">Saved</span>}
+          {error && (
+            <span className="loginError" role="alert">
+              {error}
+            </span>
+          )}
         </div>
       </section>
     </>
@@ -1007,24 +1333,24 @@ function SettingsPage({
 }
 
 function PageHead({
-  eyebrow,
-  title,
+  page,
   action,
   onAction,
 }: {
-  eyebrow: string;
-  title: string;
+  page: Page;
   action?: string;
   onAction?: () => void;
 }) {
+  const meta = pageMeta[page];
   return (
     <header className="pageHead">
       <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
+        <p className="eyebrow">{meta.eyebrow}</p>
+        <h1>{meta.title}</h1>
+        <p className="lede">{meta.lede}</p>
       </div>
       {action && (
-        <button className="primary" onClick={onAction}>
+        <button className="primary" type="button" onClick={onAction}>
           {action}
         </button>
       )}
@@ -1036,18 +1362,26 @@ function Nav({
   active,
   onClick,
   label,
-  glyph,
+  icon,
+  badge = 0,
 }: {
   page: Page;
   active: Page;
   onClick: (page: Page) => void;
   label: string;
-  glyph: string;
+  icon: IconName;
+  badge?: number;
 }) {
   return (
-    <button className={active === page ? 'active' : ''} onClick={() => onClick(page)}>
-      <span>{glyph}</span>
+    <button
+      className={active === page ? 'active' : ''}
+      type="button"
+      aria-current={active === page ? 'page' : undefined}
+      onClick={() => onClick(page)}
+    >
+      <Icon name={icon} />
       {label}
+      {badge > 0 ? <span className="navBadge">{badge}</span> : null}
     </button>
   );
 }
@@ -1065,7 +1399,7 @@ function Metric({
   return (
     <article className={warn ? 'metric warn' : 'metric'}>
       <span>{label}</span>
-      <strong>{String(value).padStart(2, '0')}</strong>
+      <strong>{value}</strong>
       <small>{note}</small>
     </article>
   );
@@ -1138,7 +1472,7 @@ function AgentCard({
     autoPublish: boolean;
     autoAcceptPolicy: 'off' | 'safe_matching';
     autoAcceptTaskCategories: string[];
-  }) => void;
+  }) => Promise<boolean>;
   runtime: Record<string, any> | undefined;
   runtimeWorking: boolean;
   deleteWorking: boolean;
@@ -1169,11 +1503,11 @@ function AgentCard({
   return (
     <article className="agentCard">
       <div className="agentTop">
-        <span className="agentGlyph">◇</span>
+        <span className="agentGlyph">
+          <Icon name="agents" />
+        </span>
         <div className="agentBadges">
-          <b className={online ? 'onlineBadge' : 'offlineBadge'}>
-            ● {online ? 'ONLINE' : 'OFFLINE'}
-          </b>
+          <b className={online ? 'onlineBadge' : 'offlineBadge'}>{online ? 'ONLINE' : 'OFFLINE'}</b>
           <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
           <b className={ready ? 'readyBadge' : 'needsBadge'}>{ready ? 'READY' : 'SETUP NEEDED'}</b>
         </div>
@@ -1201,16 +1535,14 @@ function AgentCard({
           target="_blank"
           rel="noreferrer"
         >
-          Public Agent Card ↗
+          Public Agent Card
         </a>
       ) : null}
       <div className="automationSummary">
-        <span>{published ? '● Public discovery' : '○ Private'}</span>
-        <span>↗ Direct agent-owned A2A</span>
+        <span>{published ? 'Public discovery' : 'Private'}</span>
+        <span>Direct agent-owned A2A</span>
         <span>
-          {agent.autoAcceptPolicy === 'safe_matching'
-            ? '⚡ Safe tasks automatic'
-            : '◷ Manual approval'}
+          {agent.autoAcceptPolicy === 'safe_matching' ? 'Safe tasks automatic' : 'Manual approval'}
         </span>
       </div>
       <div className="runtimeBox">
@@ -1232,12 +1564,18 @@ function AgentCard({
         />
         <div className="agentActions">
           {runtime?.status === 'verified' ? (
-            <button className="secondary" disabled={runtimeWorking} onClick={onDisableRuntime}>
+            <button
+              className="secondary"
+              type="button"
+              disabled={runtimeWorking}
+              onClick={onDisableRuntime}
+            >
               Disable runtime
             </button>
           ) : null}
           <button
             className="primary"
+            type="button"
             disabled={runtimeWorking || !runtimeEndpoint.trim()}
             onClick={() => onRuntime(runtimeEndpoint.trim())}
           >
@@ -1281,20 +1619,23 @@ function AgentCard({
             <span>Publish and keep Agent Card updated</span>
           </label>
           <div className="agentActions">
-            <button className="secondary" onClick={() => setEditing(false)}>
+            <button className="secondary" type="button" onClick={() => setEditing(false)}>
               Cancel
             </button>
             <button
               className="primary"
+              type="button"
               disabled={working || agent.status === 'revoked'}
               onClick={() =>
-                onSave({
+                void onSave({
                   autoPublish,
                   autoAcceptPolicy,
                   autoAcceptTaskCategories: categories
                     .split(',')
                     .map((value) => value.trim())
                     .filter(Boolean),
+                }).then((ok) => {
+                  if (ok) setEditing(false);
                 })
               }
             >
@@ -1305,7 +1646,8 @@ function AgentCard({
       ) : (
         <div className="agentActions agentManagementActions">
           <button
-            className="dangerButton"
+            className="secondary dangerButton"
+            type="button"
             disabled={working || runtimeWorking || deleteWorking}
             onClick={onDelete}
           >
@@ -1313,6 +1655,7 @@ function AgentCard({
           </button>
           <button
             className="secondary"
+            type="button"
             disabled={working || runtimeWorking || deleteWorking || agent.status === 'revoked'}
             onClick={() => setEditing(true)}
           >
@@ -1373,11 +1716,11 @@ function Empty({
 }) {
   return (
     <div className="empty">
-      <span>◇</span>
+      <Icon name="agents" />
       <strong>{title}</strong>
       <p>{text}</p>
       {action && (
-        <button className="secondary" onClick={onAction}>
+        <button className="secondary" type="button" onClick={onAction}>
           {action}
         </button>
       )}
@@ -1386,7 +1729,7 @@ function Empty({
 }
 function TextButton({ children, onClick }: React.PropsWithChildren<{ onClick: () => void }>) {
   return (
-    <button className="textButton" onClick={onClick}>
+    <button className="textButton" type="button" onClick={onClick}>
       {children}
     </button>
   );
@@ -1406,12 +1749,22 @@ function Setting({
     </div>
   );
 }
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label?: string;
+}) {
   return (
     <button
       className={checked ? 'toggle on' : 'toggle'}
+      type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       onClick={() => onChange(!checked)}
     >
       <span />
@@ -1421,11 +1774,107 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (checked: b
 function Loading({ compact }: { compact?: boolean }) {
   return (
     <div className={compact ? 'loading compact' : 'loading'}>
-      <span className="mark">OC</span>
+      <span className="spinner" aria-hidden="true" />
       <p>Verifying session…</p>
     </div>
   );
 }
+
+type IconName =
+  'home' | 'history' | 'agents' | 'insights' | 'connect' | 'settings' | 'sun' | 'moon';
+
+function Icon({ name }: { name: IconName }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {name === 'home' && <path d="M4 11 12 4l8 7v9a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" />}
+      {name === 'history' && (
+        <>
+          <path d="M4 12a8 8 0 1 0 2.2-5.5" />
+          <path d="M4 4v5h5" />
+          <path d="M12 8v5l3 2" />
+        </>
+      )}
+      {name === 'agents' && (
+        <>
+          <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6" />
+          <path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6" />
+          <path d="M4 20v-1a4 4 0 0 1 4-4h1" />
+          <path d="M20 20v-1a4 4 0 0 0-4-4h-1" />
+        </>
+      )}
+      {name === 'insights' && (
+        <>
+          <path d="M4 19h16" />
+          <path d="M7 16V9" />
+          <path d="M12 16V5" />
+          <path d="M17 16v-6" />
+        </>
+      )}
+      {name === 'connect' && (
+        <>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </>
+      )}
+      {name === 'settings' && (
+        <>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M16.9 16.9l1.5 1.5M5.6 18.4l1.4-1.4M16.9 7.1l1.5-1.5" />
+        </>
+      )}
+      {name === 'sun' && (
+        <>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+        </>
+      )}
+      {name === 'moon' && <path d="M16 13a6 6 0 0 1-7.8-7.8A7 7 0 1 0 16 13" />}
+    </svg>
+  );
+}
+
+function GoogleMark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M22.6 12.2c0-.8-.1-1.6-.2-2.3H12v4.4h5.9c-.3 1.4-1 2.6-2.2 3.4v2.8h3.6c2.1-1.9 3.3-4.8 3.3-8.3"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.8c-1 .7-2.3 1.1-3.7 1.1-2.8 0-5.2-1.9-6.1-4.4H2.2v2.9C4 20.5 7.7 23 12 23"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.9 14.2c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2V7H2.2C1.4 8.6 1 10.3 1 12s.4 3.4 1.2 5z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.8c1.6 0 3.1.6 4.2 1.7l3.2-3.2C17.5 1.5 15 0.5 12 .5 7.7.5 4 3 2.2 7l3.7 2.9C6.8 6.7 9.2 4.8 12 4.8"
+      />
+    </svg>
+  );
+}
+
+function GitHubMark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.2-3.4-1.2-.5-1.1-1.1-1.4-1.1-1.4-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.4 1.1 3 .8.1-.6.4-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5a3.9 3.9 0 0 1 1-2.7 3.6 3.6 0 0 1 .1-2.6s.8-.3 2.7 1a9.3 9.3 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1a3.6 3.6 0 0 1 .1 2.6 3.9 3.9 0 0 1 1 2.7c0 3.9-2.3 4.7-4.6 5 .4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5A10 10 0 0 0 12 2"
+      />
+    </svg>
+  );
+}
+
 function initials(value: string) {
   return value
     .split(/\s+|@/)

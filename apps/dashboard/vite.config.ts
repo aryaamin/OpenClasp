@@ -31,7 +31,24 @@ export default defineConfig(({ mode }) => {
           'https://openclasp.vercel.app/mcp',
       ),
     },
-    server: { port: 5173 },
+    server: {
+      port: 5173,
+      proxy: {
+        '/v0.1': { target: 'http://127.0.0.1:3100', changeOrigin: true },
+        '/agents': {
+          target: 'http://127.0.0.1:3100',
+          changeOrigin: true,
+          bypass(request) {
+            const path = request.url ?? '';
+            if (request.headers.accept?.includes('text/html')) return '/index.html';
+            if (path === '/agents' || path === '/agents/') return '/index.html';
+            return undefined;
+          },
+        },
+        '/health': { target: 'http://127.0.0.1:3100', changeOrigin: true },
+        '/openapi.json': { target: 'http://127.0.0.1:3100', changeOrigin: true },
+      },
+    },
     build: { outDir: 'dist', emptyOutDir: true },
   };
 });
