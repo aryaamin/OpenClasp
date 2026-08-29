@@ -304,6 +304,22 @@ describe('general assurance behavior', () => {
     expect(conclusion.consensus).toBe('bilateral_partial_agreement');
     expect(conclusion.averageRatings.reliability).toBeCloseTo(0.7);
     expect(JSON.stringify(conclusion)).not.toContain('private note');
+
+    const provisional = buildInteractionConclusion({
+      interaction: { interactionId, termsHash: canonicalHash(contract), contract },
+      reports: [report('agent:a', 'agent:b', 'partial')],
+      feedback: [],
+      pendingFeedbackAgentIds: ['agent:a', 'agent:b'],
+      peerReportStatus: 'unreachable',
+    });
+    expect(provisional).toMatchObject({
+      lifecycle: 'provisional',
+      consensus: 'unilateral',
+      missingReportAgentIds: ['agent:b'],
+      pendingFeedbackAgentIds: ['agent:a', 'agent:b'],
+      peerReportStatus: 'unreachable',
+    });
+    expect(provisional.confidence).toBeLessThanOrEqual(0.55);
   });
 });
 
@@ -382,7 +398,7 @@ describe('behavioural learning', () => {
     generatedAt: '2026-08-29T00:12:00.000Z',
   });
 
-  it('requires attested corroboration or evidence and penalizes manipulation signals', () => {
+  it('keeps unilateral evidence local at low weight and penalizes manipulation signals', () => {
     const reports = [report('agent:a', 'agent:b'), report('agent:b', 'agent:a')];
     const normal = evaluateLearningEligibility({
       interactionId,
@@ -410,9 +426,9 @@ describe('behavioural learning', () => {
     expect(normal.eligible).toBe(true);
     expect(extreme.sampleWeight).toBeLessThan(normal.sampleWeight);
     expect(unsupported).toMatchObject({
-      eligible: false,
-      sampleWeight: 0,
-      contributionMode: 'network_aggregate',
+      eligible: true,
+      sampleWeight: 0.1,
+      contributionMode: 'local_only',
       structuredDataOnly: true,
     });
   });

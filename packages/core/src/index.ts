@@ -217,6 +217,9 @@ export function buildInteractionConclusion(input: {
   feedback: InteractionFeedback[];
   conclusionId?: string;
   generatedAt?: string;
+  lifecycle?: 'provisional' | 'final';
+  pendingFeedbackAgentIds?: string[];
+  peerReportStatus?: InteractionConclusion['peerReportStatus'];
 }): InteractionConclusion {
   const outcomes = input.reports.map((report) => report.outcome);
   const uniqueOutcomes = new Set(outcomes);
@@ -263,13 +266,38 @@ export function buildInteractionConclusion(input: {
         : [];
     }),
   );
+  const reportedAgentIds = new Set(input.reports.map((report) => report.reportingAgentId));
+  const missingReportAgentIds = input.interaction.contract.parties.filter(
+    (agentId) => !reportedAgentIds.has(agentId),
+  );
+  const lifecycle = input.lifecycle ?? (missingReportAgentIds.length ? 'provisional' : 'final');
+  const reportConfidence = input.reports.length
+    ? input.reports.reduce((total, report) => total + report.confidence, 0) / input.reports.length
+    : 0;
+  const confidence =
+    input.reports.length >= 2
+      ? Math.min(0.95, reportConfidence * 0.9 + (uniqueOutcomes.size === 1 ? 0.05 : 0))
+      : Math.min(0.55, reportConfidence * 0.6);
+  const reportSummary = input.reports[0]?.summary;
+  const summary =
+    lifecycle === 'provisional'
+      ? `Provisional one-sided outcome: ${reportSummary ?? 'one participant supplied a terminal report'}. The peer has not supplied an independent completion report.`
+      : input.reports.length >= 2
+        ? `${input.reports.length} independent completion reports were reconciled${input.feedback.length ? ` with ${input.feedback.length} eligible feedback response${input.feedback.length === 1 ? '' : 's'}` : ''}.`
+        : `Final unilateral outcome: ${reportSummary ?? 'one participant supplied the available terminal report'}. The peer response window closed without an independent completion report.`;
   return InteractionConclusionSchema.parse({
     conclusionId: input.conclusionId ?? randomUUID(),
     interactionId: input.interaction.interactionId,
     contractHash: input.interaction.termsHash,
     outcome,
     consensus,
-    summary: `${input.reports.length} completion report${input.reports.length === 1 ? '' : 's'} and ${input.feedback.length} feedback response${input.feedback.length === 1 ? '' : 's'} were eligible for this conclusion.`,
+    lifecycle,
+    confidence,
+    missingReportAgentIds,
+    pendingFeedbackAgentIds: input.pendingFeedbackAgentIds ?? [],
+    peerReportStatus:
+      input.reports.length >= 2 ? 'received' : (input.peerReportStatus ?? 'awaiting'),
+    summary: summary.slice(0, 2000),
     criteria,
     reportIds: input.reports.map((report) => report.reportId),
     feedbackIds: input.feedback.map((item) => item.feedbackId),
@@ -310,7 +338,11 @@ export function evaluateLearningEligibility(input: {
     ]),
   ];
   const evidenceBacked = bilateralReports || evidenceReferences.length > 0;
-  const eligible = attestedReports.length > 0 && evidenceBacked;
+  const eligible = attestedReports.length > 0;
+  const contributionMode =
+    input.contributionMode === 'network_aggregate' && !bilateralReports
+      ? ('local_only' as const)
+      : input.contributionMode;
   const reviewerWeight = attestedFeedback.length
     ? attestedFeedback.reduce((total, item) => {
         const credibility = Math.max(
@@ -325,7 +357,7 @@ export function evaluateLearningEligibility(input: {
         0.1,
         Math.min(
           1,
-          0.25 +
+          0.1 +
             (bilateralReports ? 0.35 : 0) +
             Math.min(0.2, reviewerWeight * 0.2) +
             (evidenceReferences.length ? 0.1 : 0) -
@@ -346,6 +378,11 @@ export function evaluateLearningEligibility(input: {
     evidenceReferences.length
       ? `${evidenceReferences.length} permitted evidence reference(s)`
       : 'No permitted external evidence reference',
+    !bilateralReports && eligible
+      ? 'One-sided structured evidence is retained locally at reduced weight'
+      : evidenceBacked
+        ? 'Evidence threshold supports the configured contribution mode'
+        : 'Evidence is insufficient for shared-network contribution',
     input.consensus === 'conflicting'
       ? 'Conflicting reports reduce sample weight'
       : 'No report-conflict penalty',
@@ -359,7 +396,7 @@ export function evaluateLearningEligibility(input: {
     reportIds: attestedReports.map((report) => report.reportId),
     feedbackIds: attestedFeedback.map((item) => item.feedbackId),
     evidenceReferences,
-    contributionMode: input.contributionMode,
+    contributionMode,
     structuredDataOnly: true,
     decidedAt: input.decidedAt ?? new Date().toISOString(),
   });
@@ -449,13 +486,19 @@ export function updateContextualBehaviouralProfile(input: {
 
 export function deriveBehaviouralObservations(input: {
   subjectAgentId: string;
+  reviewerAgentId?: string;
   reports: InteractionCompletionReport[];
   reviewerFeedback?: InteractionFeedback;
   conclusion: InteractionConclusion;
 }): BehaviouralObservations {
-  const subjectReport = input.reports.find(
-    (report) => report.reportingAgentId === input.subjectAgentId,
-  );
+  const subjectReport = input.reviewerAgentId
+    ? input.reports.find(
+        (report) =>
+          report.reportingAgentId === input.reviewerAgentId &&
+          report.counterpartyAgentId === input.subjectAgentId,
+      )
+    : (input.reports.find((report) => report.counterpartyAgentId === input.subjectAgentId) ??
+      input.reports.find((report) => report.reportingAgentId === input.subjectAgentId));
   const criteria =
     subjectReport?.criteria.filter((criterion) => criterion.status !== 'unknown') ?? [];
   const criterionValue = (status: (typeof criteria)[number]['status']) =>
@@ -484,7 +527,9 @@ export function deriveBehaviouralObservations(input: {
       ? { evidence: ratings.evidence_quality }
       : {}),
     ...(typeof ratings?.scope_adherence === 'number' ? { scope: ratings.scope_adherence } : {}),
-    disputes: input.conclusion.consensus === 'conflicting' ? 1 : 0,
+    ...(subjectReport || input.reviewerFeedback
+      ? { disputes: input.conclusion.consensus === 'conflicting' ? 1 : 0 }
+      : {}),
   };
   return Object.fromEntries(
     Object.entries(observation).map(([key, value]) => [key, Math.max(0, Math.min(1, value))]),

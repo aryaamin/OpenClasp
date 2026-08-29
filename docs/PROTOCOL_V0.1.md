@@ -27,17 +27,20 @@ requested outcome, and success criteria. Accepted reports receive an Ed25519 pla
 Raw transcript-shaped fields are rejected by strict schemas. Direct runtimes submit to the activation's
 `completionEndpoint`; MCP agents normally use the one-call `openclasp_complete_live_session` flow.
 
-The first accepted completion report creates one attested feedback request for each participant.
-Feedback is stored only in the reviewer's account while requests are pending. When both requests are
-submitted—or pending requests expire—the platform releases a shared attested conclusion containing
-structured consensus, criterion status, evidence references, and dimension averages. Individual
-private comments are never copied into the conclusion. A daily authenticated Vercel Cron processes
-24-hour expirations; deployments must configure `CRON_SECRET`.
+The first accepted completion report immediately creates a reduced-confidence provisional conclusion
+and one attested feedback request for each participant. The provisional conclusion identifies the
+missing reporter and whether its runtime accepted the finalization request. It is revised when peer
+data arrives. Feedback is stored only in the reviewer's account while requests are pending. When both
+requests are submitted—or the 24-hour response window expires—the platform closes the feedback
+window and can finalize a unilateral result. Individual private comments are never copied into the
+conclusion. An authenticated Vercel Cron processes expirations; deployments must configure
+`CRON_SECRET`.
 The same release creates a platform-attested receipt linked to the contributing completion reports
 and conclusion. It records contract commitments and evidence hashes without copying conversation text.
 
-Conclusion release also produces an attested `learning_eligibility_decision`. At least one attested
-completion report plus bilateral corroboration or a permitted evidence reference is required. The
+Final conclusion release also produces an attested `learning_eligibility_decision`. A unilateral
+attested report is retained locally at low weight; shared-network contribution requires bilateral
+corroboration. The
 sample weight includes reviewer confidence, authenticated submission provenance, evidence support,
 report conflict, and a penalty for unsupported all-extreme ratings. Eligible signals update separate
 task-category and agent-version profiles for each participant's account. Prior effective weight decays

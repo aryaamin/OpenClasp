@@ -508,6 +508,30 @@ export class HostedRepository {
   }
 
   async dashboard(operatorId: string) {
+    await this.ensureSchema();
+    const outstanding = await this.sql`
+      SELECT DISTINCT report.payload->>'interactionId' AS interaction_id
+      FROM openclasp_records report
+      INNER JOIN openclasp_federated_interactions interaction
+        ON interaction.interaction_id::text = report.payload->>'interactionId'
+      WHERE report.kind = 'completion_report'
+        AND (
+          interaction.initiator_operator_id = ${operatorId}
+          OR interaction.responder_operator_id = ${operatorId}
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM openclasp_records conclusion
+          WHERE conclusion.operator_id = ${operatorId}
+            AND conclusion.kind = 'interaction_conclusion'
+            AND conclusion.payload->>'interactionId' = report.payload->>'interactionId'
+        )
+      LIMIT 20
+    `;
+    for (const row of outstanding) {
+      const interactionId = String(row.interaction_id ?? '');
+      if (interactionId)
+        await this.finalizeInteractionConclusion(interactionId).catch(() => undefined);
+    }
     const rows = await this.list(operatorId);
     const [federatedInteractions, runtimes, accessTokens, liveSessionRows, liveEventRows] =
       await Promise.all([
@@ -1890,6 +1914,7 @@ export class HostedRepository {
       WHERE kind = 'completion_report'
         AND payload->>'interactionId' = ${stored.interactionId}
     `;
+    let peerReportStatus: InteractionConclusion['peerReportStatus'] = 'received';
     if (Number(completed[0]?.count ?? 0) >= 2) {
       const completedAt = new Date().toISOString();
       await Promise.all([
@@ -1909,14 +1934,23 @@ export class HostedRepository {
         `,
       ]);
     } else {
-      await this.requestRuntimeFinalization(
+      const requested = await this.requestRuntimeFinalization(
         stored.interactionId,
         stored.reportingAgentId,
         stored.counterpartyAgentId,
         stored.contractHash,
       ).catch(() => false);
+      peerReportStatus = requested ? 'awaiting' : 'unreachable';
     }
-    return { report: stored, feedbackRequest };
+    const conclusion = await this.finalizeInteractionConclusion(stored.interactionId, {
+      peerReportStatus,
+    });
+    return {
+      report: stored,
+      feedbackRequest,
+      peerReportRequested: peerReportStatus === 'awaiting',
+      ...(conclusion.released ? { conclusion: conclusion.conclusion } : {}),
+    };
   }
 
   async recordSessionCompletionReport(token: string, value: InteractionCompletionReport) {
@@ -2056,10 +2090,12 @@ export class HostedRepository {
         );
         const observations = deriveBehaviouralObservations({
           subjectAgentId: participant.subjectAgentId,
+          reviewerAgentId: participant.reviewerAgentId,
           reports,
           ...(reviewerFeedback ? { reviewerFeedback } : {}),
           conclusion,
         });
+        if (!Object.keys(observations).length) return undefined;
         const applied = updateContextualBehaviouralProfile({
           ...(current ? { current } : {}),
           observations,
@@ -2104,7 +2140,10 @@ export class HostedRepository {
     };
   }
 
-  private async finalizeInteractionConclusion(interactionId: string) {
+  private async finalizeInteractionConclusion(
+    interactionId: string,
+    options: { peerReportStatus?: InteractionConclusion['peerReportStatus'] } = {},
+  ) {
     const [interactionRows, reportRows, feedbackRows, requestRows, existingRows] =
       await Promise.all([
         this.sql`
@@ -2155,25 +2194,38 @@ export class HostedRepository {
           .map((request) => [request.requestId, request]),
       ).values(),
     ];
+    if (!reports.length) return { released: false as const, feedbackRevealed: false as const };
     const existing = InteractionConclusionSchema.safeParse(existingRows[0]?.payload);
-    if (existing.success) {
-      await this.applyInteractionLearning({
-        interaction,
-        initiatorOperatorId: String(interactionRow.initiator_operator_id),
-        responderOperatorId: String(interactionRow.responder_operator_id),
-        reports,
-        feedback,
-        conclusion: existing.data,
-      });
-      return { released: true, conclusion: existing.data };
-    }
-    if (requests.length < 2 || requests.some((request) => request.status === 'pending'))
-      return { released: false as const };
+    const reportingAgentIds = new Set(reports.map((report) => report.reportingAgentId));
+    const missingReportAgentIds = [
+      interaction.initiatorAgentId,
+      interaction.responderAgentId,
+    ].filter((agentId) => !reportingAgentIds.has(agentId));
+    const feedbackWindowClosed =
+      requests.length >= 2 && requests.every((request) => request.status !== 'pending');
+    const lifecycle =
+      missingReportAgentIds.length === 0 || feedbackWindowClosed
+        ? ('final' as const)
+        : ('provisional' as const);
+    const visibleFeedback = feedbackWindowClosed ? feedback : [];
+    const peerReportStatus: InteractionConclusion['peerReportStatus'] =
+      missingReportAgentIds.length === 0
+        ? 'received'
+        : feedbackWindowClosed
+          ? 'timed_out'
+          : (options.peerReportStatus ?? existing.data?.peerReportStatus ?? 'awaiting');
+    const pendingFeedbackAgentIds = requests
+      .filter((request) => request.status === 'pending')
+      .map((request) => request.reviewerAgentId);
+    if (requests.length < 2) return { released: false as const };
     const base = buildInteractionConclusion({
       interaction,
       reports,
-      feedback,
+      feedback: visibleFeedback,
       conclusionId: deterministicUuid(`interaction-conclusion:${interactionId}`),
+      lifecycle,
+      pendingFeedbackAgentIds,
+      peerReportStatus,
     });
     const conclusion = InteractionConclusionSchema.parse({
       ...base,
@@ -2210,6 +2262,8 @@ export class HostedRepository {
       disputeStatus: conclusion.consensus === 'conflicting' ? ('open' as const) : ('none' as const),
       delegationChainHash: canonicalHash(interaction.contract.delegationRules),
       unilateral: reports.length < 2,
+      provisional: lifecycle === 'provisional',
+      confidence: conclusion.confidence,
       signatures: {},
       completionReportIds: conclusion.reportIds,
       conclusionId: conclusion.conclusionId,
@@ -2244,15 +2298,24 @@ export class HostedRepository {
         receipt,
       ),
     ]);
-    const learning = await this.applyInteractionLearning({
-      interaction,
-      initiatorOperatorId: String(interactionRow.initiator_operator_id),
-      responderOperatorId: String(interactionRow.responder_operator_id),
-      reports,
-      feedback,
+    const learning =
+      lifecycle === 'final' && feedbackWindowClosed
+        ? await this.applyInteractionLearning({
+            interaction,
+            initiatorOperatorId: String(interactionRow.initiator_operator_id),
+            responderOperatorId: String(interactionRow.responder_operator_id),
+            reports,
+            feedback: visibleFeedback,
+            conclusion,
+          })
+        : undefined;
+    return {
+      released: true as const,
+      feedbackRevealed: feedbackWindowClosed,
       conclusion,
-    });
-    return { released: true as const, conclusion, receipt, learning };
+      receipt,
+      ...(learning ? { learning } : {}),
+    };
   }
 
   async submitInteractionFeedback(
@@ -2349,7 +2412,7 @@ export class HostedRepository {
     return {
       feedbackId: stored.feedbackId,
       status: 'submitted' as const,
-      revealed: release.released,
+      revealed: release.released && release.feedbackRevealed,
       ...(release.released ? { conclusion: release.conclusion } : {}),
     };
   }
@@ -2388,17 +2451,30 @@ export class HostedRepository {
         LIMIT 500
       `,
       this.sql`
-        SELECT conclusion.payload->>'interactionId' AS interaction_id
-        FROM openclasp_records conclusion
-        WHERE conclusion.kind = 'interaction_conclusion'
-          AND NOT EXISTS (
-            SELECT 1 FROM openclasp_records eligibility
-            WHERE eligibility.operator_id = conclusion.operator_id
-              AND eligibility.kind = 'learning_eligibility'
-              AND eligibility.payload->>'interactionId' = conclusion.payload->>'interactionId'
-          )
-        GROUP BY conclusion.payload->>'interactionId'
-        ORDER BY MIN(conclusion.created_at) ASC
+        SELECT source.interaction_id
+        FROM (
+          SELECT conclusion.payload->>'interactionId' AS interaction_id
+          FROM openclasp_records conclusion
+          WHERE conclusion.kind = 'interaction_conclusion'
+            AND NOT EXISTS (
+              SELECT 1 FROM openclasp_records eligibility
+              WHERE eligibility.operator_id = conclusion.operator_id
+                AND eligibility.kind = 'learning_eligibility'
+                AND eligibility.payload->>'interactionId' = conclusion.payload->>'interactionId'
+            )
+          UNION
+          SELECT report.payload->>'interactionId' AS interaction_id
+          FROM openclasp_records report
+          WHERE report.kind = 'completion_report'
+            AND NOT EXISTS (
+              SELECT 1 FROM openclasp_records conclusion
+              WHERE conclusion.kind = 'interaction_conclusion'
+                AND conclusion.payload->>'interactionId' = report.payload->>'interactionId'
+            )
+        ) source
+        WHERE source.interaction_id IS NOT NULL
+        GROUP BY source.interaction_id
+        ORDER BY source.interaction_id ASC
         LIMIT 200
       `,
     ]);

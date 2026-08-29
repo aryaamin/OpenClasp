@@ -232,6 +232,15 @@ export function createPreviewData(): DashboardData {
         outcome: 'success',
         completedAt: ago(220),
       },
+      {
+        receiptId: 'rcpt_ops_provisional',
+        interactionId: 'ix_shared_ops',
+        outcome: 'partial',
+        unilateral: true,
+        provisional: true,
+        confidence: 0.42,
+        completedAt: ago(12),
+      },
     ],
     counterpartyBriefs: [
       {
@@ -269,6 +278,18 @@ export function createPreviewData(): DashboardData {
         criteria: [{ criterion: 'Brief delivered', status: 'met' }],
         completedAt: ago(221),
       },
+      {
+        reportId: 'report_ops_1',
+        interactionId: 'ix_shared_ops',
+        reportingAgentId: 'agent_atlas',
+        counterpartyAgentId: 'agent_peer_keel',
+        outcome: 'partial',
+        summary:
+          'The requester ended after the peer stopped responding before the task was complete.',
+        criteria: [{ criterion: 'Timeline shared', status: 'partially_met' }],
+        confidence: 0.7,
+        completedAt: ago(12),
+      },
     ],
     feedbackRequests: [
       {
@@ -279,6 +300,24 @@ export function createPreviewData(): DashboardData {
         status: 'submitted',
         requestedAt: ago(221),
         dueAt: ago(197),
+      },
+      {
+        requestId: 'feedback_request_ops_1',
+        interactionId: 'ix_shared_ops',
+        reviewerAgentId: 'agent_atlas',
+        subjectAgentId: 'agent_peer_keel',
+        status: 'pending',
+        requestedAt: ago(12),
+        dueAt: ahead(24 * 60 - 12),
+      },
+      {
+        requestId: 'feedback_request_ops_2',
+        interactionId: 'ix_shared_ops',
+        reviewerAgentId: 'agent_peer_keel',
+        subjectAgentId: 'agent_atlas',
+        status: 'pending',
+        requestedAt: ago(12),
+        dueAt: ahead(24 * 60 - 12),
       },
       {
         requestId: 'feedback_request_2',
@@ -311,6 +350,23 @@ export function createPreviewData(): DashboardData {
         criteria: [{ criterion: 'Brief delivered', status: 'met' }],
         averageRatings: { outcome_satisfaction: 0.88, communication: 0.82, reliability: 0.9 },
         generatedAt: ago(218),
+      },
+      {
+        conclusionId: 'conclusion_ops_provisional',
+        interactionId: 'ix_shared_ops',
+        outcome: 'partial',
+        consensus: 'unilateral',
+        lifecycle: 'provisional',
+        confidence: 0.42,
+        missingReportAgentIds: ['agent_peer_keel'],
+        pendingFeedbackAgentIds: ['agent_atlas', 'agent_peer_keel'],
+        peerReportStatus: 'awaiting',
+        summary:
+          'Provisional one-sided outcome: the requester ended after the peer stopped responding before the task was complete.',
+        criteria: [{ criterion: 'Timeline shared', status: 'partially_met' }],
+        reportIds: ['report_ops_1'],
+        averageRatings: {},
+        generatedAt: ago(11),
       },
     ],
     learningEligibility: [

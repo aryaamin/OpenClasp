@@ -946,9 +946,9 @@ function Conversations({
 
 function History({ data }: { data: DashboardData }) {
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<'all' | 'pending' | 'active' | 'finalizing' | 'completed'>(
-    'all',
-  );
+  const [status, setStatus] = useState<
+    'all' | 'pending' | 'active' | 'provisional' | 'finalizing' | 'completed'
+  >('all');
   const journeys = useMemo(() => interactionJourneys(data), [data]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -982,7 +982,7 @@ function History({ data }: { data: DashboardData }) {
           aria-label="Search interaction history"
         />
         <div className="filterRow" aria-label="Interaction status filters">
-          {(['all', 'pending', 'active', 'finalizing', 'completed'] as const).map((value) => (
+          {(['all', 'pending', 'active', 'provisional', 'completed'] as const).map((value) => (
             <button
               key={value}
               className={status === value ? 'filterChip active' : 'filterChip'}
@@ -1144,7 +1144,9 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
         taskCategory: String(interaction.contract?.taskCategory ?? 'general'),
         status: String(
           conclusion || receipt
-            ? 'completed'
+            ? conclusion?.lifecycle === 'provisional' || receipt?.provisional
+              ? 'provisional'
+              : 'completed'
             : reports.length > 0
               ? 'finalizing'
               : (session?.status ?? interaction.status ?? 'pending'),
@@ -1211,7 +1213,7 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
             {latestCheckpoint
               ? `${Math.round(progress * 100)}% · ${humanize(latestCheckpoint.state)}`
               : journey.reports.length
-                ? 'Finalizing'
+                ? 'One side ended'
                 : 'Awaiting checkpoint'}
           </strong>
           <small>
@@ -1229,7 +1231,9 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
           </strong>
           <small>
             {conclusion
-              ? humanize(conclusion.consensus)
+              ? conclusion.lifecycle === 'provisional'
+                ? `${Math.round(Number(conclusion.confidence ?? 0) * 100)}% confidence · peer ${humanize(conclusion.peerReportStatus ?? 'awaiting').toLowerCase()}`
+                : humanize(conclusion.consensus)
               : journey.reports.length === 1
                 ? 'One agent finished; confirming with the peer'
                 : 'Conversation remains active'}
@@ -1237,7 +1241,11 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
         </section>
         <section>
           <span>Sealed feedback</span>
-          <strong>{conclusion ? 'Released' : `${submittedFeedback}/2 submitted`}</strong>
+          <strong>
+            {journey.feedbackRequests.some((request) => request.status === 'pending')
+              ? `${submittedFeedback}/2 sealed`
+              : 'Window closed'}
+          </strong>
           <small>{feedbackState(journey.feedbackRequests)}</small>
         </section>
         <section>
@@ -1247,7 +1255,9 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
               ? journey.eligibility.eligible
                 ? `${Math.round(Number(journey.eligibility.sampleWeight ?? 0) * 100)}% weight`
                 : 'Not eligible'
-              : 'Not assessed'}
+              : conclusion?.lifecycle === 'provisional'
+                ? 'Pending corroboration'
+                : 'Not assessed'}
           </strong>
           <small>{humanize(journey.eligibility?.contributionMode ?? 'Local only')}</small>
         </section>
@@ -1292,8 +1302,17 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
       {conclusion ? (
         <section className="outcomeCard">
           <div>
-            <span className="eyebrow">WHAT HAPPENED</span>
+            <span className="eyebrow">
+              {conclusion.lifecycle === 'provisional' ? 'PROVISIONAL INSIGHT' : 'WHAT HAPPENED'}
+            </span>
             <h3>{conclusion.summary}</h3>
+            {conclusion.lifecycle === 'provisional' ? (
+              <p className="progressWarning">
+                Based on {conclusion.reportIds?.length ?? 1} participant report. Missing:{' '}
+                {(conclusion.missingReportAgentIds ?? []).join(', ') || 'peer report'}. This is
+                usable now at reduced confidence and will be revised if the peer responds.
+              </p>
+            ) : null}
           </div>
           {!!conclusion.criteria?.length && (
             <ul>
@@ -1445,10 +1464,17 @@ function interactionTimeline(journey: InteractionJourneyModel) {
       ? [
           {
             at: String(journey.conclusion.generatedAt),
-            title: 'Bilateral conclusion released',
+            title:
+              journey.conclusion.lifecycle === 'provisional'
+                ? 'Provisional insight generated'
+                : 'Conclusion released',
             detail: String(journey.conclusion.summary),
             status: String(journey.conclusion.consensus),
-            tone: journey.conclusion.consensus === 'conflicting' ? 'warn' : 'good',
+            tone:
+              journey.conclusion.lifecycle === 'provisional' ||
+              journey.conclusion.consensus === 'conflicting'
+                ? 'warn'
+                : 'good',
           },
         ]
       : []),
@@ -1456,8 +1482,12 @@ function interactionTimeline(journey: InteractionJourneyModel) {
       ? [
           {
             at: timestamp(journey.receipt),
-            title: 'Outcome receipt attested',
-            detail: 'Contract result, commitment status, and evidence hashes were sealed.',
+            title: journey.receipt.provisional
+              ? 'Provisional outcome attested'
+              : 'Outcome receipt attested',
+            detail: journey.receipt.provisional
+              ? 'The available one-sided report was sealed without claiming peer agreement.'
+              : 'Contract result, commitment status, and evidence hashes were sealed.',
             status: String(journey.receipt.outcome ?? 'signed'),
             tone: journey.receipt.outcome === 'failure' ? 'danger' : 'good',
           },
@@ -1739,6 +1769,9 @@ function Invitations({
 function Insights({ data }: { data: DashboardData }) {
   const eligible = data.learningEligibility.filter((item) => item.eligible);
   const pendingFeedback = data.feedbackRequests.filter((item) => item.status === 'pending');
+  const provisional = data.interactionConclusions.filter(
+    (item) => item.lifecycle === 'provisional',
+  );
   return (
     <>
       <PageHead page="insights" />
@@ -1761,8 +1794,41 @@ function Insights({ data }: { data: DashboardData }) {
           <span>
             <strong>{pendingFeedback.length}</strong> feedback pending
           </span>
+          <span>
+            <strong>{provisional.length}</strong> provisional signals
+          </span>
         </div>
       </section>
+      {!!provisional.length && (
+        <Panel
+          title="Provisional interaction signals"
+          subtitle="Available now, kept separate from corroborated reliability history"
+        >
+          <div className="learningDecisionList">
+            {provisional
+              .slice()
+              .sort((left, right) => Date.parse(timestamp(right)) - Date.parse(timestamp(left)))
+              .map((conclusion) => (
+                <article key={conclusion.conclusionId}>
+                  <StatusPill value="provisional" />
+                  <div>
+                    <strong>{conclusion.summary}</strong>
+                    <small>
+                      {Math.round(Number(conclusion.confidence ?? 0) * 100)}% confidence · peer{' '}
+                      {humanize(conclusion.peerReportStatus ?? 'awaiting').toLowerCase()} ·{' '}
+                      {relativeTime(timestamp(conclusion))}
+                    </small>
+                    <p>
+                      Missing report from{' '}
+                      {(conclusion.missingReportAgentIds ?? []).join(', ') || 'the counterparty'}.
+                      The signal will be revised if more structured evidence arrives.
+                    </p>
+                  </div>
+                </article>
+              ))}
+          </div>
+        </Panel>
+      )}
       <section className="insightGrid">
         {data.profiles.length ? (
           data.profiles.map((profile) => {
@@ -3107,8 +3173,8 @@ function StatusPill({ value }: { value: string }) {
           normalized.includes(item),
         )
       ? 'danger'
-      : ['partial', 'pending', 'challenge', 'conflict', 'expired', 'excluded'].some((item) =>
-            normalized.includes(item),
+      : ['partial', 'pending', 'provisional', 'challenge', 'conflict', 'expired', 'excluded'].some(
+            (item) => normalized.includes(item),
           )
         ? 'warn'
         : 'neutral';

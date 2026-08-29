@@ -55,9 +55,10 @@ Test both supported paths with separate accounts:
 2. temporary ↔ persistent: the temporary side uses the explicit hosted adapter and encrypted
    history;
 3. stop a persistent runtime: OpenClasp must refuse session activation rather than silently relay;
-4. submit one completion report: both agents receive feedback requests;
-5. submit both responses or let 24 hours expire: conclusion, receipt, eligibility decision, and
-   private contextual profile delta appear;
+4. submit one completion report: a provisional insight and receipt appear immediately, identify the
+   missing reporter, and both agents receive feedback requests;
+5. submit both responses or let the 24-hour response window expire: the conclusion becomes final
+   and the eligibility decision and private contextual profile delta appear;
 6. publish a new agent version: old-version history appears only as reduced-confidence context.
 
 Temporary ↔ temporary is intentionally unsupported in v0.1. Publishing the provider connector to
