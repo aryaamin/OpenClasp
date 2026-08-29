@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "criterion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "status": {
+      "type": "string",
+      "enum": ["met", "partially_met", "missed", "unknown"]
+    },
+    "explanation": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "evidenceReferences": {
+      "default": [],
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    }
+  },
+  "required": ["criterion", "status", "evidenceReferences"],
+  "additionalProperties": false
+}

@@ -202,12 +202,72 @@ export const FederatedInteractionSchema = z.object({
   expiresAt: z.string().datetime(),
 });
 
-export const LiveSessionInsightSchema = z.object({
-  code: z.string().min(1),
-  severity: z.enum(['info', 'caution', 'high']),
-  message: z.string().min(1),
-  evidenceReferences: z.array(z.string()).default([]),
-});
+export const LiveSessionInsightSchema = z
+  .object({
+    code: z.string().min(1),
+    severity: z.enum(['info', 'caution', 'high']),
+    message: z.string().min(1),
+    evidenceReferences: z.array(z.string()).default([]),
+    requirementReferences: z.array(z.string()).default([]),
+    confidence: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+
+export const RequirementAssessmentSchema = z
+  .object({
+    requirementId: z.string().min(1).max(128),
+    requirement: z.string().min(1).max(1000),
+    kind: z.enum([
+      'capability',
+      'limitation',
+      'success_criterion',
+      'deadline',
+      'evidence',
+      'scope',
+      'data',
+      'communication',
+      'delegation',
+    ]),
+    status: z.enum(['match', 'partial', 'mismatch', 'unknown']),
+    reason: z.string().min(1).max(1000),
+    confidence: z.number().min(0).max(1),
+    sources: z
+      .array(
+        z.enum(['contract', 'self_declared', 'eligible_history', 'evidence', 'version_change']),
+      )
+      .min(1),
+    evidenceReferences: z.array(z.string().min(1).max(2048)).max(50).default([]),
+  })
+  .strict();
+
+export const CounterpartyBriefSchema = z
+  .object({
+    briefId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    recipientAgentId: z.string().min(1),
+    subjectAgentId: z.string().min(1),
+    taskCategory: z.string().min(1),
+    decision: z.enum(['ALLOW', 'CHALLENGE', 'DENY']),
+    requirements: z.array(RequirementAssessmentSchema).max(100),
+    insights: z.array(LiveSessionInsightSchema).max(100),
+    relevantSampleSize: z.number().int().nonnegative(),
+    historyConfidence: z.number().min(0).max(1),
+    subjectAgentVersion: z.string().min(1),
+    recommendedContractChanges: z.array(z.string().min(1).max(1000)).max(50).default([]),
+    generatedAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+    signature: SignatureSchema.optional(),
+  })
+  .strict()
+  .refine((brief) => brief.recipientAgentId !== brief.subjectAgentId, {
+    message: 'A counterparty brief must describe another agent',
+    path: ['subjectAgentId'],
+  })
+  .refine((brief) => Date.parse(brief.expiresAt) > Date.parse(brief.generatedAt), {
+    message: 'Counterparty brief expiry must be after generation',
+    path: ['expiresAt'],
+  });
 
 export const LiveSessionOfferSchema = z.object({
   type: z.literal('openclasp.session.offer'),
@@ -225,6 +285,7 @@ export const LiveSessionOfferSchema = z.object({
   contract: InteractionContractSchema,
   contractHash: z.string().min(1),
   privateInsights: z.array(LiveSessionInsightSchema).default([]),
+  counterpartyBrief: CounterpartyBriefSchema.optional(),
   issuedAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
 });
@@ -260,6 +321,7 @@ export const LiveSessionActivationSchema = z.object({
     bearerToken: z.string().min(1),
   }),
   privateInsights: z.array(LiveSessionInsightSchema).optional(),
+  counterpartyBrief: CounterpartyBriefSchema.optional(),
   contractHash: z.string().min(1),
   activatedAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
@@ -301,6 +363,163 @@ export const LiveSessionEventSchema = z.object({
   outcome: z.enum(['success', 'failure', 'partial']).optional(),
   details: StructuredSessionDetailsSchema,
 });
+
+export const CompletionOutcomeSchema = z.enum(['success', 'partial', 'failure', 'cancelled']);
+
+export const SuccessCriterionAssessmentSchema = z
+  .object({
+    criterion: z.string().min(1).max(1000),
+    status: z.enum(['met', 'partially_met', 'missed', 'unknown']),
+    explanation: z.string().max(1000).optional(),
+    evidenceReferences: z.array(z.string().min(1).max(2048)).max(50).default([]),
+  })
+  .strict();
+
+export const InteractionCompletionReportSchema = z
+  .object({
+    reportId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    reportingAgentId: z.string().min(1),
+    counterpartyAgentId: z.string().min(1),
+    agentVersion: z.string().min(1),
+    outcome: CompletionOutcomeSchema,
+    summary: z.string().min(1).max(2000),
+    requestedOutcome: z.string().min(1).max(1000),
+    criteria: z.array(SuccessCriterionAssessmentSchema).max(100),
+    deliverables: z.array(z.string().min(1).max(1000)).max(100).default([]),
+    actionsTaken: z.array(z.string().min(1).max(1000)).max(100).default([]),
+    blockers: z.array(z.string().min(1).max(1000)).max(100).default([]),
+    scopeChanges: z.array(z.string().min(1).max(1000)).max(100).default([]),
+    corrections: z.array(z.string().min(1).max(1000)).max(100).default([]),
+    evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
+    startedAt: z.string().datetime().optional(),
+    completedAt: z.string().datetime(),
+    confidence: z.number().min(0).max(1),
+    dataSharingMode: DataSharingModeSchema.default('structured_only'),
+    signature: SignatureSchema.optional(),
+  })
+  .strict()
+  .refine((report) => report.reportingAgentId !== report.counterpartyAgentId, {
+    message: 'A completion report must describe an interaction with another agent',
+    path: ['counterpartyAgentId'],
+  })
+  .refine(
+    (report) => !report.startedAt || Date.parse(report.completedAt) >= Date.parse(report.startedAt),
+    { message: 'Completion cannot precede the start time', path: ['completedAt'] },
+  );
+
+export const FeedbackDimensionSchema = z.enum([
+  'overall_satisfaction',
+  'outcome_satisfaction',
+  'communication',
+  'timeliness',
+  'scope_adherence',
+  'evidence_quality',
+  'correction_handling',
+  'reliability',
+]);
+
+export const FeedbackRequestSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    reviewerAgentId: z.string().min(1),
+    subjectAgentId: z.string().min(1),
+    status: z.enum(['pending', 'submitted', 'expired', 'waived']),
+    requestedDimensions: z.array(FeedbackDimensionSchema).min(1),
+    requestedAt: z.string().datetime(),
+    dueAt: z.string().datetime(),
+  })
+  .strict()
+  .refine((request) => request.reviewerAgentId !== request.subjectAgentId, {
+    message: 'Feedback must concern another agent',
+    path: ['subjectAgentId'],
+  })
+  .refine((request) => Date.parse(request.dueAt) > Date.parse(request.requestedAt), {
+    message: 'Feedback due date must follow its request date',
+    path: ['dueAt'],
+  });
+
+export const InteractionFeedbackSchema = z
+  .object({
+    feedbackId: z.string().uuid(),
+    requestId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    reviewerAgentId: z.string().min(1),
+    subjectAgentId: z.string().min(1),
+    reviewerAgentVersion: z.string().min(1),
+    ratings: z.partialRecord(FeedbackDimensionSchema, z.number().min(0).max(1)),
+    wouldWorkAgain: z.enum(['yes', 'no', 'unsure']),
+    reasonCodes: z.array(z.string().min(1).max(128)).max(32).default([]),
+    privateComment: z.string().max(1000).optional(),
+    evidenceReferences: z.array(z.string().min(1).max(2048)).max(50).default([]),
+    confidence: z.number().min(0).max(1),
+    submittedAt: z.string().datetime(),
+    signature: SignatureSchema.optional(),
+  })
+  .strict()
+  .refine((feedback) => feedback.reviewerAgentId !== feedback.subjectAgentId, {
+    message: 'Feedback must concern another agent',
+    path: ['subjectAgentId'],
+  })
+  .refine((feedback) => Object.keys(feedback.ratings).length > 0, {
+    message: 'At least one feedback rating is required',
+    path: ['ratings'],
+  });
+
+export const InteractionConclusionSchema = z
+  .object({
+    conclusionId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    outcome: CompletionOutcomeSchema,
+    consensus: z.enum([
+      'bilateral_agreement',
+      'bilateral_partial_agreement',
+      'conflicting',
+      'unilateral',
+      'insufficient',
+    ]),
+    summary: z.string().min(1).max(2000),
+    criteria: z.array(SuccessCriterionAssessmentSchema).max(100),
+    reportIds: z.array(z.string().uuid()).max(2),
+    feedbackIds: z.array(z.string().uuid()).max(2),
+    averageRatings: z.partialRecord(FeedbackDimensionSchema, z.number().min(0).max(1)).default({}),
+    evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
+    generatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const LearningEligibilityDecisionSchema = z
+  .object({
+    decisionId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    eligible: z.boolean(),
+    reasons: z.array(z.string().min(1).max(500)).min(1).max(50),
+    sampleWeight: z.number().min(0).max(1),
+    reportIds: z.array(z.string().uuid()).max(2),
+    feedbackIds: z.array(z.string().uuid()).max(2),
+    evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
+    contributionMode: z.enum(['local_only', 'network_aggregate']),
+    structuredDataOnly: z.literal(true),
+    decidedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const BehaviouralProfileDeltaSchema = z
+  .object({
+    deltaId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    agentId: z.string().min(1),
+    agentVersion: z.string().min(1),
+    taskCategory: z.string().min(1),
+    sampleWeight: z.number().min(0).max(1),
+    dimensionDeltas: z.record(z.string().min(1).max(128), z.number().min(-1).max(1)),
+    explanation: z.string().min(1).max(2000),
+    appliedAt: z.string().datetime(),
+  })
+  .strict();
 
 export const TrustEnvelopeSchema = z.object({
   protocolVersion: z.literal(PROTOCOL_VERSION),
@@ -449,6 +668,17 @@ export type LiveSessionOffer = z.infer<typeof LiveSessionOfferSchema>;
 export type LiveSessionAcceptance = z.infer<typeof LiveSessionAcceptanceSchema>;
 export type LiveSessionActivation = z.infer<typeof LiveSessionActivationSchema>;
 export type LiveSessionEvent = z.infer<typeof LiveSessionEventSchema>;
+export type RequirementAssessment = z.infer<typeof RequirementAssessmentSchema>;
+export type CounterpartyBrief = z.infer<typeof CounterpartyBriefSchema>;
+export type CompletionOutcome = z.infer<typeof CompletionOutcomeSchema>;
+export type SuccessCriterionAssessment = z.infer<typeof SuccessCriterionAssessmentSchema>;
+export type InteractionCompletionReport = z.infer<typeof InteractionCompletionReportSchema>;
+export type FeedbackDimension = z.infer<typeof FeedbackDimensionSchema>;
+export type FeedbackRequest = z.infer<typeof FeedbackRequestSchema>;
+export type InteractionFeedback = z.infer<typeof InteractionFeedbackSchema>;
+export type InteractionConclusion = z.infer<typeof InteractionConclusionSchema>;
+export type LearningEligibilityDecision = z.infer<typeof LearningEligibilityDecisionSchema>;
+export type BehaviouralProfileDelta = z.infer<typeof BehaviouralProfileDeltaSchema>;
 
 export interface KeyPair {
   keyId: string;

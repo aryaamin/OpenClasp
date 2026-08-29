@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { createIdentity, TrustEngine } from '@openclasp/core';
 import {
+  CounterpartyBriefSchema,
   FederatedInteractionSchema,
   HostedMessageSchema,
   HostedThreadSchema,
+  InteractionCompletionReportSchema,
+  InteractionFeedbackSchema,
+  LearningEligibilityDecisionSchema,
   PublicAgentCardSchema,
   canonicalHash,
   signObject,
@@ -186,5 +190,131 @@ describe('protocol cryptography and delegation', () => {
     expect(thread.privacyMode).toBe('openclasp_hosted_temporary');
     expect(message.contentHash).toBe(canonicalHash(message.content));
     expect(() => HostedMessageSchema.parse({ ...message, content: 'x'.repeat(20_001) })).toThrow();
+  });
+
+  it('produces private requirement-specific counterparty briefs', () => {
+    const now = '2026-08-29T00:00:00.000Z';
+    const brief = CounterpartyBriefSchema.parse({
+      briefId: crypto.randomUUID(),
+      interactionId: crypto.randomUUID(),
+      contractHash: canonicalHash({ purpose: 'Recruit a backend engineer' }),
+      recipientAgentId: 'agent:candidate',
+      subjectAgentId: 'agent:recruiter',
+      taskCategory: 'recruiting',
+      decision: 'CHALLENGE',
+      requirements: [
+        {
+          requirementId: 'role-scope',
+          requirement: 'Backend software engineering positions',
+          kind: 'scope',
+          status: 'mismatch',
+          reason: 'The recruiter currently declares marketing roles only.',
+          confidence: 0.98,
+          sources: ['self_declared', 'contract'],
+        },
+      ],
+      insights: [
+        {
+          code: 'scope_mismatch',
+          severity: 'high',
+          message: 'Confirm role scope before starting the interaction.',
+          requirementReferences: ['role-scope'],
+          confidence: 0.98,
+        },
+      ],
+      relevantSampleSize: 0,
+      historyConfidence: 0,
+      subjectAgentVersion: '1.0.0',
+      recommendedContractChanges: ['Require the recruiter to confirm a backend role is available.'],
+      generatedAt: now,
+      expiresAt: '2026-08-29T00:10:00.000Z',
+    });
+    expect(brief.requirements[0]?.status).toBe('mismatch');
+    expect(brief.insights[0]?.requirementReferences).toEqual(['role-scope']);
+  });
+
+  it('accepts signed structured outcomes and rejects raw conversation fields', () => {
+    const reporter = createIdentity({
+      agentId: 'agent:reporter',
+      operatorRef: 'operator:reporter',
+      capabilities: ['recruiting'],
+    });
+    const interactionId = crypto.randomUUID();
+    const report = {
+      reportId: crypto.randomUUID(),
+      interactionId,
+      contractHash: canonicalHash({ interactionId, requestedOutcome: 'Find a backend role' }),
+      reportingAgentId: reporter.identity.agentId,
+      counterpartyAgentId: 'agent:recruiter',
+      agentVersion: '1.0.0',
+      outcome: 'failure' as const,
+      summary: 'No matching backend positions were available.',
+      requestedOutcome: 'Identify available backend software engineering positions.',
+      criteria: [
+        {
+          criterion: 'Return at least one backend role',
+          status: 'missed' as const,
+          explanation: 'The recruiter only handled marketing roles.',
+        },
+      ],
+      blockers: ['Counterparty scope mismatch'],
+      completedAt: '2026-08-29T00:05:00.000Z',
+      confidence: 0.99,
+      dataSharingMode: 'structured_only' as const,
+    };
+    const signed = signObject(report, reporter.keyPair);
+    expect(InteractionCompletionReportSchema.parse(signed).outcome).toBe('failure');
+    expect(verifyObject(signed, reporter.identity.publicKey)).toBe(true);
+    expect(
+      InteractionCompletionReportSchema.safeParse({
+        ...report,
+        rawMessageBody: 'private transcript content',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates bilateral feedback inputs and structured-only learning eligibility', () => {
+    const interactionId = crypto.randomUUID();
+    const feedback = InteractionFeedbackSchema.parse({
+      feedbackId: crypto.randomUUID(),
+      requestId: crypto.randomUUID(),
+      interactionId,
+      reviewerAgentId: 'agent:candidate',
+      subjectAgentId: 'agent:recruiter',
+      reviewerAgentVersion: '1.0.0',
+      ratings: {
+        outcome_satisfaction: 0.1,
+        communication: 0.9,
+        scope_adherence: 0.2,
+      },
+      wouldWorkAgain: 'unsure',
+      reasonCodes: ['scope_mismatch'],
+      confidence: 0.9,
+      submittedAt: '2026-08-29T00:06:00.000Z',
+    });
+    expect(feedback.ratings.communication).toBe(0.9);
+    expect(
+      InteractionFeedbackSchema.safeParse({ ...feedback, ratings: { reliability: 1.1 } }).success,
+    ).toBe(false);
+
+    const eligibility = {
+      decisionId: crypto.randomUUID(),
+      interactionId,
+      eligible: true,
+      reasons: ['Signed completion report and eligible bilateral feedback'],
+      sampleWeight: 0.8,
+      reportIds: [crypto.randomUUID(), crypto.randomUUID()],
+      feedbackIds: [feedback.feedbackId],
+      contributionMode: 'local_only' as const,
+      structuredDataOnly: true as const,
+      decidedAt: '2026-08-29T00:07:00.000Z',
+    };
+    expect(LearningEligibilityDecisionSchema.parse(eligibility).eligible).toBe(true);
+    expect(
+      LearningEligibilityDecisionSchema.safeParse({
+        ...eligibility,
+        structuredDataOnly: false,
+      }).success,
+    ).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   AgentIdentitySchema,
+  CounterpartyBriefSchema,
   canonicalHash,
   createKeyPair,
   DelegationCredentialSchema,
@@ -14,16 +15,194 @@ import {
   verifyNamed,
   verifyObject,
   type AgentIdentity,
+  type CounterpartyBrief,
   type DelegationCredential,
   type FactCheckResult,
   type Feedback,
   type InteractionContract,
   type InteractionEvent,
   type KeyPair,
+  type LiveSessionInsight,
+  type PublicAgentCard,
   type Receipt,
   type RiskDecision,
   type TrustEnvelope,
 } from '../../protocol/src/index.js';
+
+const REQUIREMENT_STOP_WORDS = new Set([
+  'about',
+  'agent',
+  'available',
+  'from',
+  'have',
+  'into',
+  'must',
+  'provide',
+  'return',
+  'should',
+  'that',
+  'their',
+  'this',
+  'with',
+]);
+
+function normalized(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function meaningfulTerms(value: string): string[] {
+  return [
+    ...new Set(
+      normalized(value)
+        .split(' ')
+        .filter((term) => term.length >= 4 && !REQUIREMENT_STOP_WORDS.has(term)),
+    ),
+  ];
+}
+
+function assessDeclaration(
+  requirement: string,
+  declarations: string[],
+): { status: 'match' | 'partial' | 'mismatch' | 'unknown'; reason: string; confidence: number } {
+  const normalizedRequirement = normalized(requirement);
+  const normalizedDeclarations = declarations.map(normalized);
+  if (
+    normalizedDeclarations.some(
+      (declaration) => declaration === '*' || declaration === normalizedRequirement,
+    )
+  )
+    return {
+      status: 'match',
+      reason: 'The counterparty explicitly declares this capability.',
+      confidence: 0.95,
+    };
+
+  const terms = meaningfulTerms(requirement);
+  const negative = normalizedDeclarations.find((declaration) =>
+    terms.some(
+      (term) =>
+        declaration.includes(`no ${term}`) ||
+        declaration.includes(`not ${term}`) ||
+        declaration.includes(`cannot ${term}`),
+    ),
+  );
+  if (negative)
+    return {
+      status: 'mismatch',
+      reason: `The counterparty declares a conflicting limitation: ${negative}`,
+      confidence: 0.95,
+    };
+
+  if (terms.length) {
+    const declarationText = normalizedDeclarations.join(' ');
+    const overlap = terms.filter((term) => declarationText.includes(term)).length / terms.length;
+    if (overlap >= 0.6)
+      return {
+        status: 'match',
+        reason: 'The counterparty declarations strongly match this requirement.',
+        confidence: 0.8,
+      };
+    if (overlap > 0)
+      return {
+        status: 'partial',
+        reason: 'The counterparty declarations only partially cover this requirement.',
+        confidence: 0.65,
+      };
+  }
+  return {
+    status: 'unknown',
+    reason: 'The published agent card does not establish this requirement.',
+    confidence: 0.35,
+  };
+}
+
+export function buildCounterpartyBrief(input: {
+  interactionId: string;
+  contractHash: string;
+  contract: InteractionContract;
+  recipientAgentId: string;
+  subject: PublicAgentCard;
+  historyInsights: LiveSessionInsight[];
+  relevantSampleSize: number;
+  historyConfidence: number;
+  generatedAt?: string;
+  expiresAt: string;
+}): CounterpartyBrief {
+  const declarations = [
+    input.subject.description,
+    ...input.subject.capabilities,
+    ...input.subject.limitations,
+  ];
+  const requirements = [
+    {
+      requirementId: 'task-category',
+      requirement: input.contract.taskCategory,
+      kind: 'capability' as const,
+    },
+    {
+      requirementId: 'requested-outcome',
+      requirement: input.contract.requestedOutcome,
+      kind: 'scope' as const,
+    },
+    ...input.contract.allowedActions.map((requirement, index) => ({
+      requirementId: `allowed-action-${index + 1}`,
+      requirement,
+      kind: 'capability' as const,
+    })),
+    ...input.contract.successCriteria.map((requirement, index) => ({
+      requirementId: `success-criterion-${index + 1}`,
+      requirement,
+      kind: 'success_criterion' as const,
+    })),
+    ...input.contract.evidenceRequirements.map((requirement, index) => ({
+      requirementId: `evidence-${index + 1}`,
+      requirement,
+      kind: 'evidence' as const,
+    })),
+  ].map((requirement) => ({
+    ...requirement,
+    ...assessDeclaration(requirement.requirement, declarations),
+    sources: ['contract', 'self_declared'] as const,
+    evidenceReferences: [input.subject.cardUrl],
+  }));
+  const requirementReferences = requirements
+    .filter((requirement) => requirement.status !== 'match')
+    .map((requirement) => requirement.requirementId);
+  const insights = input.historyInsights.map((insight) => ({
+    ...insight,
+    requirementReferences:
+      insight.requirementReferences.length > 0
+        ? insight.requirementReferences
+        : requirementReferences,
+  }));
+  const needsChallenge =
+    input.relevantSampleSize === 0 ||
+    requirements.some((requirement) => requirement.status === 'mismatch') ||
+    insights.some((insight) => insight.severity === 'high');
+  return CounterpartyBriefSchema.parse({
+    briefId: randomUUID(),
+    interactionId: input.interactionId,
+    contractHash: input.contractHash,
+    recipientAgentId: input.recipientAgentId,
+    subjectAgentId: input.subject.agentId,
+    taskCategory: input.contract.taskCategory,
+    decision: needsChallenge ? 'CHALLENGE' : 'ALLOW',
+    requirements,
+    insights,
+    relevantSampleSize: input.relevantSampleSize,
+    historyConfidence: input.historyConfidence,
+    subjectAgentVersion: input.subject.agentVersion,
+    recommendedContractChanges: requirements
+      .filter((requirement) => requirement.status === 'mismatch')
+      .map((requirement) => `Resolve mismatch: ${requirement.requirement}`),
+    generatedAt: input.generatedAt ?? new Date().toISOString(),
+    expiresAt: input.expiresAt,
+  });
+}
 
 export interface AuditStore {
   append(kind: string, id: string, value: unknown): void;

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "overall_satisfaction",
+    "outcome_satisfaction",
+    "communication",
+    "timeliness",
+    "scope_adherence",
+    "evidence_quality",
+    "correction_handling",
+    "reliability"
+  ]
+}

@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "briefId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "interactionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "contractHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recipientAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subjectAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "taskCategory": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["ALLOW", "CHALLENGE", "DENY"]
+    },
+    "requirements": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "requirementId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "requirement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "limitation",
+              "success_criterion",
+              "deadline",
+              "evidence",
+              "scope",
+              "data",
+              "communication",
+              "delegation"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["match", "partial", "mismatch", "unknown"]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "sources": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "contract",
+                "self_declared",
+                "eligible_history",
+                "evidence",
+                "version_change"
+              ]
+            }
+          },
+          "evidenceReferences": {
+            "default": [],
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        },
+        "required": [
+          "requirementId",
+          "requirement",
+          "kind",
+          "status",
+          "reason",
+          "confidence",
+          "sources",
+          "evidenceReferences"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "insights": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "caution", "high"]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidenceReferences": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requirementReferences": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": ["code", "severity", "message", "evidenceReferences", "requirementReferences"],
+        "additionalProperties": false
+      }
+    },
+    "relevantSampleSize": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "historyConfidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "subjectAgentVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recommendedContractChanges": {
+      "default": [],
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "signature": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["algorithm", "keyId", "value"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "briefId",
+    "interactionId",
+    "contractHash",
+    "recipientAgentId",
+    "subjectAgentId",
+    "taskCategory",
+    "decision",
+    "requirements",
+    "insights",
+    "relevantSampleSize",
+    "historyConfidence",
+    "subjectAgentVersion",
+    "recommendedContractChanges",
+    "generatedAt",
+    "expiresAt"
+  ],
+  "additionalProperties": false
+}

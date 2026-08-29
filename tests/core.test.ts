@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { createIdentity, FixtureFactCheckProvider, TrustEngine } from '@openclasp/core';
-import { signNamed, type InteractionContract, type Receipt } from '@openclasp/protocol';
+import {
+  buildCounterpartyBrief,
+  createIdentity,
+  FixtureFactCheckProvider,
+  TrustEngine,
+} from '@openclasp/core';
+import {
+  canonicalHash,
+  PublicAgentCardSchema,
+  signNamed,
+  type InteractionContract,
+  type Receipt,
+} from '@openclasp/protocol';
 import { createSignedEvent } from '@openclasp/sdk';
 
 describe('general assurance behavior', () => {
@@ -143,5 +154,76 @@ describe('general assurance behavior', () => {
     expect(() => engine.resolveConflict(conflict.conflictId, 'clarified')).toThrow('Mutual');
     engine.permitMediation(conflict.conflictId, 'b');
     expect(engine.resolveConflict(conflict.conflictId, 'clarified').status).toBe('resolved');
+  });
+
+  it('builds a private brief against the actual contract requirements', () => {
+    const interactionId = crypto.randomUUID();
+    const contract: InteractionContract = {
+      protocolVersion: '0.1',
+      interactionId,
+      purpose: 'Find an engineering role',
+      parties: ['agent:candidate', 'agent:recruiter'],
+      taskCategory: 'recruiting',
+      requestedOutcome: 'Available backend software engineering positions',
+      successCriteria: ['At least one matching backend role'],
+      allowedActions: ['recruiting'],
+      prohibitedActions: [],
+      allowedData: ['public'],
+      prohibitedData: ['private'],
+      evidenceRequirements: ['Job description link'],
+      delegationRules: [],
+      humanApprovalRequirements: [],
+      factCheckingPolicy: 'important_claims',
+      mediationPolicy: 'mutual_consent',
+      retentionDays: 30,
+      completionConditions: ['positions returned'],
+      cancellationConditions: ['either party'],
+      signatures: {},
+    };
+    const subject = PublicAgentCardSchema.parse({
+      protocolVersion: '0.1',
+      agentId: 'agent:recruiter',
+      name: 'Recruiter',
+      description: 'Recruiting assistant for marketing roles',
+      framework: 'Botpress',
+      agentVersion: '1.0.0',
+      capabilities: ['recruiting'],
+      limitations: ['no backend recruitment'],
+      assurance: 'oauth_authenticated',
+      transports: [],
+      cardUrl: 'https://openclasp.example/agents/recruiter/card.json',
+      a2aAgentCardUrl: 'https://openclasp.example/agents/recruiter/a2a-agent-card.json',
+      extensionUri: 'https://openclasp.example/extensions/trust/v0.1',
+      publishedAt: '2026-08-29T00:00:00.000Z',
+      updatedAt: '2026-08-29T00:00:00.000Z',
+    });
+    const brief = buildCounterpartyBrief({
+      interactionId,
+      contractHash: canonicalHash(contract),
+      contract,
+      recipientAgentId: 'agent:candidate',
+      subject,
+      historyInsights: [
+        {
+          code: 'limited_verified_history',
+          severity: 'caution',
+          message: 'No eligible history exists.',
+          evidenceReferences: [],
+          requirementReferences: [],
+        },
+      ],
+      relevantSampleSize: 0,
+      historyConfidence: 0,
+      generatedAt: '2026-08-29T00:00:00.000Z',
+      expiresAt: '2026-08-29T01:00:00.000Z',
+    });
+    expect(brief.decision).toBe('CHALLENGE');
+    expect(brief.requirements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ requirementId: 'task-category', status: 'match' }),
+        expect.objectContaining({ requirementId: 'requested-outcome', status: 'mismatch' }),
+      ]),
+    );
+    expect(brief.insights[0]?.requirementReferences.length).toBeGreaterThan(0);
   });
 });

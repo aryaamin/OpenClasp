@@ -37,6 +37,13 @@ describe('HTTP API', () => {
           conflicts: [],
           receipts: [],
           profiles: [],
+          counterpartyBriefs: [],
+          completionReports: [],
+          feedbackRequests: [],
+          interactionFeedback: [],
+          interactionConclusions: [],
+          learningEligibility: [],
+          profileDeltas: [],
           runtimes: [],
           accessTokens: [],
         };

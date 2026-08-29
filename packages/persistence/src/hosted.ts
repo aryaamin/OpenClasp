@@ -1,7 +1,9 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { randomBytes } from 'node:crypto';
+import { buildCounterpartyBrief } from '../../core/src/index.js';
 import {
   DEFAULT_EXTENSION_URI,
+  CounterpartyBriefSchema,
   FederatedInteractionSchema,
   LiveSessionAcceptanceSchema,
   LiveSessionActivationSchema,
@@ -13,6 +15,7 @@ import {
   canonicalHash,
   type FederatedInteraction,
   type AgentPresence,
+  type CounterpartyBrief,
   type LiveSessionActivation,
   type LiveSessionEvent,
   type LiveSessionInsight,
@@ -49,6 +52,13 @@ export type HostedRecordKind =
   | 'event'
   | 'receipt'
   | 'feedback'
+  | 'counterparty_brief'
+  | 'completion_report'
+  | 'feedback_request'
+  | 'interaction_feedback'
+  | 'interaction_conclusion'
+  | 'learning_eligibility'
+  | 'profile_delta'
   | 'conflict'
   | 'profile'
   | 'consent'
@@ -513,6 +523,13 @@ export class HostedRepository {
       conflicts: ofKind('conflict'),
       receipts: ofKind('receipt'),
       profiles: ofKind('profile'),
+      counterpartyBriefs: ofKind('counterparty_brief'),
+      completionReports: ofKind('completion_report'),
+      feedbackRequests: ofKind('feedback_request'),
+      interactionFeedback: ofKind('interaction_feedback'),
+      interactionConclusions: ofKind('interaction_conclusion'),
+      learningEligibility: ofKind('learning_eligibility'),
+      profileDeltas: ofKind('profile_delta'),
       federatedInteractions,
       liveSessions: liveSessionRows.map((row) => ({
         interactionId: String(row.interaction_id),
@@ -1136,7 +1153,11 @@ export class HostedRepository {
     viewerOperatorId: string,
     counterparty: { agentId: string; card: PublicAgentCard },
     taskCategory: string,
-  ): Promise<LiveSessionInsight[]> {
+  ): Promise<{
+    insights: LiveSessionInsight[];
+    relevantSampleSize: number;
+    historyConfidence: number;
+  }> {
     const rows = await this.sql`
       SELECT record_id, payload
       FROM openclasp_records
@@ -1170,12 +1191,15 @@ export class HostedRepository {
     );
     const current = exact ?? profiles[0];
     const insights: LiveSessionInsight[] = [];
+    let relevantSampleSize = 0;
+    let historyConfidence = 0;
     if (!current) {
       insights.push({
         code: 'limited_verified_history',
         severity: 'caution',
         message: `No eligible ${taskCategory} history is available for this agent version. Ask for task-relevant evidence.`,
         evidenceReferences: [],
+        requirementReferences: [],
       });
     } else {
       const ageDays = Math.max(
@@ -1185,6 +1209,8 @@ export class HostedRepository {
       const freshness = Math.exp(-ageDays / 180);
       const sampleSize = Number(current.sampleSize);
       const confidence = Math.min(0.95, (sampleSize / (sampleSize + 5)) * freshness);
+      relevantSampleSize = sampleSize;
+      historyConfidence = confidence;
       const versionChanged = current.agentVersion !== counterparty.card.agentVersion;
       const reference = `openclasp:profile:${current.recordId}`;
       insights.push({
@@ -1194,6 +1220,7 @@ export class HostedRepository {
           ? `Only prior-version ${taskCategory} history is available (${sampleSize} eligible interaction${sampleSize === 1 ? '' : 's'}); confidence is reduced for version ${counterparty.card.agentVersion}.`
           : `Based on ${sampleSize} eligible ${taskCategory} interaction${sampleSize === 1 ? '' : 's'}; confidence ${(confidence * 100).toFixed(0)}%.`,
         evidenceReferences: [reference],
+        requirementReferences: [],
       });
       const weakDimensions = [
         ['completion', Number(current.completion)],
@@ -1212,6 +1239,7 @@ export class HostedRepository {
             .map(([name, score]) => `${String(name)} ${(Number(score) * 100).toFixed(0)}%`)
             .join(', ')}.`,
           evidenceReferences: [reference],
+          requirementReferences: [],
         });
       if (Number(current.disputes) > 0.25)
         insights.push({
@@ -1219,6 +1247,7 @@ export class HostedRepository {
           severity: Number(current.disputes) >= 0.5 ? 'high' : 'caution',
           message: `Eligible feedback shows a ${(Number(current.disputes) * 100).toFixed(0)}% dispute rate in this task category.`,
           evidenceReferences: [reference],
+          requirementReferences: [],
         });
     }
     if (counterparty.card.limitations.length)
@@ -1227,8 +1256,9 @@ export class HostedRepository {
         severity: 'info',
         message: `Counterparty declares: ${counterparty.card.limitations.join('; ')}`,
         evidenceReferences: [counterparty.card.cardUrl],
+        requirementReferences: [],
       });
-    return insights;
+    return { insights, relevantSampleSize, historyConfidence };
   }
 
   async brokerLiveSession(interaction: FederatedInteraction) {
@@ -1244,7 +1274,7 @@ export class HostedRepository {
     ]);
     if (initiator.mode === 'temporary_chat' && responder.mode === 'temporary_chat')
       throw new Error('Temporary-to-temporary hosted conversations are not supported in this MVP');
-    const [initiatorInsights, responderInsights] = await Promise.all([
+    const [initiatorContext, responderContext] = await Promise.all([
       this.privateCounterpartyInsights(
         initiator.operatorId,
         responder,
@@ -1257,11 +1287,50 @@ export class HostedRepository {
       ),
     ]);
     const issuedAt = new Date().toISOString();
+    const initiatorBrief = buildCounterpartyBrief({
+      interactionId: interaction.interactionId,
+      contractHash: interaction.termsHash,
+      contract: interaction.contract,
+      recipientAgentId: initiator.agentId,
+      subject: responder.card,
+      historyInsights: initiatorContext.insights,
+      relevantSampleSize: initiatorContext.relevantSampleSize,
+      historyConfidence: initiatorContext.historyConfidence,
+      generatedAt: issuedAt,
+      expiresAt: interaction.expiresAt,
+    });
+    const responderBrief = buildCounterpartyBrief({
+      interactionId: interaction.interactionId,
+      contractHash: interaction.termsHash,
+      contract: interaction.contract,
+      recipientAgentId: responder.agentId,
+      subject: initiator.card,
+      historyInsights: responderContext.insights,
+      relevantSampleSize: responderContext.relevantSampleSize,
+      historyConfidence: responderContext.historyConfidence,
+      generatedAt: issuedAt,
+      expiresAt: interaction.expiresAt,
+    });
+    await Promise.all([
+      this.upsert(
+        initiator.operatorId,
+        'counterparty_brief',
+        initiatorBrief.briefId,
+        initiatorBrief,
+      ),
+      this.upsert(
+        responder.operatorId,
+        'counterparty_brief',
+        responderBrief.briefId,
+        responderBrief,
+      ),
+    ]);
     const makeOffer = (
       runtime: typeof initiator,
       counterparty: typeof responder,
       role: 'initiator' | 'responder',
       privateInsights: LiveSessionInsight[],
+      counterpartyBrief: CounterpartyBrief,
     ) =>
       LiveSessionOfferSchema.parse({
         type: 'openclasp.session.offer',
@@ -1279,11 +1348,24 @@ export class HostedRepository {
         contract: interaction.contract,
         contractHash: interaction.termsHash,
         privateInsights,
+        counterpartyBrief,
         issuedAt,
         expiresAt: interaction.expiresAt,
       });
-    const initiatorOffer = makeOffer(initiator, responder, 'initiator', initiatorInsights);
-    const responderOffer = makeOffer(responder, initiator, 'responder', responderInsights);
+    const initiatorOffer = makeOffer(
+      initiator,
+      responder,
+      'initiator',
+      initiatorBrief.insights,
+      initiatorBrief,
+    );
+    const responderOffer = makeOffer(
+      responder,
+      initiator,
+      'responder',
+      responderBrief.insights,
+      responderBrief,
+    );
     const prepare = async (
       participant: typeof initiator,
       offer: typeof initiatorOffer,
@@ -1361,6 +1443,7 @@ export class HostedRepository {
       peerSessionId: string,
       peerEndpoint: string,
       privateInsights: LiveSessionInsight[],
+      counterpartyBrief: CounterpartyBrief,
     ): LiveSessionActivation => {
       const bearerToken = this.sessionGrant(interaction, agentId, peerAgentId);
       return LiveSessionActivationSchema.parse({
@@ -1383,6 +1466,7 @@ export class HostedRepository {
           bearerToken,
         },
         privateInsights,
+        counterpartyBrief,
         contractHash: interaction.termsHash,
         activatedAt,
         expiresAt: interaction.expiresAt,
@@ -1395,7 +1479,8 @@ export class HostedRepository {
       responder.agentId,
       responderAcceptance.sessionId,
       responderAcceptance.a2aEndpoint,
-      initiatorInsights,
+      initiatorBrief.insights,
+      initiatorBrief,
     );
     const responderActivation = makeActivation(
       responder.agentId,
@@ -1404,7 +1489,8 @@ export class HostedRepository {
       initiator.agentId,
       initiatorAcceptance.sessionId,
       initiatorAcceptance.a2aEndpoint,
-      responderInsights,
+      responderBrief.insights,
+      responderBrief,
     );
     try {
       const activate = async (
@@ -1475,11 +1561,34 @@ export class HostedRepository {
     const interaction = FederatedInteractionSchema.parse(row.payload);
     const peerAgentId = String(isInitiator ? row.responder_agent_id : row.initiator_agent_id);
     const peer = await this.sessionParticipant(peerAgentId);
-    const privateInsights = await this.privateCounterpartyInsights(
+    const privateContext = await this.privateCounterpartyInsights(
       String(owner),
       peer,
       interaction.contract.taskCategory,
     );
+    const briefRows = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${String(owner)}
+        AND kind = 'counterparty_brief'
+        AND payload->>'interactionId' = ${interactionId}
+        AND payload->>'recipientAgentId' = ${agentId}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    const storedBrief = CounterpartyBriefSchema.safeParse(briefRows[0]?.payload);
+    const counterpartyBrief = storedBrief.success
+      ? storedBrief.data
+      : buildCounterpartyBrief({
+          interactionId,
+          contractHash: interaction.termsHash,
+          contract: interaction.contract,
+          recipientAgentId: agentId,
+          subject: peer.card,
+          historyInsights: privateContext.insights,
+          relevantSampleSize: privateContext.relevantSampleSize,
+          historyConfidence: privateContext.historyConfidence,
+          expiresAt: new Date(String(row.expires_at)).toISOString(),
+        });
     const bearerToken = this.sessionGrant(interaction, agentId, peerAgentId);
     return {
       type: 'openclasp.session.activation' as const,
@@ -1500,7 +1609,8 @@ export class HostedRepository {
         endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/events`,
         bearerToken,
       },
-      privateInsights,
+      privateInsights: privateContext.insights,
+      counterpartyBrief,
       contractHash: interaction.termsHash,
       activatedAt: row.activated_at
         ? new Date(String(row.activated_at)).toISOString()
