@@ -9,5 +9,19 @@ describe('complete demonstration', () => {
     expect(output.forwarding.networkPayloads).toHaveLength(1);
     expect(output.check.status).toBe('contradicted');
     expect(output.receipt.unilateral).toBe(false);
+    expect(output.initialBrief).toMatchObject({
+      recipientAgentId: 'agent:requester',
+      subjectAgentId: 'agent:provider',
+      decision: 'CHALLENGE',
+    });
+    expect(output.structuredConclusion.consensus).toBe('bilateral_agreement');
+    expect(output.localEligibility).toMatchObject({
+      eligible: true,
+      contributionMode: 'local_only',
+      structuredDataOnly: true,
+    });
+    expect(output.networkEligibility.contributionMode).toBe('network_aggregate');
+    expect(output.weightedProfile.profile.sampleSize).toBe(1);
+    expect(JSON.stringify(output.structuredConclusion)).not.toContain('private-note');
   });
 });

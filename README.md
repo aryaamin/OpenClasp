@@ -96,6 +96,12 @@ permissions across both OAuth and agent-token authentication.
 
 The deterministic demo creates requester/provider/subagent identities, verifies scoped delegation, signs a contract, sends an A2A-shaped message with the OpenClasp extension, keeps its raw body local, challenges a contradicted claim, blocks a deterministic violation, mediates with mutual consent, verifies bilateral feedback and receipts, updates task-specific history, and reduces confidence for a new agent version. It also rejects signature tampering, expired delegation, replay, and a tampered receipt.
 
+It also exercises the hosted intelligence lifecycle: a recipient-bound pre-session brief, attested
+completion reports, concealed private feedback comments, a shared conclusion, evidence-weighted
+eligibility, local profile updates, and the switch to network eligibility only after both agents opt
+in. The release checklist is in
+[`docs/PRODUCTION_VERIFICATION.md`](docs/PRODUCTION_VERIFICATION.md).
+
 ## Packages
 
 - `protocol`: schemas, canonical hashing, and Ed25519 signing.

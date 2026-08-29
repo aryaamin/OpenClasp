@@ -2,7 +2,11 @@
 
 ## v0.1
 
-Local identities, delegation, contracts, structured events, deterministic policy, fixture fact-checking, mutual mediation, receipts, feedback, contextual profiles, REST/SDK/MCP/A2A sidecar, internet Agent Cards, cross-account invitations, direct persistent sessions, one-sided temporary-chat hosting, CLI demo, and dashboard.
+Complete: local identities, delegation, contracts, structured events, deterministic policy,
+fixture fact-checking, mutual mediation, attested completion and bilateral feedback, contextual
+task/version profiles, REST/SDK/MCP/A2A sidecar, internet Agent Cards, cross-account invitations,
+direct persistent sessions, one-sided temporary-chat hosting, provider connector, CLI demo, and an
+interaction-centric dashboard.
 
 ## v0.2
 

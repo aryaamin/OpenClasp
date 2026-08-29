@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import {
   canonicalHash,
+  InteractionCompletionReportSchema,
+  InteractionFeedbackSchema,
+  PublicAgentCardSchema,
   signNamed,
   signObject,
   type Feedback,
@@ -8,10 +11,16 @@ import {
   type Receipt,
 } from '../../../packages/protocol/src/index.js';
 import {
+  buildCounterpartyBrief,
+  buildInteractionConclusion,
   createIdentity,
+  deriveBehaviouralObservations,
+  evaluateLearningEligibility,
   FixtureFactCheckProvider,
   TrustEngine,
+  updateContextualBehaviouralProfile,
 } from '../../../packages/core/src/index.js';
+import { attestSessionRecord } from '../../../packages/persistence/src/relay.js';
 import { createSignedEnvelope, createSignedEvent } from '../../../packages/sdk/src/index.js';
 import { OpenClaspSidecar, openClaspA2AExtension } from '../../../packages/sidecar/src/index.js';
 
@@ -83,6 +92,56 @@ export async function runDemo(log: (line: string) => void = () => undefined) {
   ) as unknown as InteractionContract;
   engine.saveContract(contract);
   log('3. Exchanged expectations and signed a minimal interaction contract');
+
+  const providerCard = PublicAgentCardSchema.parse({
+    protocolVersion: '0.1',
+    agentId: provider.identity.agentId,
+    name: 'Research Provider',
+    description: 'Produces evidence-backed research summaries',
+    framework: 'Demo runtime',
+    agentVersion: provider.identity.agentVersion,
+    capabilities: ['research.answer', 'research.summary', 'authoritative_source'],
+    limitations: ['public data only'],
+    assurance: 'cryptographically_verified',
+    transports: [
+      {
+        protocol: 'A2A/1.0',
+        protocolBinding: 'JSONRPC',
+        endpoint: 'https://provider.example/a2a',
+      },
+    ],
+    cardUrl: 'https://openclasp.example/agents/provider/card.json',
+    a2aAgentCardUrl: 'https://openclasp.example/agents/provider/a2a-agent-card.json',
+    extensionUri: 'https://openclasp.example/extensions/trust/v0.1',
+    publishedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  const initialBrief = buildCounterpartyBrief({
+    interactionId,
+    contractHash: canonicalHash({ ...contract, signatures: {} }),
+    contract,
+    recipientAgentId: requester.identity.agentId,
+    subject: providerCard,
+    historyInsights: [
+      {
+        code: 'limited_verified_history',
+        severity: 'caution',
+        message: 'Ask for task-relevant evidence because this version has limited history.',
+        evidenceReferences: [],
+        requirementReferences: [],
+      },
+    ],
+    relevantSampleSize: 0,
+    historyConfidence: 0,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  });
+  if (
+    initialBrief.recipientAgentId !== requester.identity.agentId ||
+    initialBrief.subjectAgentId !== provider.identity.agentId ||
+    initialBrief.decision !== 'CHALLENGE'
+  )
+    throw new Error('Private counterparty brief was not recipient-bound');
+  log('3a. Delivered a recipient-bound counterparty brief before the A2A session');
 
   engine.setContributionConsent(provider.identity.agentId, true);
   const contractHash = canonicalHash({ ...contract, signatures: {} });
@@ -251,6 +310,138 @@ export async function runDemo(log: (line: string) => void = () => undefined) {
     throw new Error('Behavioural learning/version reduction failed');
   log('9. Updated contextual history; new versions inherit reduced confidence');
 
+  const platformSecret = 'demo-platform-attestation-secret-at-least-32-bytes';
+  const completionReport = (
+    reportingAgentId: string,
+    counterpartyAgentId: string,
+    summary: string,
+  ) => {
+    const base = InteractionCompletionReportSchema.parse({
+      reportId: randomUUID(),
+      interactionId,
+      contractHash,
+      reportingAgentId,
+      counterpartyAgentId,
+      agentVersion: '1.0.0',
+      outcome: 'success',
+      summary,
+      requestedOutcome: contract.requestedOutcome,
+      criteria: [{ criterion: 'Citations included', status: 'met' }],
+      evidenceReferences: ['evidence:demo:authoritative-source'],
+      completedAt: new Date().toISOString(),
+      confidence: 0.9,
+      dataSharingMode: 'structured_only',
+      submissionMethod: 'runtime_session',
+    });
+    return InteractionCompletionReportSchema.parse({
+      ...base,
+      platformAttestation: attestSessionRecord(platformSecret, base),
+    });
+  };
+  const interactionReports = [
+    completionReport(
+      requester.identity.agentId,
+      provider.identity.agentId,
+      'Requested summary was received.',
+    ),
+    completionReport(
+      provider.identity.agentId,
+      requester.identity.agentId,
+      'Evidence-backed summary was delivered.',
+    ),
+  ];
+  const interactionFeedback = (
+    reviewerAgentId: string,
+    subjectAgentId: string,
+    privateComment: string,
+  ) => {
+    const base = InteractionFeedbackSchema.parse({
+      feedbackId: randomUUID(),
+      requestId: randomUUID(),
+      interactionId,
+      reviewerAgentId,
+      subjectAgentId,
+      reviewerAgentVersion: '1.0.0',
+      ratings: {
+        overall_satisfaction: 0.9,
+        outcome_satisfaction: 0.9,
+        communication: 0.85,
+        timeliness: 0.9,
+        scope_adherence: 1,
+        evidence_quality: 0.9,
+        correction_handling: 0.9,
+        reliability: 0.9,
+      },
+      wouldWorkAgain: 'yes',
+      privateComment,
+      evidenceReferences: ['evidence:demo:authoritative-source'],
+      confidence: 0.9,
+      submittedAt: new Date().toISOString(),
+      submissionMethod: 'runtime_session',
+    });
+    return InteractionFeedbackSchema.parse({
+      ...base,
+      platformAttestation: attestSessionRecord(platformSecret, base),
+    });
+  };
+  const interactionFeedbackItems = [
+    interactionFeedback(
+      requester.identity.agentId,
+      provider.identity.agentId,
+      'requester-private-note',
+    ),
+    interactionFeedback(
+      provider.identity.agentId,
+      requester.identity.agentId,
+      'provider-private-note',
+    ),
+  ];
+  const structuredConclusion = buildInteractionConclusion({
+    interaction: { interactionId, termsHash: contractHash, contract },
+    reports: interactionReports,
+    feedback: interactionFeedbackItems,
+  });
+  const contributionMode = () =>
+    [requester.identity.agentId, provider.identity.agentId].every(
+      (agentId) => engine.contributionConsent.get(agentId)?.enabled,
+    )
+      ? ('network_aggregate' as const)
+      : ('local_only' as const);
+  const localEligibility = evaluateLearningEligibility({
+    interactionId,
+    reports: interactionReports,
+    feedback: interactionFeedbackItems,
+    consensus: structuredConclusion.consensus,
+    contributionMode: contributionMode(),
+  });
+  engine.setContributionConsent(requester.identity.agentId, true);
+  const networkEligibility = evaluateLearningEligibility({
+    interactionId,
+    reports: interactionReports,
+    feedback: interactionFeedbackItems,
+    consensus: structuredConclusion.consensus,
+    contributionMode: contributionMode(),
+  });
+  const observations = deriveBehaviouralObservations({
+    subjectAgentId: provider.identity.agentId,
+    reports: interactionReports,
+    reviewerFeedback: interactionFeedbackItems[0]!,
+    conclusion: structuredConclusion,
+  });
+  const weightedProfile = updateContextualBehaviouralProfile({
+    observations,
+    sampleWeight: localEligibility.sampleWeight,
+  });
+  if (
+    !localEligibility.eligible ||
+    localEligibility.contributionMode !== 'local_only' ||
+    networkEligibility.contributionMode !== 'network_aggregate' ||
+    weightedProfile.profile.sampleSize !== 1 ||
+    JSON.stringify(structuredConclusion).includes('private-note')
+  )
+    throw new Error('Structured completion, feedback, or eligibility lifecycle failed');
+  log('9a. Attested bilateral outcomes, concealed comments, and applied weighted local learning');
+
   const tampered = { ...receipt, outcome: 'failure' as const };
   let tamperRejected = false;
   try {
@@ -295,5 +486,17 @@ export async function runDemo(log: (line: string) => void = () => undefined) {
   ) as unknown as Receipt;
   engine.submitReceipt(unilateral);
   log('11. Produced a clearly labelled unilateral receipt');
-  return { engine, learnedRisk, newVersionRisk, forwarding, check, receipt };
+  return {
+    engine,
+    learnedRisk,
+    newVersionRisk,
+    forwarding,
+    check,
+    receipt,
+    initialBrief,
+    structuredConclusion,
+    localEligibility,
+    networkEligibility,
+    weightedProfile,
+  };
 }
