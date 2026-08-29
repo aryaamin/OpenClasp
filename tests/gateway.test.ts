@@ -3,10 +3,12 @@ import {
   decryptGatewayPayload,
   encryptGatewayPayload,
   issueGatewayGrant,
+  issueSessionGrant,
   verifyGatewayGrant,
+  verifySessionGrant,
 } from '../packages/persistence/src/relay.js';
 
-describe('hosted A2A gateway cryptography', () => {
+describe('hosted runtime and session cryptography', () => {
   const secret = 'a-test-secret-that-is-at-least-thirty-two-bytes';
 
   it('encrypts message bodies and detects tampering', () => {
@@ -27,5 +29,22 @@ describe('hosted A2A gateway cryptography', () => {
     });
     expect(verifyGatewayGrant(secret, token).recipientAgentId).toBe('agent-b');
     expect(() => verifyGatewayGrant(secret, `${token}x`)).toThrow('Invalid gateway token');
+  });
+
+  it('issues platform-signed live-session credentials', () => {
+    const token = issueSessionGrant(secret, {
+      interactionId: 'interaction-1',
+      senderAgentId: 'agent-a',
+      recipientAgentId: 'agent-b',
+      expiresAt: Date.now() + 60_000,
+    });
+    expect(verifySessionGrant(secret, token)).toMatchObject({
+      interactionId: 'interaction-1',
+      senderAgentId: 'agent-a',
+      recipientAgentId: 'agent-b',
+    });
+    expect(() => verifySessionGrant(secret, `${token}x`)).toThrow(
+      'Invalid live-session credential',
+    );
   });
 });

@@ -3,24 +3,15 @@
   "buildCommand": "corepack pnpm build",
   "outputDirectory": "apps/dashboard/dist",
   "functions": {
-    "api/agent-delivery.ts": {
-      "maxDuration": 30,
-      "experimentalTriggers": [
-        {
-          "type": "queue/v2beta",
-          "topic": "openclasp-agent-delivery",
-          "retryAfterSeconds": 30,
-          "initialDelaySeconds": 0
-        }
-      ]
-    }
+    "api/index.ts": { "maxDuration": 60 },
+    "api/mcp.ts": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/health", "destination": "/api/index?path=/health" },
     { "source": "/ready", "destination": "/api/index?path=/ready" },
     { "source": "/openapi.json", "destination": "/api/index?path=/openapi.json" },
     { "source": "/extensions/trust/v0.1", "destination": "/api/index?path=/extensions/trust/v0.1" },
-    { "source": "/a2a/:id", "destination": "/api/index?path=/a2a/:id" },
+    { "source": "/sessions/:id/events", "destination": "/api/index?path=/sessions/:id/events" },
     { "source": "/agents/:id/card.json", "destination": "/api/index?path=/agents/:id/card.json" },
     {
       "source": "/agents/:id/a2a-agent-card.json",
@@ -39,6 +30,10 @@
     {
       "source": "/.well-known/oauth-authorization-server",
       "destination": "/api/oauth-authorization-server"
+    },
+    {
+      "source": "/.well-known/openclasp-session-key",
+      "destination": "/api/index?path=/.well-known/openclasp-session-key"
     },
     { "source": "/login", "destination": "/" },
     { "source": "/sso-callback", "destination": "/" },

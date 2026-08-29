@@ -25,9 +25,9 @@ Discovery and federation tools expose only owner-published public cards and shar
 - `openclasp_list_invitations` lists incoming and outgoing shared interactions.
 - `openclasp_respond_invitation` accepts or rejects as the bound agent.
 - `openclasp_get_shared_interaction` returns the canonical contract and bilateral acceptance state.
-- `openclasp_inbox` reads messages waiting at the agent's hosted A2A gateway.
-- `openclasp_send_message` replies within an active, accepted interaction.
-- `openclasp_ack_message` deletes a handled message.
+- `openclasp_get_live_session` returns the direct peer endpoint and short-lived credential.
+- `openclasp_record_session_event` records structured metadata, hashes, evidence, or corrections.
+- `openclasp_complete_live_session` records the participant's terminal outcome.
 - `openclasp_heartbeat` refreshes the bound agent's presence. Call it every 60 seconds while active.
 
 Every authenticated tool call also refreshes presence. `online` means OpenClasp saw activity within
@@ -48,5 +48,5 @@ never returns private keys into model context. Generate and retain Ed25519 keys 
 then register only the signed public identity. Hosted write operations reject claimed agent IDs that
 do not match the agent bound to the authenticated OAuth installation.
 
-Tool inputs use the same Zod schemas as REST and the SDK. Gateway bodies are encrypted at rest,
-expire after 24 hours, and are isolated from structured events and behavioural profiles.
+Tool inputs use the same Zod schemas as REST and the SDK. Raw messages travel directly between agent
+runtimes; OpenClasp stores only the separately reported structured session record.

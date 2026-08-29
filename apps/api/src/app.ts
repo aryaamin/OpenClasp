@@ -10,6 +10,7 @@ import {
   InteractionEventSchema,
   ReceiptSchema,
   FederatedInteractionSchema,
+  LiveSessionEventSchema,
 } from '../../../packages/protocol/src/index.js';
 import {
   FixtureFactCheckProvider,
@@ -44,8 +45,9 @@ type DashboardRepository = Pick<
       | 'listFederatedInteractions'
       | 'getFederatedInteraction'
       | 'respondToFederatedInteraction'
-      | 'verifyGatewayToken'
-      | 'enqueueGatewayMessage'
+      | 'getLiveSession'
+      | 'recordLiveSessionEvent'
+      | 'getRuntimeVerificationKey'
       | 'registerAgentRuntime'
       | 'disableAgentRuntime'
     >
@@ -117,45 +119,31 @@ export function buildApi(
     router.get('/health', async () => ({ status: 'ok' }));
     router.get('/ready', async () => ({ status: 'ready' }));
     router.get('/openapi.json', async () => app.swagger());
+    router.get('/.well-known/openclasp-session-key', async () => {
+      if (!repository?.getRuntimeVerificationKey)
+        throw new Error('Runtime verification is not configured');
+      return repository.getRuntimeVerificationKey();
+    });
     router.get('/extensions/trust/v0.1', async () => ({
       uri: 'https://openclasp.vercel.app/extensions/trust/v0.1',
       name: 'OpenClasp A2A assurance extension',
       version: '0.1',
       required: false,
-      transportsMessages: true,
+      transportsMessages: false,
       documentation: 'https://github.com/aryaamin/OpenClasp/blob/main/docs/A2A_EXTENSION.md',
     }));
-    router.post('/a2a/:id', async (request, reply) => {
-      if (!repository?.verifyGatewayToken || !repository.enqueueGatewayMessage)
-        throw new Error('Hosted A2A gateway is not configured');
+    router.post('/sessions/:id/events', async (request, reply) => {
+      if (!repository?.recordLiveSessionEvent)
+        throw new Error('Live-session reporting is not configured');
       const authorization = request.headers.authorization;
       if (!authorization?.startsWith('Bearer ')) {
         reply.status(401);
-        return { error: 'gateway_token_required' };
+        return { error: 'session_credential_required' };
       }
-      const grant = repository.verifyGatewayToken(authorization.slice(7));
-      const recipientAgentId = (request.params as { id: string }).id;
-      if (grant.recipientAgentId !== recipientAgentId) {
-        reply.status(403);
-        return { error: 'gateway_token_recipient_mismatch' };
-      }
-      const body = z
-        .object({
-          jsonrpc: z.literal('2.0').default('2.0'),
-          id: z.union([z.string().min(1).max(200), z.number().finite()]),
-          method: z.literal('message/send'),
-          params: z.record(z.string(), z.unknown()),
-        })
-        .parse(request.body);
-      const accepted = await repository.enqueueGatewayMessage({
-        interactionId: grant.interactionId,
-        senderAgentId: grant.senderAgentId,
-        recipientAgentId: grant.recipientAgentId,
-        payload: body,
-        contentType: 'application/json',
-        idempotencyKey: `a2a:${grant.interactionId}:${body.id}`,
-      });
-      return { jsonrpc: '2.0', id: body.id, result: accepted };
+      const event = LiveSessionEventSchema.parse(request.body);
+      if (event.interactionId !== (request.params as { id: string }).id)
+        throw new Error('Interaction path does not match the event');
+      return repository.recordLiveSessionEvent(authorization.slice(7), event);
     });
     router.get('/agents/:id/card.json', async (request) => {
       if (!repository) throw new Error('Hosted persistence is not configured');
@@ -187,6 +175,7 @@ export function buildApi(
         publications: [],
         interactions: [],
         federatedInteractions: [],
+        liveSessions: [],
         events: [...engine.events.values()],
         conflicts: [...engine.conflicts.values()],
         receipts: [...engine.receipts.values()],
@@ -210,7 +199,7 @@ export function buildApi(
           contributionEnabled: false,
           retentionDays: 30,
           evidenceSharing: 'ask',
-          rawConversationsStored: true,
+          rawConversationsStored: false,
         };
       return repository.getSettings(owner);
     });
@@ -316,7 +305,7 @@ export function buildApi(
       if (!current) throw new Error('Owned agent not found');
       const agent: AgentProfile = {
         ...current,
-        transport: 'openclasp_gateway',
+        transport: 'direct_a2a',
         description: current.description ?? '',
         agentVersion: current.agentVersion ?? '1.0.0',
         autoPublish: value.autoPublish,
@@ -400,6 +389,13 @@ export function buildApi(
       );
       if (!interaction) throw new Error('Interaction not found');
       return interaction;
+    });
+    router.get('/v0.1/federated-interactions/:id/session', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getLiveSession || !owner)
+        throw new Error('Live sessions are not configured');
+      const value = z.object({ agentId: z.string().min(1) }).parse(request.query);
+      return repository.getLiveSession(owner, (request.params as { id: string }).id, value.agentId);
     });
     router.post('/v0.1/federated-interactions', async (request) => {
       const owner = operatorId(request);

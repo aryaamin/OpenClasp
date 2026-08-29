@@ -11,7 +11,7 @@ describe('HTTP API', () => {
     });
     expect(
       (await app.inject({ method: 'GET', url: '/extensions/trust/v0.1' })).json(),
-    ).toMatchObject({ version: '0.1', transportsMessages: true });
+    ).toMatchObject({ version: '0.1', transportsMessages: false });
     const specification = (await app.inject({ method: 'GET', url: '/openapi.json' })).json();
     expect(specification.info.title).toBe('OpenClasp API');
     expect(specification.paths).toHaveProperty('/v0.1/risk/assess');
@@ -31,6 +31,7 @@ describe('HTTP API', () => {
           publications: [],
           interactions: [],
           federatedInteractions: [],
+          liveSessions: [],
           events: [],
           conflicts: [],
           receipts: [],
@@ -45,12 +46,12 @@ describe('HTTP API', () => {
           contributionEnabled: false,
           retentionDays: 30,
           evidenceSharing: 'ask' as const,
-          rawConversationsStored: true as const,
+          rawConversationsStored: false as const,
         };
       },
       saveSettings: async (operatorId: string, value: any) => {
         calls.push(`save:${operatorId}`);
-        return { ...value, rawConversationsStored: true as const };
+        return { ...value, rawConversationsStored: false as const };
       },
       upsert: async () => undefined,
       list: async () => [],
@@ -63,12 +64,10 @@ describe('HTTP API', () => {
         return {
           agentId,
           endpoint,
+          a2aEndpoint: endpoint,
           status: 'verified' as const,
           verifiedAt: new Date().toISOString(),
-          signingSecret: 'shown-once',
-          secretShownOnce: true,
-          queuedMessages: 0,
-          queueFailures: 0,
+          verificationKey: 'public-key',
         };
       },
       disableAgentRuntime: async (operatorId: string, agentId: string) => {
@@ -179,7 +178,7 @@ describe('HTTP API', () => {
     });
     expect(a2aCard.statusCode).toBe(200);
     expect(a2aCard.json().supportedInterfaces[0]).toMatchObject({
-      url: 'https://localhost:80/a2a/agent-one',
+      url: 'https://agent.example/a2a',
       protocolVersion: '1.0',
     });
     const automation = await app.inject({
@@ -201,8 +200,8 @@ describe('HTTP API', () => {
     await app.close();
   });
 
-  it('accepts scoped A2A JSON-RPC delivery at the hosted endpoint', async () => {
-    const queued: any[] = [];
+  it('accepts only structured live-session events at the reporting endpoint', async () => {
+    const events: any[] = [];
     const repository = {
       dashboard: async () => ({}) as any,
       getSettings: async () => ({}) as any,
@@ -213,45 +212,64 @@ describe('HTTP API', () => {
       unpublishAgent: async () => true,
       getPublishedAgent: async () => undefined,
       searchPublishedAgents: async () => [],
-      verifyGatewayToken: () => ({
-        interactionId: 'interaction-1',
-        senderAgentId: 'agent-a',
-        recipientAgentId: 'agent-b',
-        expiresAt: Date.now() + 60_000,
-      }),
-      enqueueGatewayMessage: async (value: any) => {
-        queued.push(value);
+      recordLiveSessionEvent: async (token: string, value: any) => {
+        events.push({ token, value });
         return {
-          accepted: true,
+          recorded: true,
           deduplicated: false,
-          messageId: 'message-1',
-          runtimeDispatchQueued: false,
-          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          eventId: value.eventId,
+          attestation: {
+            algorithm: 'Ed25519' as const,
+            keyId: 'openclasp:test',
+            value: 'signature',
+            digest: 'digest',
+          },
         };
       },
     };
     const app = buildApi(undefined, undefined, repository);
     await app.ready();
-    expect((await app.inject({ method: 'POST', url: '/a2a/agent-b' })).statusCode).toBe(401);
+    const interactionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    expect(
+      (await app.inject({ method: 'POST', url: `/sessions/${interactionId}/events` })).statusCode,
+    ).toBe(401);
     const response = await app.inject({
       method: 'POST',
-      url: '/a2a/agent-b',
-      headers: { authorization: 'Bearer scoped-token' },
+      url: `/sessions/${interactionId}/events`,
+      headers: { authorization: 'Bearer live-session-token' },
       payload: {
-        jsonrpc: '2.0',
-        id: 'request-1',
-        method: 'message/send',
-        params: { message: { role: 'user', parts: [{ kind: 'text', text: 'hello' }] } },
+        eventId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        interactionId,
+        agentId: 'agent-a',
+        sequence: 1,
+        type: 'message_sent',
+        occurredAt: new Date().toISOString(),
+        messageHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        evidenceReferences: [],
+        details: {},
       },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ jsonrpc: '2.0', id: 'request-1' });
-    expect(queued[0]).toMatchObject({
-      interactionId: 'interaction-1',
-      senderAgentId: 'agent-a',
-      recipientAgentId: 'agent-b',
-      idempotencyKey: 'a2a:interaction-1:request-1',
+    expect(events[0]).toMatchObject({
+      token: 'live-session-token',
+      value: { interactionId, agentId: 'agent-a', type: 'message_sent' },
     });
+    const rawMessageAttempt = await app.inject({
+      method: 'POST',
+      url: `/sessions/${interactionId}/events`,
+      headers: { authorization: 'Bearer live-session-token' },
+      payload: {
+        eventId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        interactionId,
+        agentId: 'agent-a',
+        sequence: 2,
+        type: 'message_sent',
+        occurredAt: new Date().toISOString(),
+        details: { message: 'raw conversation text' },
+      },
+    });
+    expect(rawMessageAttempt.statusCode).toBe(400);
+    expect(events).toHaveLength(1);
     await app.close();
   });
 });

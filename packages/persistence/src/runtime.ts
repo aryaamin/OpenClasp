@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
@@ -102,32 +101,4 @@ export async function postRuntimeJson(
     request.on('error', reject);
     request.end(encoded);
   });
-}
-
-export function runtimeDeliverySignature(
-  secret: string,
-  deliveryId: string,
-  timestamp: string,
-  body: string,
-) {
-  return createHmac('sha256', secret)
-    .update(`${timestamp}.${deliveryId}.${body}`)
-    .digest('base64url');
-}
-
-export function verifyRuntimeDeliverySignature(
-  secret: string,
-  deliveryId: string,
-  timestamp: string,
-  body: string,
-  signature: string,
-  now = Date.now(),
-) {
-  if (Math.abs(now - Date.parse(timestamp)) > 5 * 60_000) return false;
-  const expected = Buffer.from(
-    runtimeDeliverySignature(secret, deliveryId, timestamp, body),
-    'base64url',
-  );
-  const actual = Buffer.from(signature.replace(/^v1=/, ''), 'base64url');
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }

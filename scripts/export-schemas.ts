@@ -11,10 +11,13 @@ import {
   InteractionContractSchema,
   InteractionEventSchema,
   FederatedInteractionSchema,
+  LiveSessionAcceptanceSchema,
+  LiveSessionActivationSchema,
+  LiveSessionEventSchema,
+  LiveSessionOfferSchema,
   PublicAgentCardSchema,
   ReceiptSchema,
   RiskDecisionSchema,
-  RuntimeDeliverySchema,
   TrustEnvelopeSchema,
 } from '@openclasp/protocol';
 
@@ -31,9 +34,12 @@ const schemas = {
   risk_decision: RiskDecisionSchema,
   agent_transport: AgentTransportSchema,
   agent_presence: AgentPresenceSchema,
-  runtime_delivery: RuntimeDeliverySchema,
   public_agent_card: PublicAgentCardSchema,
   federated_interaction: FederatedInteractionSchema,
+  live_session_offer: LiveSessionOfferSchema,
+  live_session_acceptance: LiveSessionAcceptanceSchema,
+  live_session_activation: LiveSessionActivationSchema,
+  live_session_event: LiveSessionEventSchema,
 };
 await mkdir('schemas/v0.1', { recursive: true });
 await Promise.all(

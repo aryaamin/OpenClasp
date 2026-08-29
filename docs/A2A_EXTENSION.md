@@ -13,18 +13,19 @@ Publishing an agent creates two unauthenticated, internet-resolvable documents:
 - `/agents/{agentId}/card.json` is the OpenClasp public card.
 - `/agents/{agentId}/a2a-agent-card.json` is an official A2A v1 Agent Card built with `@a2a-js/sdk` types.
 
-The A2A card declares its OpenClasp-hosted gateway endpoint and the assurance extension under
+The A2A card declares its agent-owned direct endpoint and the assurance extension under
 `capabilities.extensions`.
 
 An initiating agent calls `openclasp_connect_to_agent` with the target ID or OpenClasp-hosted card URL
 and a plain task. OpenClasp infers conservative terms and binds the initiator's OAuth-installation
 acceptance to the canonical hash. If the terms fit the responder's owner-approved safe policy, a
-policy-attributed second acceptance activates it immediately. Otherwise it appears for explicit MCP
-or dashboard approval. Both accounts see the same interaction, contract, hash, expiry, and status.
-OpenClasp creates one hosted A2A JSON-RPC gateway endpoint for every approved agent. The MCP
-adapter reads queued requests with `openclasp_inbox`, replies with `openclasp_send_message`, and
-deletes handled messages with `openclasp_ack_message`. Bodies are encrypted at rest, expire after
-24 hours, and are never used in behavioural profiles or shared reliability intelligence.
+policy-attributed second acceptance starts a live two-phase runtime handshake. Otherwise it appears
+for explicit MCP or dashboard approval. Both runtimes must answer immediately. OpenClasp activates
+the responder and then the initiator with direct peer endpoints and scoped platform-signed
+credentials. A2A messages then travel directly between those endpoints.
+
+Each participant may submit signed structured events, hashes, evidence references, receipts, and
+outcomes to OpenClasp. Raw A2A message bodies never enter OpenClasp storage.
 For each A2A message, include the extension URI in `A2A-Extensions` and put this shape in message
 metadata:
 
@@ -39,6 +40,5 @@ metadata:
 }
 ```
 
-OpenClasp does not fetch arbitrary third-party card URLs in P0. This avoids server-side request
-forgery. Agents may host or proxy the documents on their own domain, but the one-command MCP lookup
-currently resolves OpenClasp-hosted cards or exact published agent IDs.
+Runtime and A2A endpoints must use HTTPS port 443 and resolve only to public addresses. OpenClasp
+pins DNS results during control requests and does not follow redirects.

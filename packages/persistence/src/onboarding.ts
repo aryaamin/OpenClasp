@@ -14,7 +14,7 @@ export type AgentProfile = {
   framework: string;
   agentVersion: string;
   a2aEndpoint?: string;
-  transport?: 'openclasp_gateway';
+  transport?: 'direct_a2a' | 'openclasp_gateway';
   autoPublish: boolean;
   autoAcceptPolicy: 'off' | 'safe_matching';
   autoAcceptTaskCategories: string[];
@@ -94,7 +94,7 @@ export async function getOnboardingState(
     projects: values<Project>('project'),
     agentProfiles: values<AgentProfile>('agent_profile').map((agent) => ({
       ...agent,
-      transport: 'openclasp_gateway',
+      transport: agent.a2aEndpoint ? 'direct_a2a' : (agent.transport ?? 'direct_a2a'),
       description: agent.description ?? '',
       agentVersion: agent.agentVersion ?? '1.0.0',
       autoPublish: agent.autoPublish ?? false,
@@ -223,7 +223,7 @@ export async function approveAgentSetup(
       description: request.description ?? '',
       framework: request.framework,
       agentVersion: request.agentVersion,
-      transport: 'openclasp_gateway',
+      transport: 'direct_a2a',
       autoPublish: request.autoPublish ?? false,
       autoAcceptPolicy: request.autoAcceptPolicy ?? 'off',
       autoAcceptTaskCategories: request.autoAcceptTaskCategories ?? [],
@@ -295,7 +295,7 @@ export async function updateAgentProfile(
   if (binding.status !== 'connected') throw new Error('This MCP installation is not connected');
   const agent: AgentProfile = {
     ...binding.agent,
-    transport: 'openclasp_gateway',
+    transport: 'direct_a2a',
     ...(patch.name?.trim() ? { name: patch.name.trim() } : {}),
     ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
     ...(patch.framework?.trim() ? { framework: patch.framework.trim() } : {}),

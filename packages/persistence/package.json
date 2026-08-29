@@ -6,7 +6,6 @@
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@openclasp/core": "workspace:*",
-    "@openclasp/protocol": "workspace:*",
-    "@vercel/queue": "^0.5.1"
+    "@openclasp/protocol": "workspace:*"
   }
 }

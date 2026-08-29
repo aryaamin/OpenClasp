@@ -688,20 +688,6 @@ select {
 .runtimeMissing {
   color: #f1c476;
 }
-.runtimeSecret {
-  display: grid !important;
-  justify-content: stretch !important;
-  gap: 7px;
-  padding: 10px;
-  border: 1px solid #526b3d;
-  border-radius: 4px;
-  background: #172015;
-}
-.runtimeSecret code {
-  overflow-wrap: anywhere;
-  color: #d8fbb4;
-  font-size: 9px;
-}
 .automationForm label {
   display: grid;
   gap: 6px;

@@ -1,27 +1,32 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
-import { send } from '@vercel/queue';
 import { randomBytes } from 'node:crypto';
 import {
   DEFAULT_EXTENSION_URI,
   FederatedInteractionSchema,
+  LiveSessionAcceptanceSchema,
+  LiveSessionActivationSchema,
+  LiveSessionEventSchema,
+  LiveSessionOfferSchema,
   PublicAgentCardSchema,
   canonicalHash,
   type FederatedInteraction,
   type AgentPresence,
+  type LiveSessionActivation,
+  type LiveSessionEvent,
+  type LiveSessionInsight,
   type PublicAgentCard,
-  RuntimeDeliverySchema,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
 import {
-  decryptGatewayPayload,
   encryptGatewayPayload,
-  issueGatewayGrant,
-  verifyGatewayGrant,
-  type GatewayGrant,
+  attestSessionRecord,
+  getSessionKeyId,
+  getSessionVerificationKey,
+  issueSessionGrant,
+  signSessionControl,
+  verifySessionGrant,
 } from './relay.js';
-import { postRuntimeJson, runtimeDeliverySignature } from './runtime.js';
-
-const RUNTIME_DELIVERY_TOPIC = 'openclasp-agent-delivery';
+import { postRuntimeJson, resolvePublicRuntimeEndpoint } from './runtime.js';
 
 export type HostedRecordKind =
   | 'agent'
@@ -44,26 +49,24 @@ export type HostedRecordKind =
 
 export type { PublicAgentCard, FederatedInteraction } from '../../protocol/src/index.js';
 
+type ContextualProfile = {
+  recordId: string;
+  agentVersion: string;
+  sampleSize: number;
+  updatedAt: string;
+  completion: number;
+  acceptance: number;
+  specification: number;
+  deadline: number;
+  communication: number;
+  evidence: number;
+  scope: number;
+  disputes: number;
+};
+
 function normalizePublicAgentCard(value: unknown): PublicAgentCard {
   const current = PublicAgentCardSchema.safeParse(value);
-  if (current.success) {
-    const card = current.data;
-    const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
-      /\/$/,
-      '',
-    );
-    return PublicAgentCardSchema.parse({
-      ...card,
-      transports: [
-        {
-          protocol: 'A2A/1.0',
-          protocolBinding: 'JSONRPC',
-          endpoint: `${baseUrl}/a2a/${encodeURIComponent(card.agentId)}`,
-          managedBy: 'openclasp',
-        },
-      ],
-    });
-  }
+  if (current.success) return current.data;
   const legacy = value as Record<string, unknown>;
   const agentId = String(legacy.agentId ?? '');
   const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
@@ -80,14 +83,17 @@ function normalizePublicAgentCard(value: unknown): PublicAgentCard {
     capabilities: legacy.capabilities,
     limitations: legacy.limitations,
     assurance: legacy.assurance,
-    transports: [
-      {
-        protocol: 'A2A/1.0',
-        protocolBinding: 'JSONRPC',
-        endpoint: `${baseUrl}/a2a/${encodeURIComponent(agentId)}`,
-        managedBy: 'openclasp',
-      },
-    ],
+    transports:
+      typeof legacy.a2aEndpoint === 'string'
+        ? [
+            {
+              protocol: 'A2A/1.0',
+              protocolBinding: 'JSONRPC',
+              endpoint: legacy.a2aEndpoint,
+              managedBy: 'agent',
+            },
+          ]
+        : [],
     cardUrl: `${baseUrl}/agents/${encodeURIComponent(agentId)}/card.json`,
     a2aAgentCardUrl: `${baseUrl}/agents/${encodeURIComponent(agentId)}/a2a-agent-card.json`,
     extensionUri: DEFAULT_EXTENSION_URI,
@@ -113,14 +119,16 @@ export function buildPublicAgentCard(
     capabilities: agent.capabilities,
     limitations: agent.limitations,
     assurance: 'oauth_authenticated',
-    transports: [
-      {
-        protocol: 'A2A/1.0',
-        protocolBinding: 'JSONRPC',
-        endpoint: `${root}/a2a/${encodeURIComponent(agent.agentId)}`,
-        managedBy: 'openclasp',
-      },
-    ],
+    transports: agent.a2aEndpoint
+      ? [
+          {
+            protocol: 'A2A/1.0',
+            protocolBinding: 'JSONRPC',
+            endpoint: agent.a2aEndpoint,
+            managedBy: 'agent',
+          },
+        ]
+      : [],
     cardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/card.json`,
     a2aAgentCardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/a2a-agent-card.json`,
     extensionUri: DEFAULT_EXTENSION_URI,
@@ -182,7 +190,7 @@ export type AccountSettings = {
   contributionEnabled: boolean;
   retentionDays: number;
   evidenceSharing: 'never' | 'ask' | 'contract_only';
-  rawConversationsStored: true;
+  rawConversationsStored: false;
 };
 
 const defaults: AccountSettings = {
@@ -190,7 +198,7 @@ const defaults: AccountSettings = {
   contributionEnabled: false,
   retentionDays: 30,
   evidenceSharing: 'ask',
-  rawConversationsStored: true,
+  rawConversationsStored: false,
 };
 
 export class HostedRepository {
@@ -267,32 +275,6 @@ export class HostedRepository {
         ON openclasp_federated_interactions(initiator_operator_id, responder_operator_id, updated_at DESC)
       `;
       await this.sql`
-        CREATE TABLE IF NOT EXISTS openclasp_gateway_messages (
-          message_id TEXT PRIMARY KEY,
-          idempotency_key TEXT UNIQUE,
-          interaction_id TEXT NOT NULL,
-          sender_agent_id TEXT NOT NULL,
-          recipient_agent_id TEXT NOT NULL,
-          ciphertext TEXT NOT NULL,
-          iv TEXT NOT NULL,
-          auth_tag TEXT NOT NULL,
-          content_type TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          expires_at TIMESTAMPTZ NOT NULL,
-          delivered_at TIMESTAMPTZ
-        )
-      `;
-      await this.sql`
-        CREATE INDEX IF NOT EXISTS openclasp_gateway_messages_inbox
-        ON openclasp_gateway_messages(recipient_agent_id, created_at ASC)
-      `;
-      await this.sql`
-        ALTER TABLE openclasp_gateway_messages
-        ADD COLUMN IF NOT EXISTS runtime_delivered_at TIMESTAMPTZ,
-        ADD COLUMN IF NOT EXISTS runtime_delivery_attempts INTEGER NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS runtime_delivery_error TEXT
-      `;
-      await this.sql`
         CREATE TABLE IF NOT EXISTS openclasp_agent_runtimes (
           agent_id TEXT PRIMARY KEY,
           operator_id TEXT NOT NULL,
@@ -308,141 +290,49 @@ export class HostedRepository {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `;
+      await this.sql`
+        ALTER TABLE openclasp_agent_runtimes
+        ADD COLUMN IF NOT EXISTS a2a_endpoint TEXT,
+        ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ
+      `;
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_live_sessions (
+          interaction_id TEXT PRIMARY KEY,
+          initiator_agent_id TEXT NOT NULL,
+          responder_agent_id TEXT NOT NULL,
+          initiator_session_id TEXT NOT NULL,
+          responder_session_id TEXT NOT NULL,
+          initiator_endpoint TEXT NOT NULL,
+          responder_endpoint TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('preparing', 'active', 'completed', 'failed')),
+          expires_at TIMESTAMPTZ NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          activated_at TIMESTAMPTZ,
+          completed_at TIMESTAMPTZ,
+          last_error TEXT
+        )
+      `;
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_live_session_events (
+          interaction_id TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          sequence INTEGER NOT NULL,
+          event JSONB NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (interaction_id, event_id),
+          UNIQUE (interaction_id, agent_id, sequence)
+        )
+      `;
     })());
   }
 
-  issueGatewayToken(interaction: FederatedInteraction): string {
-    return issueGatewayGrant(this.gatewaySecret(), {
-      interactionId: interaction.interactionId,
-      senderAgentId: interaction.initiatorAgentId,
-      recipientAgentId: interaction.responderAgentId,
-      expiresAt: Math.min(Date.parse(interaction.expiresAt), Date.now() + 60 * 60_000),
-    });
-  }
-
-  verifyGatewayToken(token: string): GatewayGrant {
-    return verifyGatewayGrant(this.gatewaySecret(), token);
-  }
-
-  async enqueueGatewayMessage(input: {
-    interactionId: string;
-    senderAgentId: string;
-    recipientAgentId: string;
-    payload: unknown;
-    contentType?: string;
-    idempotencyKey?: string;
-  }) {
-    await this.ensureSchema();
-    const values = await this.sql`
-      SELECT payload FROM openclasp_federated_interactions
-      WHERE interaction_id = ${input.interactionId} AND status = 'active'
-    `;
-    const interaction = values[0]?.payload
-      ? FederatedInteractionSchema.parse(values[0].payload)
-      : undefined;
-    if (!interaction) throw new Error('An active OpenClasp interaction is required');
-    const parties = new Set([interaction.initiatorAgentId, interaction.responderAgentId]);
-    if (
-      !parties.has(input.senderAgentId) ||
-      !parties.has(input.recipientAgentId) ||
-      input.senderAgentId === input.recipientAgentId
-    )
-      throw new Error('Gateway participants do not match the interaction');
-    const encrypted = encryptGatewayPayload(this.gatewaySecret(), input.payload);
-    const messageId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
-    const rows = await this.sql`
-      INSERT INTO openclasp_gateway_messages(
-        message_id, idempotency_key, interaction_id, sender_agent_id, recipient_agent_id,
-        ciphertext, iv, auth_tag, content_type, expires_at
-      ) SELECT
-        ${messageId}, ${input.idempotencyKey ?? null}, ${input.interactionId},
-        ${input.senderAgentId}, ${input.recipientAgentId}, ${encrypted.ciphertext},
-        ${encrypted.iv}, ${encrypted.authTag}, ${input.contentType ?? 'application/json'}, ${expiresAt}
-      WHERE (
-        SELECT COUNT(*) FROM openclasp_gateway_messages
-        WHERE interaction_id = ${input.interactionId} AND created_at >= NOW() - INTERVAL '24 hours'
-      ) < 100
-      ON CONFLICT (idempotency_key) DO NOTHING
-      RETURNING message_id
-    `;
-    let storedMessageId = rows.length ? String(rows[0]?.message_id) : undefined;
-    if (!storedMessageId && input.idempotencyKey) {
-      const existing = await this.sql`
-        SELECT message_id FROM openclasp_gateway_messages
-        WHERE idempotency_key = ${input.idempotencyKey}
-      `;
-      storedMessageId = existing[0]?.message_id ? String(existing[0].message_id) : undefined;
-    }
-    if (!storedMessageId)
-      throw new Error('Interaction message limit reached (100 messages per 24 hours)');
-    const runtimes = await this.sql`
-      SELECT status FROM openclasp_agent_runtimes
-      WHERE agent_id = ${input.recipientAgentId} AND status = 'verified'
-    `;
-    if (storedMessageId && runtimes.length)
-      await send(
-        RUNTIME_DELIVERY_TOPIC,
-        { messageId: storedMessageId },
-        { idempotencyKey: `delivery:${storedMessageId}`, retentionSeconds: 86_400 },
-      );
+  getRuntimeVerificationKey() {
     return {
-      accepted: true,
-      deduplicated: rows.length === 0,
-      messageId: storedMessageId,
-      runtimeDispatchQueued: Boolean(storedMessageId && runtimes.length),
-      expiresAt,
+      algorithm: 'Ed25519' as const,
+      keyId: getSessionKeyId(this.gatewaySecret()),
+      publicKey: getSessionVerificationKey(this.gatewaySecret()),
     };
-  }
-
-  async listGatewayMessages(operatorId: string, agentId: string, limit = 20) {
-    await this.ensureSchema();
-    const owned = await this.sql`
-      SELECT 1 FROM openclasp_records
-      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
-    `;
-    if (!owned.length) throw new Error('Agent is not owned by this account');
-    await this.sql`DELETE FROM openclasp_gateway_messages WHERE expires_at <= NOW()`;
-    const rows = await this.sql`
-      UPDATE openclasp_gateway_messages SET delivered_at = COALESCE(delivered_at, NOW())
-      WHERE message_id IN (
-        SELECT message_id FROM openclasp_gateway_messages
-        WHERE recipient_agent_id = ${agentId} AND expires_at > NOW()
-        ORDER BY created_at ASC LIMIT ${Math.min(Math.max(limit, 1), 50)}
-      )
-      RETURNING message_id, interaction_id, sender_agent_id, recipient_agent_id,
-        ciphertext, iv, auth_tag, content_type, created_at, expires_at
-    `;
-    return rows.map((row) => ({
-      messageId: String(row.message_id),
-      interactionId: String(row.interaction_id),
-      senderAgentId: String(row.sender_agent_id),
-      recipientAgentId: String(row.recipient_agent_id),
-      contentType: String(row.content_type),
-      createdAt: new Date(String(row.created_at)).toISOString(),
-      expiresAt: new Date(String(row.expires_at)).toISOString(),
-      payload: decryptGatewayPayload(this.gatewaySecret(), {
-        ciphertext: String(row.ciphertext),
-        iv: String(row.iv),
-        authTag: String(row.auth_tag),
-      }),
-    }));
-  }
-
-  async acknowledgeGatewayMessage(operatorId: string, agentId: string, messageId: string) {
-    await this.ensureSchema();
-    const rows = await this.sql`
-      DELETE FROM openclasp_gateway_messages message
-      USING openclasp_records agent
-      WHERE message.message_id = ${messageId}
-        AND message.recipient_agent_id = ${agentId}
-        AND agent.operator_id = ${operatorId}
-        AND agent.kind = 'agent_profile'
-        AND agent.record_id = ${agentId}
-      RETURNING message.message_id
-    `;
-    if (!rows.length) throw new Error('Gateway message not found');
-    return { acknowledged: true, messageId };
   }
 
   async upsert(
@@ -480,9 +370,29 @@ export class HostedRepository {
 
   async dashboard(operatorId: string) {
     const rows = await this.list(operatorId);
-    const [federatedInteractions, runtimes] = await Promise.all([
+    const [federatedInteractions, runtimes, liveSessionRows, liveEventRows] = await Promise.all([
       this.listFederatedInteractions(operatorId),
       this.listAgentRuntimes(operatorId),
+      this.sql`
+        SELECT session.interaction_id, session.initiator_agent_id, session.responder_agent_id,
+          session.status, session.created_at, session.activated_at, session.completed_at,
+          session.expires_at, session.last_error
+        FROM openclasp_live_sessions session
+        INNER JOIN openclasp_federated_interactions interaction
+          ON interaction.interaction_id = session.interaction_id
+        WHERE interaction.initiator_operator_id = ${operatorId}
+           OR interaction.responder_operator_id = ${operatorId}
+        ORDER BY session.created_at DESC
+      `,
+      this.sql`
+        SELECT events.event
+        FROM openclasp_live_session_events events
+        INNER JOIN openclasp_federated_interactions interaction
+          ON interaction.interaction_id = events.interaction_id
+        WHERE interaction.initiator_operator_id = ${operatorId}
+           OR interaction.responder_operator_id = ${operatorId}
+        ORDER BY events.created_at ASC
+      `,
     ]);
     const ofKind = (kind: HostedRecordKind) =>
       rows.filter((row) => row.kind === kind).map((row) => row.payload);
@@ -501,11 +411,26 @@ export class HostedRepository {
       setupRequests: ofKind('setup_request'),
       publications: ofKind('publication'),
       interactions: ofKind('interaction'),
-      events: ofKind('event'),
+      events: [...ofKind('event'), ...liveEventRows.map((row) => row.event)],
       conflicts: ofKind('conflict'),
       receipts: ofKind('receipt'),
       profiles: ofKind('profile'),
       federatedInteractions,
+      liveSessions: liveSessionRows.map((row) => ({
+        interactionId: String(row.interaction_id),
+        initiatorAgentId: String(row.initiator_agent_id),
+        responderAgentId: String(row.responder_agent_id),
+        status: String(row.status),
+        createdAt: new Date(String(row.created_at)).toISOString(),
+        ...(row.activated_at
+          ? { activatedAt: new Date(String(row.activated_at)).toISOString() }
+          : {}),
+        ...(row.completed_at
+          ? { completedAt: new Date(String(row.completed_at)).toISOString() }
+          : {}),
+        expiresAt: new Date(String(row.expires_at)).toISOString(),
+        ...(row.last_error ? { lastError: String(row.last_error) } : {}),
+      })),
       runtimes,
     };
   }
@@ -513,6 +438,23 @@ export class HostedRepository {
   async publishAgent(operatorId: string, card: PublicAgentCard): Promise<PublicAgentCard> {
     await this.ensureSchema();
     card = PublicAgentCardSchema.parse(card);
+    const runtimes = await this.sql`
+      SELECT a2a_endpoint, endpoint FROM openclasp_agent_runtimes
+      WHERE operator_id = ${operatorId} AND agent_id = ${card.agentId} AND status = 'verified'
+    `;
+    if (runtimes[0]) {
+      card = PublicAgentCardSchema.parse({
+        ...card,
+        transports: [
+          {
+            protocol: 'A2A/1.0',
+            protocolBinding: 'JSONRPC',
+            endpoint: String(runtimes[0].a2a_endpoint ?? runtimes[0].endpoint),
+            managedBy: 'agent',
+          },
+        ],
+      });
+    }
     const encoded = JSON.stringify(card);
     const rows = await this.sql`
       INSERT INTO openclasp_public_agents(agent_id, operator_id, card, published_at, updated_at)
@@ -541,10 +483,26 @@ export class HostedRepository {
   async getPublishedAgent(agentId: string): Promise<PublicAgentCard | undefined> {
     await this.ensureSchema();
     const rows = await this.sql`
-      SELECT card FROM openclasp_public_agents WHERE agent_id = ${agentId}
+      SELECT agents.card, runtime.a2a_endpoint, runtime.endpoint
+      FROM openclasp_public_agents agents
+      LEFT JOIN openclasp_agent_runtimes runtime
+        ON runtime.agent_id = agents.agent_id AND runtime.status = 'verified'
+      WHERE agents.agent_id = ${agentId}
     `;
     if (!rows[0]?.card) return undefined;
-    const card = normalizePublicAgentCard(rows[0].card);
+    let card = normalizePublicAgentCard(rows[0].card);
+    if (rows[0].a2a_endpoint || rows[0].endpoint)
+      card = PublicAgentCardSchema.parse({
+        ...card,
+        transports: [
+          {
+            protocol: 'A2A/1.0',
+            protocolBinding: 'JSONRPC',
+            endpoint: String(rows[0].a2a_endpoint ?? rows[0].endpoint),
+            managedBy: 'agent',
+          },
+        ],
+      });
     return { ...card, presence: await this.getAgentPresence(agentId) };
   }
 
@@ -555,7 +513,11 @@ export class HostedRepository {
   }): Promise<PublicAgentCard[]> {
     await this.ensureSchema();
     const rows = await this.sql`
-      SELECT card FROM openclasp_public_agents ORDER BY updated_at DESC LIMIT 100
+      SELECT agents.card, runtime.a2a_endpoint, runtime.endpoint
+      FROM openclasp_public_agents agents
+      LEFT JOIN openclasp_agent_runtimes runtime
+        ON runtime.agent_id = agents.agent_id AND runtime.status = 'verified'
+      ORDER BY agents.updated_at DESC LIMIT 100
     `;
     const query = input.query?.trim().toLowerCase();
     const capability = input.capability?.trim().toLowerCase();
@@ -570,7 +532,19 @@ export class HostedRepository {
     );
     return rows
       .map((row) => {
-        const card = normalizePublicAgentCard(row.card);
+        let card = normalizePublicAgentCard(row.card);
+        if (row.a2a_endpoint || row.endpoint)
+          card = PublicAgentCardSchema.parse({
+            ...card,
+            transports: [
+              {
+                protocol: 'A2A/1.0',
+                protocolBinding: 'JSONRPC',
+                endpoint: String(row.a2a_endpoint ?? row.endpoint),
+                managedBy: 'agent',
+              },
+            ],
+          });
         return { ...card, presence: resolveAgentPresence(presence.get(card.agentId)) };
       })
       .filter(
@@ -593,6 +567,10 @@ export class HostedRepository {
     if (!owned.length) throw new Error('Agent is not owned by this account');
     const lastSeenAt = new Date().toISOString();
     await this.upsert(operatorId, 'presence', agentId, { lastSeenAt });
+    await this.sql`
+      UPDATE openclasp_agent_runtimes SET last_seen_at = ${lastSeenAt}, updated_at = NOW()
+      WHERE operator_id = ${operatorId} AND agent_id = ${agentId} AND status = 'verified'
+    `;
     return resolveAgentPresence(lastSeenAt);
   }
 
@@ -616,7 +594,7 @@ export class HostedRepository {
   async listAgentRuntimes(operatorId: string) {
     await this.ensureSchema();
     const rows = await this.sql`
-      SELECT agent_id, endpoint, status, verified_at, last_delivery_at, last_error, updated_at
+      SELECT agent_id, endpoint, a2a_endpoint, status, verified_at, last_seen_at, last_error, updated_at
       FROM openclasp_agent_runtimes
       WHERE operator_id = ${operatorId}
       ORDER BY updated_at DESC
@@ -624,11 +602,10 @@ export class HostedRepository {
     return rows.map((row) => ({
       agentId: String(row.agent_id),
       endpoint: String(row.endpoint),
+      a2aEndpoint: String(row.a2a_endpoint ?? row.endpoint),
       status: row.status as 'verified' | 'disabled',
       verifiedAt: new Date(String(row.verified_at)).toISOString(),
-      ...(row.last_delivery_at
-        ? { lastDeliveryAt: new Date(String(row.last_delivery_at)).toISOString() }
-        : {}),
+      ...(row.last_seen_at ? { lastSeenAt: new Date(String(row.last_seen_at)).toISOString() } : {}),
       ...(row.last_error ? { lastError: String(row.last_error) } : {}),
       updatedAt: new Date(String(row.updated_at)).toISOString(),
     }));
@@ -659,60 +636,67 @@ export class HostedRepository {
       (verification.body as { challenge?: unknown }).challenge !== challenge
     )
       throw new Error('Runtime endpoint did not return the verification challenge');
+    const a2aEndpointValue = (verification.body as { a2aEndpoint?: unknown }).a2aEndpoint;
+    const a2aEndpoint =
+      typeof a2aEndpointValue === 'string' && a2aEndpointValue ? a2aEndpointValue : endpoint;
+    await resolvePublicRuntimeEndpoint(a2aEndpoint);
     const runtimeSecret = randomBytes(32).toString('base64url');
     const encrypted = encryptGatewayPayload(this.gatewaySecret(), runtimeSecret);
     const verifiedAt = new Date().toISOString();
     const saved = await this.sql`
       INSERT INTO openclasp_agent_runtimes(
-        agent_id, operator_id, endpoint, secret_ciphertext, secret_iv, secret_auth_tag,
-        status, verified_at, updated_at
+        agent_id, operator_id, endpoint, a2a_endpoint, secret_ciphertext, secret_iv, secret_auth_tag,
+        status, verified_at, last_seen_at, updated_at
       ) VALUES (
-        ${agentId}, ${operatorId}, ${endpoint}, ${encrypted.ciphertext}, ${encrypted.iv},
-        ${encrypted.authTag}, 'verified', ${verifiedAt}, NOW()
+        ${agentId}, ${operatorId}, ${endpoint}, ${a2aEndpoint}, ${encrypted.ciphertext},
+        ${encrypted.iv}, ${encrypted.authTag}, 'verified', ${verifiedAt}, ${verifiedAt}, NOW()
       )
       ON CONFLICT (agent_id) DO UPDATE SET
         operator_id = EXCLUDED.operator_id,
         endpoint = EXCLUDED.endpoint,
+        a2a_endpoint = EXCLUDED.a2a_endpoint,
         secret_ciphertext = EXCLUDED.secret_ciphertext,
         secret_iv = EXCLUDED.secret_iv,
         secret_auth_tag = EXCLUDED.secret_auth_tag,
         status = 'verified',
         verified_at = EXCLUDED.verified_at,
+        last_seen_at = EXCLUDED.last_seen_at,
         last_error = NULL,
         updated_at = NOW()
       WHERE openclasp_agent_runtimes.operator_id = ${operatorId}
       RETURNING agent_id
     `;
     if (!saved.length) throw new Error('Agent runtime is owned by another account');
-    const pending = await this.sql`
-      SELECT message_id FROM openclasp_gateway_messages
-      WHERE recipient_agent_id = ${agentId}
-        AND runtime_delivered_at IS NULL
-        AND expires_at > NOW()
-      ORDER BY created_at ASC
-      LIMIT 100
-    `;
-    const queued = await Promise.allSettled(
-      pending.map((row) =>
-        send(
-          RUNTIME_DELIVERY_TOPIC,
-          { messageId: String(row.message_id) },
+    await this.sql`
+      UPDATE openclasp_public_agents
+      SET card = jsonb_set(
+        card,
+        '{transports}',
+        ${JSON.stringify([
           {
-            idempotencyKey: `registration:${verifiedAt}:${row.message_id}`,
-            retentionSeconds: 86_400,
+            protocol: 'A2A/1.0',
+            protocolBinding: 'JSONRPC',
+            endpoint: a2aEndpoint,
+            managedBy: 'agent',
           },
-        ),
-      ),
-    );
+        ])}::jsonb
+      ), updated_at = NOW()
+      WHERE agent_id = ${agentId} AND operator_id = ${operatorId}
+    `;
+    await this.sql`
+      UPDATE openclasp_records
+      SET payload = jsonb_set(payload, '{a2aEndpoint}', to_jsonb(${a2aEndpoint}::text)),
+        updated_at = NOW()
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+    `;
+    await this.touchAgentPresence(operatorId, agentId);
     return {
       agentId,
       endpoint,
+      a2aEndpoint,
       status: 'verified' as const,
       verifiedAt,
-      signingSecret: runtimeSecret,
-      secretShownOnce: true,
-      queuedMessages: pending.length,
-      queueFailures: queued.filter((result) => result.status === 'rejected').length,
+      verificationKey: getSessionVerificationKey(this.gatewaySecret()),
     };
   }
 
@@ -728,113 +712,446 @@ export class HostedRepository {
     return { agentId, status: 'disabled' as const };
   }
 
-  async deliverGatewayMessage(messageId: string) {
-    await this.ensureSchema();
+  private async liveRuntime(agentId: string) {
     const rows = await this.sql`
-      SELECT message.*, runtime.endpoint,
-        runtime.secret_ciphertext, runtime.secret_iv, runtime.secret_auth_tag,
-        interaction.payload AS interaction
-      FROM openclasp_gateway_messages message
-      INNER JOIN openclasp_agent_runtimes runtime
-        ON runtime.agent_id = message.recipient_agent_id AND runtime.status = 'verified'
-      INNER JOIN openclasp_federated_interactions interaction
-        ON interaction.interaction_id = message.interaction_id
-      WHERE message.message_id = ${messageId}
-        AND message.runtime_delivered_at IS NULL
-        AND message.expires_at > NOW()
+      SELECT runtime.*, agents.card
+      FROM openclasp_agent_runtimes runtime
+      INNER JOIN openclasp_public_agents agents ON agents.agent_id = runtime.agent_id
+      WHERE runtime.agent_id = ${agentId} AND runtime.status = 'verified'
       LIMIT 1
     `;
     const row = rows[0];
-    if (!row) return { delivered: false, terminal: true };
-    const runtimeSecret = decryptGatewayPayload(this.gatewaySecret(), {
-      ciphertext: String(row.secret_ciphertext),
-      iv: String(row.secret_iv),
-      authTag: String(row.secret_auth_tag),
-    });
-    if (typeof runtimeSecret !== 'string') throw new Error('Invalid runtime signing secret');
-    const interaction = FederatedInteractionSchema.parse(row.interaction);
-    const expiresAt = new Date(String(row.expires_at)).toISOString();
-    const delivery = RuntimeDeliverySchema.parse({
-      type: 'openclasp.a2a.delivery',
-      version: '1',
-      deliveryId: String(row.message_id),
-      agentId: String(row.recipient_agent_id),
-      interactionId: String(row.interaction_id),
-      receivedAt: new Date().toISOString(),
-      message: {
-        messageId: String(row.message_id),
-        senderAgentId: String(row.sender_agent_id),
-        contentType: String(row.content_type),
-        createdAt: new Date(String(row.created_at)).toISOString(),
-        expiresAt,
-        payload: decryptGatewayPayload(this.gatewaySecret(), {
-          ciphertext: String(row.ciphertext),
-          iv: String(row.iv),
-          authTag: String(row.auth_tag),
-        }),
-      },
-      reply: {
-        endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/a2a/${encodeURIComponent(String(row.sender_agent_id))}`,
-        bearerToken: issueGatewayGrant(this.gatewaySecret(), {
-          interactionId: interaction.interactionId,
-          senderAgentId: String(row.recipient_agent_id),
-          recipientAgentId: String(row.sender_agent_id),
-          expiresAt: Math.min(Date.parse(expiresAt), Date.now() + 60 * 60_000),
-        }),
-      },
-    });
-    const body = JSON.stringify(delivery);
+    if (!row) throw new Error(`Agent ${agentId} does not have a verified live runtime`);
+    return {
+      agentId,
+      operatorId: String(row.operator_id),
+      callbackEndpoint: String(row.endpoint),
+      a2aEndpoint: String(row.a2a_endpoint ?? row.endpoint),
+      card: normalizePublicAgentCard(row.card),
+    };
+  }
+
+  private async signedRuntimeRequest(
+    runtime: Awaited<ReturnType<HostedRepository['liveRuntime']>>,
+    requestId: string,
+    value: unknown,
+  ) {
+    const body = JSON.stringify(value);
     const timestamp = new Date().toISOString();
-    try {
-      const response = await postRuntimeJson(String(row.endpoint), delivery, {
-        'openclasp-delivery-id': delivery.deliveryId,
-        'openclasp-timestamp': timestamp,
-        'openclasp-signature': `v1=${runtimeDeliverySignature(runtimeSecret, delivery.deliveryId, timestamp, body)}`,
+    return postRuntimeJson(runtime.callbackEndpoint, value, {
+      'openclasp-request-id': requestId,
+      'openclasp-timestamp': timestamp,
+      'openclasp-signature': `v1=${signSessionControl(this.gatewaySecret(), requestId, timestamp, body)}`,
+    });
+  }
+
+  private sessionGrant(
+    interaction: FederatedInteraction,
+    senderAgentId: string,
+    recipientAgentId: string,
+  ) {
+    return issueSessionGrant(this.gatewaySecret(), {
+      interactionId: interaction.interactionId,
+      senderAgentId,
+      recipientAgentId,
+      expiresAt: Math.min(Date.parse(interaction.expiresAt), Date.now() + 60 * 60_000),
+    });
+  }
+
+  private async privateCounterpartyInsights(
+    viewerOperatorId: string,
+    counterparty: Awaited<ReturnType<HostedRepository['liveRuntime']>>,
+    taskCategory: string,
+  ): Promise<LiveSessionInsight[]> {
+    const rows = await this.sql`
+      SELECT record_id, payload
+      FROM openclasp_records
+      WHERE operator_id = ${viewerOperatorId}
+        AND kind = 'profile'
+        AND payload->>'agentId' = ${counterparty.agentId}
+        AND payload->>'taskCategory' = ${taskCategory}
+      ORDER BY (payload->>'sampleSize')::integer DESC, updated_at DESC
+    `;
+    const profiles: ContextualProfile[] = rows
+      .map<Record<string, unknown>>((row) => ({
+        recordId: String(row.record_id),
+        ...(row.payload as Record<string, unknown>),
+      }))
+      .filter(
+        (profile) =>
+          typeof profile.agentVersion === 'string' &&
+          typeof profile.sampleSize === 'number' &&
+          typeof profile.updatedAt === 'string' &&
+          typeof profile.completion === 'number' &&
+          typeof profile.acceptance === 'number' &&
+          typeof profile.specification === 'number' &&
+          typeof profile.deadline === 'number' &&
+          typeof profile.communication === 'number' &&
+          typeof profile.evidence === 'number' &&
+          typeof profile.scope === 'number' &&
+          typeof profile.disputes === 'number',
+      ) as ContextualProfile[];
+    const exact = profiles.find(
+      (profile) => profile.agentVersion === counterparty.card.agentVersion,
+    );
+    const current = exact ?? profiles[0];
+    const insights: LiveSessionInsight[] = [];
+    if (!current) {
+      insights.push({
+        code: 'limited_verified_history',
+        severity: 'caution',
+        message: `No eligible ${taskCategory} history is available for this agent version. Ask for task-relevant evidence.`,
+        evidenceReferences: [],
       });
-      if (response.status < 200 || response.status >= 300)
-        throw new Error(`Runtime endpoint returned HTTP ${response.status}`);
+    } else {
+      const ageDays = Math.max(
+        0,
+        (Date.now() - Date.parse(String(current.updatedAt))) / 86_400_000,
+      );
+      const freshness = Math.exp(-ageDays / 180);
+      const sampleSize = Number(current.sampleSize);
+      const confidence = Math.min(0.95, (sampleSize / (sampleSize + 5)) * freshness);
+      const versionChanged = current.agentVersion !== counterparty.card.agentVersion;
+      const reference = `openclasp:profile:${current.recordId}`;
+      insights.push({
+        code: versionChanged ? 'version_history_only' : 'contextual_history',
+        severity: versionChanged || confidence < 0.25 ? 'caution' : 'info',
+        message: versionChanged
+          ? `Only prior-version ${taskCategory} history is available (${sampleSize} eligible interaction${sampleSize === 1 ? '' : 's'}); confidence is reduced for version ${counterparty.card.agentVersion}.`
+          : `Based on ${sampleSize} eligible ${taskCategory} interaction${sampleSize === 1 ? '' : 's'}; confidence ${(confidence * 100).toFixed(0)}%.`,
+        evidenceReferences: [reference],
+      });
+      const weakDimensions = [
+        ['completion', Number(current.completion)],
+        ['output acceptance', Number(current.acceptance)],
+        ['specification adherence', Number(current.specification)],
+        ['deadline reliability', Number(current.deadline)],
+        ['communication quality', Number(current.communication)],
+        ['evidence quality', Number(current.evidence)],
+        ['scope adherence', Number(current.scope)],
+      ].filter(([, score]) => Number(score) < 0.7);
+      if (weakDimensions.length)
+        insights.push({
+          code: 'historical_weaknesses',
+          severity: weakDimensions.some(([, score]) => Number(score) < 0.5) ? 'high' : 'caution',
+          message: `Observed weaker areas: ${weakDimensions
+            .map(([name, score]) => `${String(name)} ${(Number(score) * 100).toFixed(0)}%`)
+            .join(', ')}.`,
+          evidenceReferences: [reference],
+        });
+      if (Number(current.disputes) > 0.25)
+        insights.push({
+          code: 'elevated_dispute_history',
+          severity: Number(current.disputes) >= 0.5 ? 'high' : 'caution',
+          message: `Eligible feedback shows a ${(Number(current.disputes) * 100).toFixed(0)}% dispute rate in this task category.`,
+          evidenceReferences: [reference],
+        });
+    }
+    if (counterparty.card.limitations.length)
+      insights.push({
+        code: 'declared_limitations',
+        severity: 'info',
+        message: `Counterparty declares: ${counterparty.card.limitations.join('; ')}`,
+        evidenceReferences: [counterparty.card.cardUrl],
+      });
+    return insights;
+  }
+
+  async brokerLiveSession(interaction: FederatedInteraction) {
+    await this.ensureSchema();
+    const existing = await this.sql`
+      SELECT status FROM openclasp_live_sessions
+      WHERE interaction_id = ${interaction.interactionId}
+    `;
+    if (existing[0]?.status === 'active') return;
+    const [initiator, responder] = await Promise.all([
+      this.liveRuntime(interaction.initiatorAgentId),
+      this.liveRuntime(interaction.responderAgentId),
+    ]);
+    const [initiatorInsights, responderInsights] = await Promise.all([
+      this.privateCounterpartyInsights(
+        initiator.operatorId,
+        responder,
+        interaction.contract.taskCategory,
+      ),
+      this.privateCounterpartyInsights(
+        responder.operatorId,
+        initiator,
+        interaction.contract.taskCategory,
+      ),
+    ]);
+    const issuedAt = new Date().toISOString();
+    const makeOffer = (
+      runtime: typeof initiator,
+      counterparty: typeof responder,
+      role: 'initiator' | 'responder',
+      privateInsights: LiveSessionInsight[],
+    ) =>
+      LiveSessionOfferSchema.parse({
+        type: 'openclasp.session.offer',
+        version: '1',
+        offerId: crypto.randomUUID(),
+        interactionId: interaction.interactionId,
+        agentId: runtime.agentId,
+        role,
+        counterparty: {
+          agentId: counterparty.agentId,
+          name: counterparty.card.name,
+          agentVersion: counterparty.card.agentVersion,
+          capabilities: counterparty.card.capabilities,
+        },
+        contract: interaction.contract,
+        contractHash: interaction.termsHash,
+        privateInsights,
+        issuedAt,
+        expiresAt: interaction.expiresAt,
+      });
+    const initiatorOffer = makeOffer(initiator, responder, 'initiator', initiatorInsights);
+    const responderOffer = makeOffer(responder, initiator, 'responder', responderInsights);
+    const [initiatorResponse, responderResponse] = await Promise.all([
+      this.signedRuntimeRequest(initiator, initiatorOffer.offerId, initiatorOffer),
+      this.signedRuntimeRequest(responder, responderOffer.offerId, responderOffer),
+    ]);
+    if (initiatorResponse.status < 200 || initiatorResponse.status >= 300)
+      throw new Error(`Initiator runtime is not live (HTTP ${initiatorResponse.status})`);
+    if (responderResponse.status < 200 || responderResponse.status >= 300)
+      throw new Error(`Responder runtime is not live (HTTP ${responderResponse.status})`);
+    const initiatorAcceptance = LiveSessionAcceptanceSchema.parse(initiatorResponse.body);
+    const responderAcceptance = LiveSessionAcceptanceSchema.parse(responderResponse.body);
+    if (
+      initiatorAcceptance.offerId !== initiatorOffer.offerId ||
+      initiatorAcceptance.agentId !== initiator.agentId ||
+      responderAcceptance.offerId !== responderOffer.offerId ||
+      responderAcceptance.agentId !== responder.agentId
+    )
+      throw new Error('Runtime returned a mismatched live-session acceptance');
+    await Promise.all([
+      resolvePublicRuntimeEndpoint(initiatorAcceptance.a2aEndpoint),
+      resolvePublicRuntimeEndpoint(responderAcceptance.a2aEndpoint),
+    ]);
+    await this.sql`
+      INSERT INTO openclasp_live_sessions(
+        interaction_id, initiator_agent_id, responder_agent_id,
+        initiator_session_id, responder_session_id,
+        initiator_endpoint, responder_endpoint, status, expires_at
+      ) VALUES (
+        ${interaction.interactionId}, ${interaction.initiatorAgentId}, ${interaction.responderAgentId},
+        ${initiatorAcceptance.sessionId}, ${responderAcceptance.sessionId},
+        ${initiatorAcceptance.a2aEndpoint}, ${responderAcceptance.a2aEndpoint},
+        'preparing', ${interaction.expiresAt}
+      )
+      ON CONFLICT (interaction_id) DO UPDATE SET
+        initiator_session_id = EXCLUDED.initiator_session_id,
+        responder_session_id = EXCLUDED.responder_session_id,
+        initiator_endpoint = EXCLUDED.initiator_endpoint,
+        responder_endpoint = EXCLUDED.responder_endpoint,
+        status = 'preparing', expires_at = EXCLUDED.expires_at, last_error = NULL
+    `;
+    const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
+      /\/$/,
+      '',
+    );
+    const activatedAt = new Date().toISOString();
+    const verificationKey = getSessionVerificationKey(this.gatewaySecret());
+    const makeActivation = (
+      agentId: string,
+      sessionId: string,
+      role: 'initiator' | 'responder',
+      peerAgentId: string,
+      peerSessionId: string,
+      peerEndpoint: string,
+    ): LiveSessionActivation => {
+      const bearerToken = this.sessionGrant(interaction, agentId, peerAgentId);
+      return LiveSessionActivationSchema.parse({
+        type: 'openclasp.session.activation',
+        version: '1',
+        activationId: crypto.randomUUID(),
+        interactionId: interaction.interactionId,
+        agentId,
+        sessionId,
+        role,
+        peer: {
+          agentId: peerAgentId,
+          sessionId: peerSessionId,
+          endpoint: peerEndpoint,
+          bearerToken,
+          verificationKey,
+        },
+        reporting: {
+          endpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/events`,
+          bearerToken,
+        },
+        contractHash: interaction.termsHash,
+        activatedAt,
+        expiresAt: interaction.expiresAt,
+      });
+    };
+    const initiatorActivation = makeActivation(
+      initiator.agentId,
+      initiatorAcceptance.sessionId,
+      'initiator',
+      responder.agentId,
+      responderAcceptance.sessionId,
+      responderAcceptance.a2aEndpoint,
+    );
+    const responderActivation = makeActivation(
+      responder.agentId,
+      responderAcceptance.sessionId,
+      'responder',
+      initiator.agentId,
+      initiatorAcceptance.sessionId,
+      initiatorAcceptance.a2aEndpoint,
+    );
+    try {
+      const responderActivated = await this.signedRuntimeRequest(
+        responder,
+        responderActivation.activationId,
+        responderActivation,
+      );
+      if (responderActivated.status < 200 || responderActivated.status >= 300)
+        throw new Error(`Responder activation failed with HTTP ${responderActivated.status}`);
+      const initiatorActivated = await this.signedRuntimeRequest(
+        initiator,
+        initiatorActivation.activationId,
+        initiatorActivation,
+      );
+      if (initiatorActivated.status < 200 || initiatorActivated.status >= 300)
+        throw new Error(`Initiator activation failed with HTTP ${initiatorActivated.status}`);
       await this.sql`
-        UPDATE openclasp_gateway_messages
-        SET runtime_delivered_at = NOW(), runtime_delivery_attempts = runtime_delivery_attempts + 1,
-          runtime_delivery_error = NULL
-        WHERE message_id = ${messageId} AND runtime_delivered_at IS NULL
+        UPDATE openclasp_live_sessions
+        SET status = 'active', activated_at = NOW(), last_error = NULL
+        WHERE interaction_id = ${interaction.interactionId}
       `;
       await this.sql`
         UPDATE openclasp_agent_runtimes
-        SET last_delivery_at = NOW(), last_error = NULL, updated_at = NOW()
-        WHERE agent_id = ${delivery.agentId}
+        SET last_seen_at = NOW(), last_error = NULL, updated_at = NOW()
+        WHERE agent_id IN (${initiator.agentId}, ${responder.agentId})
       `;
-      const runtimeRows = await this.sql`
-        SELECT operator_id FROM openclasp_agent_runtimes WHERE agent_id = ${delivery.agentId}
-      `;
-      if (runtimeRows[0]?.operator_id)
-        await this.touchAgentPresence(String(runtimeRows[0].operator_id), delivery.agentId);
-      return { delivered: true, messageId };
+      await Promise.all([
+        this.touchAgentPresence(initiator.operatorId, initiator.agentId),
+        this.touchAgentPresence(responder.operatorId, responder.agentId),
+      ]);
     } catch (error) {
       const reason =
-        error instanceof Error ? error.message.slice(0, 500) : 'Runtime delivery failed';
+        error instanceof Error ? error.message.slice(0, 500) : 'Session activation failed';
       await this.sql`
-        UPDATE openclasp_gateway_messages
-        SET runtime_delivery_attempts = runtime_delivery_attempts + 1,
-          runtime_delivery_error = ${reason}
-        WHERE message_id = ${messageId}
-      `;
-      await this.sql`
-        UPDATE openclasp_agent_runtimes
-        SET last_error = ${reason}, updated_at = NOW()
-        WHERE agent_id = ${delivery.agentId}
+        UPDATE openclasp_live_sessions SET status = 'failed', last_error = ${reason}
+        WHERE interaction_id = ${interaction.interactionId}
       `;
       throw error;
     }
   }
 
-  async abandonGatewayDelivery(messageId: string, reason: string) {
+  async getLiveSession(operatorId: string, interactionId: string, agentId: string) {
     await this.ensureSchema();
-    await this.sql`
-      UPDATE openclasp_gateway_messages
-      SET runtime_delivery_error = ${reason.slice(0, 500)}
-      WHERE message_id = ${messageId} AND runtime_delivered_at IS NULL
+    const rows = await this.sql`
+      SELECT session.*, interaction.payload,
+        initiator.operator_id AS initiator_operator_id,
+        responder.operator_id AS responder_operator_id
+      FROM openclasp_live_sessions session
+      INNER JOIN openclasp_federated_interactions interaction
+        ON interaction.interaction_id = session.interaction_id
+      INNER JOIN openclasp_agent_runtimes initiator
+        ON initiator.agent_id = session.initiator_agent_id
+      INNER JOIN openclasp_agent_runtimes responder
+        ON responder.agent_id = session.responder_agent_id
+      WHERE session.interaction_id = ${interactionId} AND session.status = 'active'
+      LIMIT 1
     `;
+    const row = rows[0];
+    if (!row) throw new Error('Active live session not found');
+    const isInitiator = row.initiator_agent_id === agentId;
+    const isResponder = row.responder_agent_id === agentId;
+    if (!isInitiator && !isResponder) throw new Error('Agent is not a session participant');
+    const owner = isInitiator ? row.initiator_operator_id : row.responder_operator_id;
+    if (owner !== operatorId) throw new Error('Agent is not owned by this account');
+    const interaction = FederatedInteractionSchema.parse(row.payload);
+    const peerAgentId = String(isInitiator ? row.responder_agent_id : row.initiator_agent_id);
+    const bearerToken = this.sessionGrant(interaction, agentId, peerAgentId);
+    return {
+      type: 'openclasp.session.activation' as const,
+      version: '1' as const,
+      activationId: crypto.randomUUID(),
+      interactionId,
+      agentId,
+      sessionId: String(isInitiator ? row.initiator_session_id : row.responder_session_id),
+      role: isInitiator ? ('initiator' as const) : ('responder' as const),
+      peer: {
+        agentId: peerAgentId,
+        sessionId: String(isInitiator ? row.responder_session_id : row.initiator_session_id),
+        endpoint: String(isInitiator ? row.responder_endpoint : row.initiator_endpoint),
+        bearerToken,
+        verificationKey: getSessionVerificationKey(this.gatewaySecret()),
+      },
+      reporting: {
+        endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/events`,
+        bearerToken,
+      },
+      contractHash: interaction.termsHash,
+      activatedAt: row.activated_at
+        ? new Date(String(row.activated_at)).toISOString()
+        : new Date().toISOString(),
+      expiresAt: new Date(String(row.expires_at)).toISOString(),
+    };
+  }
+
+  async recordLiveSessionEvent(token: string, value: LiveSessionEvent) {
+    await this.ensureSchema();
+    const event = LiveSessionEventSchema.parse(value);
+    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    if (grant.interactionId !== event.interactionId || grant.senderAgentId !== event.agentId)
+      throw new Error('Session credential does not match the event');
+    const sessions = await this.sql`
+      SELECT 1 FROM openclasp_live_sessions
+      WHERE interaction_id = ${event.interactionId}
+        AND status = 'active'
+        AND ${event.agentId} IN (initiator_agent_id, responder_agent_id)
+    `;
+    if (!sessions.length) throw new Error('Active live session not found');
+    const attestation = attestSessionRecord(this.gatewaySecret(), event);
+    const encoded = JSON.stringify({ ...event, attestation });
+    const rows = await this.sql`
+      INSERT INTO openclasp_live_session_events(
+        interaction_id, event_id, agent_id, sequence, event
+      ) SELECT ${event.interactionId}, ${event.eventId}, ${event.agentId}, ${event.sequence}, ${encoded}::jsonb
+      WHERE (
+        SELECT COUNT(*) FROM openclasp_live_session_events
+        WHERE interaction_id = ${event.interactionId}
+      ) < 1000
+      ON CONFLICT DO NOTHING
+      RETURNING event_id
+    `;
+    if (event.type === 'session_completed' || event.type === 'session_failed') {
+      const terminal = await this.sql`
+        SELECT COUNT(DISTINCT agent_id) AS count
+        FROM openclasp_live_session_events
+        WHERE interaction_id = ${event.interactionId}
+          AND event->>'type' IN ('session_completed', 'session_failed')
+      `;
+      if (Number(terminal[0]?.count ?? 0) >= 2) {
+        await this.sql`
+          UPDATE openclasp_live_sessions SET status = 'completed', completed_at = NOW()
+          WHERE interaction_id = ${event.interactionId} AND status = 'active'
+        `;
+        const completedAt = new Date().toISOString();
+        await this.sql`
+          UPDATE openclasp_federated_interactions
+          SET status = 'completed',
+            payload = jsonb_set(
+              jsonb_set(payload, '{status}', '"completed"'::jsonb),
+              '{updatedAt}', to_jsonb(${completedAt}::text)
+            ),
+            updated_at = NOW()
+          WHERE interaction_id = ${event.interactionId} AND status = 'active'
+        `;
+      }
+    }
+    return {
+      recorded: rows.length > 0,
+      deduplicated: rows.length === 0,
+      eventId: event.eventId,
+      attestation,
+    };
   }
 
   async createFederatedInteraction(
@@ -981,6 +1298,18 @@ export class HostedRepository {
               },
             },
           };
+    if (decision === 'accept') {
+      try {
+        await this.brokerLiveSession(next);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message.slice(0, 500) : 'Live session failed';
+        await this.sql`
+          UPDATE openclasp_agent_runtimes SET last_error = ${reason}, updated_at = NOW()
+          WHERE agent_id IN (${current.initiatorAgentId}, ${current.responderAgentId})
+        `;
+        throw error;
+      }
+    }
     const updated = await this.updateFederatedInteraction(interactionId, current.status, next);
     if (!updated) throw new Error('Invitation was already handled');
     return next;
@@ -1022,7 +1351,7 @@ export class HostedRepository {
           contributionEnabled: row.contribution_enabled,
           retentionDays: row.retention_days,
           evidenceSharing: row.evidence_sharing,
-          rawConversationsStored: true,
+          rawConversationsStored: false,
         }
       : defaults;
   }
@@ -1046,6 +1375,6 @@ export class HostedRepository {
         evidence_sharing = EXCLUDED.evidence_sharing,
         updated_at = NOW()
     `;
-    return { ...settings, rawConversationsStored: true };
+    return { ...settings, rawConversationsStored: false };
   }
 }

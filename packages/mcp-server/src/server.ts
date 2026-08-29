@@ -8,6 +8,7 @@ import {
   FeedbackSchema,
   InteractionContractSchema,
   InteractionEventSchema,
+  LiveSessionEventSchema,
   ReceiptSchema,
   TrustEnvelopeSchema,
   canonicalHash,
@@ -51,9 +52,9 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_list_invitations',
   'openclasp_respond_invitation',
   'openclasp_get_shared_interaction',
-  'openclasp_send_message',
-  'openclasp_inbox',
-  'openclasp_ack_message',
+  'openclasp_get_live_session',
+  'openclasp_record_session_event',
+  'openclasp_complete_live_session',
   'openclasp_heartbeat',
 ] as const;
 
@@ -77,7 +78,7 @@ const text = (value: unknown) => ({
 });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Call openclasp_connection_status, openclasp_heartbeat, then openclasp_inbox. Heartbeat every 60 seconds while active; online means seen within 2 minutes. Setup creates your hosted A2A endpoint. Use openclasp_connect_to_agent; safe requests queue immediately. Reply with openclasp_send_message and acknowledge handled messages.';
+  'Call openclasp_connection_status and openclasp_heartbeat. Heartbeat every 60 seconds while active; online means seen within 2 minutes. Use openclasp_connect_to_agent to broker a live direct A2A session. Use openclasp_get_live_session for the peer endpoint and scoped credential. Report only structured events and hashes with openclasp_record_session_event; raw messages stay between agents.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -135,20 +136,10 @@ type AgentDirectory = {
     decision: 'accept' | 'reject',
     method?: 'oauth_installation' | 'oauth_account' | 'policy_auto_accept',
   ): Promise<FederatedInteraction>;
-  issueGatewayToken(interaction: FederatedInteraction): string;
-  enqueueGatewayMessage(input: {
-    interactionId: string;
-    senderAgentId: string;
-    recipientAgentId: string;
-    payload: unknown;
-    contentType?: string;
-    idempotencyKey?: string;
-  }): Promise<unknown>;
-  listGatewayMessages(operatorId: string, agentId: string, limit?: number): Promise<unknown[]>;
-  acknowledgeGatewayMessage(
-    operatorId: string,
-    agentId: string,
-    messageId: string,
+  getLiveSession(operatorId: string, interactionId: string, agentId: string): Promise<any>;
+  recordLiveSessionEvent(
+    token: string,
+    event: z.infer<typeof LiveSessionEventSchema>,
   ): Promise<unknown>;
   touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
 };
@@ -905,41 +896,21 @@ export function registerOpenClaspTools(
       const stored =
         existing ??
         (await agentDirectory.createFederatedInteraction(connection.operatorId, interaction));
-      const delivery =
+      const session =
         stored.status === 'active'
-          ? await agentDirectory.enqueueGatewayMessage({
-              interactionId: stored.interactionId,
-              senderAgentId: stored.initiatorAgentId,
-              recipientAgentId: stored.responderAgentId,
-              payload: {
-                jsonrpc: '2.0',
-                method: 'message/send',
-                params: {
-                  message: {
-                    role: 'user',
-                    parts: [{ kind: 'text', text: task }],
-                    metadata: {
-                      [DEFAULT_EXTENSION_URI]: {
-                        interactionId: stored.interactionId,
-                        termsHash: stored.termsHash,
-                        initiatorAgentId: stored.initiatorAgentId,
-                        responderAgentId: stored.responderAgentId,
-                      },
-                    },
-                  },
-                },
-              },
-              idempotencyKey: `initial:${stored.interactionId}`,
-            })
+          ? await agentDirectory.getLiveSession(
+              connection.operatorId,
+              stored.interactionId,
+              binding.agent.agentId,
+            )
           : undefined;
       return text({
         ready: stored.status === 'active',
-        delivery,
+        session,
         interaction: stored,
         a2a: {
-          endpoint: stored.responderTransport.endpoint,
-          bearerToken:
-            stored.status === 'active' ? agentDirectory.issueGatewayToken(stored) : undefined,
+          endpoint: session?.peer.endpoint,
+          bearerToken: session?.peer.bearerToken,
           protocolBinding: stored.responderTransport.protocolBinding,
           extensions: [DEFAULT_EXTENSION_URI],
           metadata: {
@@ -969,7 +940,7 @@ export function registerOpenClaspTools(
         },
         next:
           stored.status === 'active'
-            ? 'The task is queued for the other agent. Continue with openclasp_inbox and openclasp_send_message.'
+            ? 'Both live runtimes accepted. Send the A2A request directly to session.peer.endpoint; OpenClasp is not in the message path.'
             : `The task needs responder approval. OpenClasp will expose it at ${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/dashboard; retry this interaction after approval.`,
       });
     },
@@ -1039,88 +1010,90 @@ export function registerOpenClaspTools(
   server.registerTool(
     OPENCLASP_TOOL_NAMES[28],
     {
-      title: 'Send an agent message',
-      description: 'Send a message to the other participant through the hosted A2A gateway.',
-      inputSchema: z.object({
-        interactionId: z.string().uuid(),
-        message: z.string().min(1).max(100_000),
-        contentType: z.string().max(100).default('text/plain'),
-      }),
-      annotations: WRITE_TOOL,
+      title: 'Get direct live session',
+      description:
+        'Get the peer A2A endpoint and short-lived credential for a brokered live session.',
+      inputSchema: z.object({ interactionId: z.string().uuid() }),
+      annotations: READ_ONLY_TOOL,
     },
     async (input, context) => {
-      if (!agentDirectory) throw new Error('The hosted A2A gateway is not configured');
+      if (!agentDirectory) throw new Error('Live agent sessions are not configured');
       const binding = await requireBoundAgent(context);
       if (!binding) throw new Error('A bound MCP installation is required');
       const connection = installationContext(context);
-      const interaction = await agentDirectory.getFederatedInteraction(
-        connection.operatorId,
-        input.interactionId,
-      );
-      if (!interaction || interaction.status !== 'active')
-        throw new Error('An active interaction is required');
-      const senderAgentId = binding.agent.agentId;
-      if (
-        senderAgentId !== interaction.initiatorAgentId &&
-        senderAgentId !== interaction.responderAgentId
-      )
-        throw new Error('The bound agent is not a participant in this interaction');
-      const recipientAgentId =
-        interaction.initiatorAgentId === senderAgentId
-          ? interaction.responderAgentId
-          : interaction.initiatorAgentId;
       return text(
-        await agentDirectory.enqueueGatewayMessage({
-          interactionId: input.interactionId,
-          senderAgentId,
-          recipientAgentId,
-          payload: input.message,
-          contentType: input.contentType,
-        }),
+        await agentDirectory.getLiveSession(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+        ),
       );
     },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[29],
     {
-      title: 'Read agent inbox',
-      description: 'Read queued messages addressed to this agent. Messages expire after 24 hours.',
-      inputSchema: z.object({ limit: z.number().int().min(1).max(50).default(20) }),
-      annotations: READ_ONLY_TOOL,
+      title: 'Record structured session event',
+      description:
+        'Record signed session metadata, hashes, evidence, corrections, or results without uploading raw messages.',
+      inputSchema: LiveSessionEventSchema.omit({ eventId: true, agentId: true }),
+      annotations: WRITE_TOOL,
     },
     async (input, context) => {
-      if (!agentDirectory) throw new Error('The hosted A2A gateway is not configured');
+      if (!agentDirectory) throw new Error('Live agent sessions are not configured');
       const binding = await requireBoundAgent(context);
       if (!binding) throw new Error('A bound MCP installation is required');
       const connection = installationContext(context);
+      const session = await agentDirectory.getLiveSession(
+        connection.operatorId,
+        input.interactionId,
+        binding.agent.agentId,
+      );
       return text(
-        await agentDirectory.listGatewayMessages(
-          connection.operatorId,
-          binding.agent.agentId,
-          input.limit,
-        ),
+        await agentDirectory.recordLiveSessionEvent(session.reporting.bearerToken, {
+          ...input,
+          eventId: crypto.randomUUID(),
+          agentId: binding.agent.agentId,
+        }),
       );
     },
   );
   server.registerTool(
     OPENCLASP_TOOL_NAMES[30],
     {
-      title: 'Acknowledge agent message',
-      description: 'Delete a gateway message after this agent has handled it.',
-      inputSchema: z.object({ messageId: z.string().uuid() }),
-      annotations: { ...WRITE_TOOL, destructiveHint: true, idempotentHint: true },
+      title: 'Complete live session',
+      description: 'Record this participant’s terminal outcome for a live session.',
+      inputSchema: z.object({
+        interactionId: z.string().uuid(),
+        sequence: z.number().int().nonnegative(),
+        outcome: z.enum(['success', 'failure', 'partial']),
+        evidenceReferences: z.array(z.string()).default([]),
+        details: LiveSessionEventSchema.shape.details,
+      }),
+      annotations: WRITE_TOOL,
     },
     async (input, context) => {
-      if (!agentDirectory) throw new Error('The hosted A2A gateway is not configured');
+      if (!agentDirectory) throw new Error('Live agent sessions are not configured');
       const binding = await requireBoundAgent(context);
       if (!binding) throw new Error('A bound MCP installation is required');
       const connection = installationContext(context);
+      const session = await agentDirectory.getLiveSession(
+        connection.operatorId,
+        input.interactionId,
+        binding.agent.agentId,
+      );
       return text(
-        await agentDirectory.acknowledgeGatewayMessage(
-          connection.operatorId,
-          binding.agent.agentId,
-          input.messageId,
-        ),
+        await agentDirectory.recordLiveSessionEvent(session.reporting.bearerToken, {
+          eventId: crypto.randomUUID(),
+          interactionId: input.interactionId,
+          agentId: binding.agent.agentId,
+          sequence: input.sequence,
+          type: input.outcome === 'failure' ? 'session_failed' : 'session_completed',
+          occurredAt: new Date().toISOString(),
+          evidenceReferences: input.evidenceReferences,
+          outcome: input.outcome,
+          details: input.details,
+        }),
       );
     },
   );

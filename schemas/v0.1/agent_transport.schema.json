@@ -16,9 +16,9 @@
       "format": "uri"
     },
     "managedBy": {
-      "default": "openclasp",
+      "default": "agent",
       "type": "string",
-      "const": "openclasp"
+      "enum": ["agent", "openclasp"]
     }
   },
   "required": ["protocol", "protocolBinding", "endpoint", "managedBy"],

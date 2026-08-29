@@ -2,26 +2,56 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "protocolVersion": {
+    "type": {
       "type": "string",
-      "const": "0.1"
+      "const": "openclasp.session.offer"
+    },
+    "version": {
+      "type": "string",
+      "const": "1"
+    },
+    "offerId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
     "interactionId": {
       "type": "string",
       "format": "uuid",
       "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
     },
-    "initiatorAgentId": {
+    "agentId": {
       "type": "string",
       "minLength": 1
     },
-    "responderAgentId": {
+    "role": {
       "type": "string",
-      "minLength": 1
+      "enum": ["initiator", "responder"]
     },
-    "status": {
-      "type": "string",
-      "enum": ["pending", "active", "rejected", "expired", "cancelled", "completed"]
+    "counterparty": {
+      "type": "object",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agentVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["agentId", "name", "agentVersion", "capabilities"],
+      "additionalProperties": false
     },
     "contract": {
       "type": "object",
@@ -179,115 +209,41 @@
       ],
       "additionalProperties": false
     },
-    "termsHash": {
+    "contractHash": {
       "type": "string",
       "minLength": 1
     },
-    "acceptances": {
-      "type": "object",
-      "propertyNames": {
-        "type": "string"
-      },
-      "additionalProperties": {
+    "privateInsights": {
+      "default": [],
+      "type": "array",
+      "items": {
         "type": "object",
         "properties": {
-          "agentId": {
+          "code": {
             "type": "string",
             "minLength": 1
           },
-          "method": {
+          "severity": {
             "type": "string",
-            "enum": ["oauth_installation", "oauth_account", "policy_auto_accept", "ed25519"]
+            "enum": ["info", "caution", "high"]
           },
-          "termsHash": {
+          "message": {
             "type": "string",
             "minLength": 1
           },
-          "acceptedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          },
-          "signature": {
-            "type": "object",
-            "properties": {
-              "algorithm": {
-                "type": "string",
-                "const": "Ed25519"
-              },
-              "keyId": {
-                "type": "string",
-                "minLength": 1
-              },
-              "value": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": ["algorithm", "keyId", "value"],
-            "additionalProperties": false
+          "evidenceReferences": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": ["agentId", "method", "termsHash", "acceptedAt"],
+        "required": ["code", "severity", "message", "evidenceReferences"],
         "additionalProperties": false
       }
     },
-    "initiatorTransport": {
-      "type": "object",
-      "properties": {
-        "protocol": {
-          "type": "string",
-          "const": "A2A/1.0"
-        },
-        "protocolBinding": {
-          "default": "JSONRPC",
-          "type": "string",
-          "minLength": 1
-        },
-        "endpoint": {
-          "type": "string",
-          "format": "uri"
-        },
-        "managedBy": {
-          "default": "agent",
-          "type": "string",
-          "enum": ["agent", "openclasp"]
-        }
-      },
-      "required": ["protocol", "protocolBinding", "endpoint", "managedBy"],
-      "additionalProperties": false
-    },
-    "responderTransport": {
-      "type": "object",
-      "properties": {
-        "protocol": {
-          "type": "string",
-          "const": "A2A/1.0"
-        },
-        "protocolBinding": {
-          "default": "JSONRPC",
-          "type": "string",
-          "minLength": 1
-        },
-        "endpoint": {
-          "type": "string",
-          "format": "uri"
-        },
-        "managedBy": {
-          "default": "agent",
-          "type": "string",
-          "enum": ["agent", "openclasp"]
-        }
-      },
-      "required": ["protocol", "protocolBinding", "endpoint", "managedBy"],
-      "additionalProperties": false
-    },
-    "createdAt": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-    },
-    "updatedAt": {
+    "issuedAt": {
       "type": "string",
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
@@ -299,17 +255,17 @@
     }
   },
   "required": [
-    "protocolVersion",
+    "type",
+    "version",
+    "offerId",
     "interactionId",
-    "initiatorAgentId",
-    "responderAgentId",
-    "status",
+    "agentId",
+    "role",
+    "counterparty",
     "contract",
-    "termsHash",
-    "acceptances",
-    "responderTransport",
-    "createdAt",
-    "updatedAt",
+    "contractHash",
+    "privateInsights",
+    "issuedAt",
     "expiresAt"
   ],
   "additionalProperties": false

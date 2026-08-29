@@ -110,34 +110,13 @@ export const AgentTransportSchema = z.object({
   protocol: z.literal('A2A/1.0'),
   protocolBinding: z.string().min(1).default('JSONRPC'),
   endpoint: z.string().url(),
-  managedBy: z.literal('openclasp').default('openclasp'),
+  managedBy: z.enum(['agent', 'openclasp']).default('agent'),
 });
 
 export const AgentPresenceSchema = z.object({
   status: z.enum(['online', 'offline']),
   lastSeenAt: z.string().datetime().optional(),
   checkedAt: z.string().datetime(),
-});
-
-export const RuntimeDeliverySchema = z.object({
-  type: z.literal('openclasp.a2a.delivery'),
-  version: z.literal('1'),
-  deliveryId: z.string().uuid(),
-  agentId: z.string().min(1),
-  interactionId: z.string().uuid(),
-  receivedAt: z.string().datetime(),
-  message: z.object({
-    messageId: z.string().uuid(),
-    senderAgentId: z.string().min(1),
-    contentType: z.string().min(1),
-    createdAt: z.string().datetime(),
-    expiresAt: z.string().datetime(),
-    payload: z.unknown(),
-  }),
-  reply: z.object({
-    endpoint: z.string().url(),
-    bearerToken: z.string().min(1),
-  }),
 });
 
 export const PublicAgentCardSchema = z.object({
@@ -190,6 +169,105 @@ export const FederatedInteractionSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
+});
+
+export const LiveSessionInsightSchema = z.object({
+  code: z.string().min(1),
+  severity: z.enum(['info', 'caution', 'high']),
+  message: z.string().min(1),
+  evidenceReferences: z.array(z.string()).default([]),
+});
+
+export const LiveSessionOfferSchema = z.object({
+  type: z.literal('openclasp.session.offer'),
+  version: z.literal('1'),
+  offerId: z.string().uuid(),
+  interactionId: z.string().uuid(),
+  agentId: z.string().min(1),
+  role: z.enum(['initiator', 'responder']),
+  counterparty: z.object({
+    agentId: z.string().min(1),
+    name: z.string().min(1),
+    agentVersion: z.string().min(1),
+    capabilities: z.array(z.string()),
+  }),
+  contract: InteractionContractSchema,
+  contractHash: z.string().min(1),
+  privateInsights: z.array(LiveSessionInsightSchema).default([]),
+  issuedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+});
+
+export const LiveSessionAcceptanceSchema = z.object({
+  type: z.literal('openclasp.session.accepted'),
+  version: z.literal('1'),
+  offerId: z.string().uuid(),
+  interactionId: z.string().uuid(),
+  agentId: z.string().min(1),
+  sessionId: z.string().uuid(),
+  a2aEndpoint: z.string().url(),
+  expiresAt: z.string().datetime(),
+});
+
+export const LiveSessionActivationSchema = z.object({
+  type: z.literal('openclasp.session.activation'),
+  version: z.literal('1'),
+  activationId: z.string().uuid(),
+  interactionId: z.string().uuid(),
+  agentId: z.string().min(1),
+  sessionId: z.string().uuid(),
+  role: z.enum(['initiator', 'responder']),
+  peer: z.object({
+    agentId: z.string().min(1),
+    sessionId: z.string().uuid(),
+    endpoint: z.string().url(),
+    bearerToken: z.string().min(1),
+    verificationKey: z.string().min(1),
+  }),
+  reporting: z.object({
+    endpoint: z.string().url(),
+    bearerToken: z.string().min(1),
+  }),
+  contractHash: z.string().min(1),
+  activatedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+});
+
+const SessionDetailKeySchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}$/);
+
+export const StructuredSessionDetailsSchema = z
+  .object({
+    labels: z.array(SessionDetailKeySchema).max(32).default([]),
+    metrics: z.record(SessionDetailKeySchema, z.number().finite()).default({}),
+    flags: z.record(SessionDetailKeySchema, z.boolean()).default({}),
+  })
+  .strict()
+  .default({ labels: [], metrics: {}, flags: {} });
+
+export const LiveSessionEventSchema = z.object({
+  eventId: z.string().uuid(),
+  interactionId: z.string().uuid(),
+  agentId: z.string().min(1),
+  sequence: z.number().int().nonnegative(),
+  type: z.enum([
+    'session_started',
+    'message_sent',
+    'claim',
+    'evidence',
+    'correction',
+    'constraint',
+    'task_result',
+    'session_completed',
+    'session_failed',
+  ]),
+  occurredAt: z.string().datetime(),
+  messageHash: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]{43}$/)
+    .optional(),
+  evidenceReferences: z.array(z.string()).default([]),
+  outcome: z.enum(['success', 'failure', 'partial']).optional(),
+  details: StructuredSessionDetailsSchema,
 });
 
 export const TrustEnvelopeSchema = z.object({
@@ -328,10 +406,14 @@ export type FactCheckResult = z.infer<typeof FactCheckResultSchema>;
 export type ExpectationManifest = z.infer<typeof ExpectationManifestSchema>;
 export type AgentTransport = z.infer<typeof AgentTransportSchema>;
 export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
-export type RuntimeDelivery = z.infer<typeof RuntimeDeliverySchema>;
 export type PublicAgentCard = z.infer<typeof PublicAgentCardSchema>;
 export type ContractAcceptance = z.infer<typeof ContractAcceptanceSchema>;
 export type FederatedInteraction = z.infer<typeof FederatedInteractionSchema>;
+export type LiveSessionInsight = z.infer<typeof LiveSessionInsightSchema>;
+export type LiveSessionOffer = z.infer<typeof LiveSessionOfferSchema>;
+export type LiveSessionAcceptance = z.infer<typeof LiveSessionAcceptanceSchema>;
+export type LiveSessionActivation = z.infer<typeof LiveSessionActivationSchema>;
+export type LiveSessionEvent = z.infer<typeof LiveSessionEventSchema>;
 
 export interface KeyPair {
   keyId: string;

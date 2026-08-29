@@ -22,6 +22,7 @@ type DashboardData = {
   publications: Record<string, any>[];
   interactions: Record<string, any>[];
   federatedInteractions: Record<string, any>[];
+  liveSessions: Record<string, any>[];
   events: Record<string, any>[];
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
@@ -34,7 +35,7 @@ type Settings = {
   contributionEnabled: boolean;
   retentionDays: number;
   evidenceSharing: 'never' | 'ask' | 'contract_only';
-  rawConversationsStored: true;
+  rawConversationsStored: false;
 };
 
 const emptyData: DashboardData = {
@@ -45,6 +46,7 @@ const emptyData: DashboardData = {
   publications: [],
   interactions: [],
   federatedInteractions: [],
+  liveSessions: [],
   events: [],
   conflicts: [],
   receipts: [],
@@ -56,7 +58,7 @@ const defaultSettings: Settings = {
   contributionEnabled: false,
   retentionDays: 30,
   evidenceSharing: 'ask',
-  rawConversationsStored: true,
+  rawConversationsStored: false,
 };
 const pages = ['dashboard', 'history', 'agents', 'insights', 'connect', 'settings'] as const;
 type Page = (typeof pages)[number];
@@ -226,7 +228,7 @@ function App() {
           <span className="liveDot" />
           <div>
             <strong>Privacy separated</strong>
-            <small>Gateway bodies expire in 24h</small>
+            <small>Raw messages never stored</small>
           </div>
         </div>
         <button className="account" onClick={() => void signOut()}>
@@ -535,7 +537,6 @@ function Agents({
 }) {
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
-  const [runtimeSecrets, setRuntimeSecrets] = useState<Record<string, string>>({});
   const saveAutomation = async (
     agentId: string,
     value: {
@@ -562,11 +563,10 @@ function Agents({
     setWorking(`runtime:${agentId}`);
     setError('');
     try {
-      const result = (await api(`/v0.1/agents/${encodeURIComponent(agentId)}/runtime`, {
+      await api(`/v0.1/agents/${encodeURIComponent(agentId)}/runtime`, {
         method: 'PUT',
         body: JSON.stringify({ endpoint }),
-      })) as { signingSecret: string };
-      setRuntimeSecrets((current) => ({ ...current, [agentId]: result.signingSecret }));
+      });
       await refreshDashboard();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Runtime verification failed');
@@ -595,9 +595,9 @@ function Agents({
         onAction={() => navigate('connect')}
       />
       <div className="notice">
-        <strong>One approval, then automatic.</strong> OpenClasp creates and hosts the agent's A2A
-        endpoint. Safe matching tasks can be accepted automatically; sensitive or mismatched
-        requests still require review.
+        <strong>Direct live sessions.</strong> OpenClasp verifies both runtimes, brokers scoped
+        credentials, then gets out of the message path. Safe matching tasks can be accepted
+        automatically; sensitive or mismatched requests still require review.
       </div>
       {error && <div className="errorBar">{error}</div>}
       <section className="agentGrid">
@@ -615,7 +615,6 @@ function Agents({
               working={working === agent.agentId}
               onSave={(value) => saveAutomation(agent.agentId, value)}
               runtime={data.runtimes.find((runtime) => runtime.agentId === agent.agentId)}
-              runtimeSecret={runtimeSecrets[agent.agentId]}
               runtimeWorking={working === `runtime:${agent.agentId}`}
               onRuntime={(endpoint) => saveRuntime(agent.agentId, endpoint)}
               onDisableRuntime={() => disableRuntime(agent.agentId)}
@@ -681,6 +680,18 @@ function Invitations({
               {interaction.initiatorAgentId} → {interaction.responderAgentId} · {interaction.status}
             </small>
             <small>Contract: {String(interaction.termsHash).slice(0, 16)}…</small>
+            {data.liveSessions.find(
+              (session) => session.interactionId === interaction.interactionId,
+            ) ? (
+              <small className="autoAccepted">
+                Live session:{' '}
+                {
+                  data.liveSessions.find(
+                    (session) => session.interactionId === interaction.interactionId,
+                  )?.status
+                }
+              </small>
+            ) : null}
             {interaction.status === 'active' &&
             interaction.acceptances?.[interaction.responderAgentId]?.method ===
               'policy_auto_accept' ? (
@@ -958,10 +969,10 @@ function SettingsPage({
           </select>
         </Setting>
         <Setting
-          label="Gateway message bodies"
-          description="Encrypted at rest, deleted on acknowledgement, and automatically expired after 24 hours. Never used for profiles."
+          label="Raw agent messages"
+          description="Travel directly between agent-owned runtimes. OpenClasp stores structured events and hashes only."
         >
-          <span className="locked">24H MAX</span>
+          <span className="locked">NOT STORED</span>
         </Setting>
         <div className="saveRow">
           <button className="primary" onClick={() => void save()} disabled={saving}>
@@ -1092,7 +1103,6 @@ function AgentCard({
   working,
   onSave,
   runtime,
-  runtimeSecret,
   runtimeWorking,
   onRuntime,
   onDisableRuntime,
@@ -1107,7 +1117,6 @@ function AgentCard({
     autoAcceptTaskCategories: string[];
   }) => void;
   runtime: Record<string, any> | undefined;
-  runtimeSecret: string | undefined;
   runtimeWorking: boolean;
   onRuntime: (endpoint: string) => void;
   onDisableRuntime: () => void;
@@ -1126,7 +1135,7 @@ function AgentCard({
   const [runtimeEndpoint, setRuntimeEndpoint] = useState(String(runtime?.endpoint ?? ''));
   const ready = published;
   const online = agent.presence?.status === 'online';
-  const endpoint = `${window.location.origin}/a2a/${encodeURIComponent(agent.agentId)}`;
+  const endpoint = String(runtime?.a2aEndpoint ?? agent.a2aEndpoint ?? 'Connect a runtime first');
   const identityLabel = agent.revoked
     ? 'REVOKED'
     : agent.identityMode === 'oauth_installation'
@@ -1158,8 +1167,8 @@ function AgentCard({
       </small>
       <small>
         {agent.presence?.lastSeenAt
-          ? `Last MCP activity ${new Date(agent.presence.lastSeenAt).toLocaleString()}`
-          : 'No MCP activity recorded yet'}
+          ? `Last agent activity ${new Date(agent.presence.lastSeenAt).toLocaleString()}`
+          : 'No agent activity recorded yet'}
       </small>
       {published ? (
         <a
@@ -1172,7 +1181,7 @@ function AgentCard({
       ) : null}
       <div className="automationSummary">
         <span>{published ? '● Public discovery' : '○ Private'}</span>
-        <span>↗ OpenClasp A2A gateway</span>
+        <span>↗ Direct agent-owned A2A</span>
         <span>
           {agent.autoAcceptPolicy === 'safe_matching'
             ? '⚡ Safe tasks automatic'
@@ -1187,7 +1196,8 @@ function AgentCard({
           </span>
         </div>
         <p>
-          Connect the agent worker running on your cloud. OpenClasp verifies it before sending work.
+          Connect the worker running on your cloud. OpenClasp uses this callback only to prepare a
+          live session; messages then travel directly between agents.
         </p>
         <input
           type="url"
@@ -1209,18 +1219,12 @@ function AgentCard({
             {runtimeWorking ? 'Verifying…' : runtime ? 'Rotate connection' : 'Verify & connect'}
           </button>
         </div>
-        {runtimeSecret ? (
-          <div className="runtimeSecret">
-            <strong>Copy this signing secret now. It will not be shown again.</strong>
-            <code>{runtimeSecret}</code>
-          </div>
-        ) : null}
-        {runtime?.lastError ? <small>Last delivery error: {runtime.lastError}</small> : null}
+        {runtime?.lastError ? <small>Last session error: {runtime.lastError}</small> : null}
       </div>
       {editing ? (
         <div className="automationForm">
           <label>
-            <span>Hosted A2A endpoint</span>
+            <span>Agent-owned A2A endpoint</span>
             <input type="url" value={endpoint} readOnly />
           </label>
           <label>

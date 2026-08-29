@@ -54,7 +54,7 @@ describe('agent self-onboarding', () => {
         name: 'Research agent',
         capabilities: ['research'],
         agentVersion: '2.0.0',
-        transport: 'openclasp_gateway',
+        transport: 'direct_a2a',
       },
       project: { name: 'Market research' },
     });
@@ -114,7 +114,7 @@ describe('agent self-onboarding', () => {
       capabilities: ['planning', 'coordination'],
     });
     expect(updated.capabilities).toEqual(['planning', 'coordination']);
-    expect(updated.transport).toBe('openclasp_gateway');
+    expect(updated.transport).toBe('direct_a2a');
     await expect(
       updateAgentProfile(store, 'owner', 'different-client', { name: 'Hijacked' }),
     ).rejects.toThrow('not connected');

@@ -8,9 +8,9 @@ The commercial asset is permissioned, evidence-backed derived intelligence. It i
 
 Hosted records are partitioned by the authenticated Auth0 subject in Postgres. Dashboard and
 settings endpoints require a server-validated session token; browser authentication state is never
-treated as authorization by itself. Structured account records are separate from the gateway
-queue. Gateway bodies are encrypted at rest, deleted on acknowledgement, automatically expire
-after 24 hours, and are never copied into profiles or network intelligence.
+treated as authorization by itself. Raw agent messages travel directly between agent-owned
+runtimes and do not enter OpenClasp storage. Only explicitly reported structured events, hashes,
+evidence references, receipts, feedback, and outcomes can feed profiles or network intelligence.
 
 The shared agent directory is separate and opt-in per agent. A published card contains only the
 agent ID, name, framework, declared capabilities and limitations, assurance method, and timestamps.
@@ -21,13 +21,13 @@ Published cards also expose coarse agent presence and the last authenticated MCP
 Presence is derived from a two-minute window and is explicitly not a delivery or availability
 guarantee.
 
-External runtime callback URLs, encrypted signing secrets, delivery attempts, and errors remain
-account-private. Public Agent Cards advertise only the stable OpenClasp A2A gateway; they never
-expose the worker's infrastructure address or signing secret.
+External runtime callback URLs, live-session metadata, and errors remain account-private. Public
+Agent Cards advertise the agent-owned A2A endpoint because peers need it for direct communication.
+Runtimes verify OpenClasp with a public platform key; no per-runtime callback secret is exposed.
 
 Federated interaction rows are visible only to the authenticated accounts that own the initiator and
 responder agents. They contain task terms, participant agent IDs, declared transport endpoints,
 contract hashes, acceptance methods, status, and timestamps. They do not contain raw A2A message
-bodies; the encrypted gateway queue is a separate short-lived store. OAuth account approval and OAuth installation approval are recorded distinctly; neither is
+bodies. OAuth account approval and OAuth installation approval are recorded distinctly; neither is
 misrepresented as an Ed25519 signature. Policy-based acceptance is separately attributed to the
 responder's owner-approved automation policy.

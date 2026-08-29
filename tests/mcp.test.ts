@@ -12,7 +12,8 @@ describe('MCP surface', () => {
     expect(HOSTED_OPENCLASP_TOOL_NAMES).not.toContain('openclasp_create_identity');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_connect_to_agent');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_respond_invitation');
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_inbox');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_get_live_session');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_record_session_event');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_heartbeat');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_assess_counterparty');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_verify_receipt');

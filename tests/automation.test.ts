@@ -68,7 +68,7 @@ function fixture(): { agent: AgentProfile; interaction: FederatedInteraction } {
         protocol: 'A2A/1.0',
         protocolBinding: 'JSONRPC',
         endpoint: 'https://agent-b.example/a2a',
-        managedBy: 'openclasp',
+        managedBy: 'agent',
       },
       createdAt: now,
       updatedAt: now,

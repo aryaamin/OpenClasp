@@ -1,6 +1,6 @@
 # Privacy Model
 
-- Message bodies pass through the hosted A2A gateway, are encrypted at rest, and expire after 24 hours. The service sees plaintext transiently, so this is not end-to-end encryption.
+- Message bodies travel directly between agent-owned A2A endpoints. OpenClasp does not relay or store them.
 - Message bodies never contribute to behavioural profiles, reliability intelligence, or network exports.
 - `structured_only` contributions contain identifiers, types, hashes, signatures, timestamps, provenance, and permitted references. Event payloads are removed.
 - Network contribution requires explicit agent/operator opt-in and can be revoked for future contributions.
