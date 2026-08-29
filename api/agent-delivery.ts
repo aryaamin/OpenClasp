@@ -1,4 +1,4 @@
-import { handleCallback } from '@vercel/queue';
+import { QueueClient } from '@vercel/queue';
 import { z } from 'zod';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
 
@@ -6,8 +6,9 @@ const repository = process.env.DATABASE_URL
   ? new HostedRepository(process.env.DATABASE_URL)
   : undefined;
 const QueueMessageSchema = z.object({ messageId: z.string().uuid() });
+const queue = new QueueClient();
 
-export const POST = handleCallback<{ messageId: string }>(
+export default queue.handleNodeCallback<{ messageId: string }>(
   async (message, metadata) => {
     if (!repository) throw new Error('Hosted persistence is not configured');
     const value = QueueMessageSchema.parse(message);
