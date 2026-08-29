@@ -712,6 +712,51 @@ export class HostedRepository {
     return { agentId, status: 'disabled' as const };
   }
 
+  async deleteAgent(operatorId: string, agentId: string) {
+    await this.ensureSchema();
+    const owned = await this.sql`
+      SELECT 1 FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'agent_profile'
+        AND record_id = ${agentId}
+      LIMIT 1
+    `;
+    if (!owned.length) throw new Error('Owned agent not found');
+    const openInteractions = await this.sql`
+      SELECT interaction_id FROM openclasp_federated_interactions
+      WHERE (initiator_agent_id = ${agentId} OR responder_agent_id = ${agentId})
+        AND status IN ('pending', 'active')
+      LIMIT 1
+    `;
+    if (openInteractions.length) {
+      const error = new Error('Finish or reject the agent’s open interactions before deleting it');
+      Object.assign(error, { statusCode: 409 });
+      throw error;
+    }
+    await this.sql`
+      DELETE FROM openclasp_public_agents
+      WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
+    `;
+    await this.sql`
+      DELETE FROM openclasp_agent_runtimes
+      WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
+    `;
+    await this.sql`
+      DELETE FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND (
+          (record_id = ${agentId} AND kind IN ('agent', 'agent_profile', 'publication', 'presence'))
+          OR (kind = 'installation' AND payload->>'agentId' = ${agentId})
+          OR (kind = 'setup_request' AND payload->>'existingAgentId' = ${agentId})
+        )
+    `;
+    return {
+      agentId,
+      deleted: true as const,
+      historyRetained: true as const,
+    };
+  }
+
   private async liveRuntime(agentId: string) {
     const rows = await this.sql`
       SELECT runtime.*, agents.card

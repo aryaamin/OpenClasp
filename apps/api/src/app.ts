@@ -50,6 +50,7 @@ type DashboardRepository = Pick<
       | 'getRuntimeVerificationKey'
       | 'registerAgentRuntime'
       | 'disableAgentRuntime'
+      | 'deleteAgent'
     >
   >;
 
@@ -353,6 +354,14 @@ export function buildApi(
       if (!repository?.disableAgentRuntime || !owner)
         throw new Error('Hosted runtime delivery is not configured');
       return repository.disableAgentRuntime(owner, (request.params as { id: string }).id);
+    });
+    router.delete('/v0.1/agents/:id', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.deleteAgent || !owner)
+        throw new Error('Hosted agent deletion is not configured');
+      const result = await repository.deleteAgent(owner, (request.params as { id: string }).id);
+      engines.delete(owner);
+      return result;
     });
     router.get('/v0.1/directory', async (request) => {
       operatorId(request);

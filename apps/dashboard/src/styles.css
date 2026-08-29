@@ -726,6 +726,20 @@ select {
   justify-content: flex-end;
   gap: 8px;
 }
+
+.agentManagementActions {
+  justify-content: space-between;
+}
+
+.dangerButton {
+  border-color: var(--danger-line);
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.dangerButton:hover:not(:disabled) {
+  border-color: var(--danger);
+}
 .automationPreview {
   display: flex;
   flex-wrap: wrap;

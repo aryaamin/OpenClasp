@@ -586,6 +586,25 @@ function Agents({
       setWorking('');
     }
   };
+  const deleteAgent = async (agent: Record<string, any>) => {
+    const agentId = String(agent.agentId);
+    if (
+      !window.confirm(
+        `Delete “${String(agent.name ?? agentId)}”?\n\nIts runtime, publication, presence and MCP binding will be removed. Signed interaction and receipt history will be retained.`,
+      )
+    )
+      return;
+    setWorking(`delete:${agentId}`);
+    setError('');
+    try {
+      await api(`/v0.1/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' });
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Agent deletion failed');
+    } finally {
+      setWorking('');
+    }
+  };
   return (
     <>
       <PageHead
@@ -616,8 +635,10 @@ function Agents({
               onSave={(value) => saveAutomation(agent.agentId, value)}
               runtime={data.runtimes.find((runtime) => runtime.agentId === agent.agentId)}
               runtimeWorking={working === `runtime:${agent.agentId}`}
+              deleteWorking={working === `delete:${agent.agentId}`}
               onRuntime={(endpoint) => saveRuntime(agent.agentId, endpoint)}
               onDisableRuntime={() => disableRuntime(agent.agentId)}
+              onDelete={() => deleteAgent(agent)}
             />
           ))
         ) : (
@@ -1104,8 +1125,10 @@ function AgentCard({
   onSave,
   runtime,
   runtimeWorking,
+  deleteWorking,
   onRuntime,
   onDisableRuntime,
+  onDelete,
 }: {
   agent: Record<string, any>;
   projectName?: string;
@@ -1118,8 +1141,10 @@ function AgentCard({
   }) => void;
   runtime: Record<string, any> | undefined;
   runtimeWorking: boolean;
+  deleteWorking: boolean;
   onRuntime: (endpoint: string) => void;
   onDisableRuntime: () => void;
+  onDelete: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [autoPublish, setAutoPublish] = useState(Boolean(agent.autoPublish ?? published));
@@ -1278,13 +1303,22 @@ function AgentCard({
           </div>
         </div>
       ) : (
-        <button
-          className="secondary"
-          disabled={working || agent.status === 'revoked'}
-          onClick={() => setEditing(true)}
-        >
-          Configure automation
-        </button>
+        <div className="agentActions agentManagementActions">
+          <button
+            className="dangerButton"
+            disabled={working || runtimeWorking || deleteWorking}
+            onClick={onDelete}
+          >
+            {deleteWorking ? 'Deleting…' : 'Delete agent'}
+          </button>
+          <button
+            className="secondary"
+            disabled={working || runtimeWorking || deleteWorking || agent.status === 'revoked'}
+            onClick={() => setEditing(true)}
+          >
+            Configure automation
+          </button>
+        </div>
       )}
     </article>
   );

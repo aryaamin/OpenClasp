@@ -74,6 +74,10 @@ describe('HTTP API', () => {
         calls.push(`disable-runtime:${operatorId}:${agentId}`);
         return { agentId, status: 'disabled' as const };
       },
+      deleteAgent: async (operatorId: string, agentId: string) => {
+        calls.push(`delete-agent:${operatorId}:${agentId}`);
+        return { agentId, deleted: true as const, historyRetained: true as const };
+      },
     };
     const app = buildApi(undefined, undefined, repository);
     await app.ready();
@@ -111,6 +115,16 @@ describe('HTTP API', () => {
       'settings:user-b',
       'runtime:user-a:agent-a:https://agent.example/openclasp',
     ]);
+    expect(
+      (
+        await app.inject({
+          method: 'DELETE',
+          url: '/v0.1/agents/agent-a',
+          headers: { 'x-openclasp-operator': 'user-a' },
+        })
+      ).json(),
+    ).toMatchObject({ agentId: 'agent-a', deleted: true, historyRetained: true });
+    expect(calls.at(-1)).toBe('delete-agent:user-a:agent-a');
     await app.close();
   });
 
