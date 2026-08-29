@@ -1,0 +1,8 @@
+allowBuilds:
+  '@parcel/watcher': true
+  '@scarf/scarf': false
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@botpress/client@2.4.0'
+  - '@botpress/sdk@7.2.3'
+  - '@botpress/cli@7.1.3'

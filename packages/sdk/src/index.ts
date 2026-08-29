@@ -160,6 +160,9 @@ export class OpenClaspClient {
       body: JSON.stringify({ endpoint }),
     });
   }
+  disconnectRuntime(): Promise<{ agentId: string; status: 'disabled' }> {
+    return this.request('/runtime', { method: 'DELETE' });
+  }
   heartbeatRuntime(): Promise<{ status: 'online' | 'offline'; checkedAt: string }> {
     return this.request('/runtime/heartbeat', { method: 'POST' });
   }

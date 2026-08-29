@@ -206,6 +206,19 @@ describe('HTTP API', () => {
     expect(
       (
         await app.inject({
+          method: 'DELETE',
+          url: '/v0.1/runtime',
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe('disable-runtime:user-a:agent-a');
+    expect(
+      (
+        await app.inject({
           method: 'POST',
           url: '/v0.1/runtime/heartbeat',
           headers: {

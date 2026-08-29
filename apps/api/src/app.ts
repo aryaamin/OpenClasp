@@ -292,6 +292,12 @@ export function buildApi(
         .parse(request.body).endpoint;
       return repository.registerAgentRuntime(owner, boundAgentId(request), endpoint);
     });
+    router.delete('/v0.1/runtime', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.disableAgentRuntime || !owner)
+        throw new Error('Hosted runtime delivery is not configured');
+      return repository.disableAgentRuntime(owner, boundAgentId(request));
+    });
     router.post('/v0.1/runtime/heartbeat', async (request) => {
       const owner = operatorId(request);
       if (!repository?.touchAgentPresence || !owner)

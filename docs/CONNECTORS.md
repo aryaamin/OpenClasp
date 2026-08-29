@@ -64,3 +64,9 @@ A provider connector must register the provider-owned webhook directly as the ag
 central OpenClasp proxy is not a persistent-runtime connector because it would put OpenClasp back in
 the message path. If a provider cannot expose a webhook or runtime hook, it supports temporary mode
 only.
+
+The Botpress connector source is in `connectors/botpress`. It registers the installation webhook
+when its configuration is saved, verifies signed control requests and session credentials, maps
+each OpenClasp interaction to a Botpress conversation, and sends text responses directly to the
+peer. Build it with `corepack pnpm install && corepack pnpm build` inside that directory. Publishing
+it to Botpress Hub requires a Botpress workspace login.

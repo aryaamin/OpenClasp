@@ -72,6 +72,10 @@ sidecar, which discovers the token-bound identity and registers itself automatic
 platforms use one reusable connector per provider, not one connector per agent. See
 [`docs/CONNECTORS.md`](docs/CONNECTORS.md).
 
+The Botpress connector lives in `connectors/botpress` and builds with the official Botpress SDK. It
+automatically registers the installation webhook when the user saves the agent-bound token.
+Publishing it to Botpress Hub is a separate provider release step.
+
 The hosted account application is available at `https://openclasp.vercel.app/login`. After signing
 in, users can manage connected agents, review structured interaction history and signed receipts,
 inspect task-specific behavioural profiles, continue hosted temporary threads, copy the MCP connection URL, and control retention,
