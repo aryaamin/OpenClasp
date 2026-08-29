@@ -20,7 +20,7 @@ describe('hosted MCP authorization', () => {
     );
     expect(response.status).toBe(401);
     expect(response.headers.get('www-authenticate')).toBe(
-      'Bearer resource_metadata="https://openclasp.example/.well-known/oauth-protected-resource/mcp"',
+      'Bearer resource_metadata="https://openclasp.example/.well-known/oauth-protected-resource/mcp", scope="mcp:access"',
     );
     expect(response.headers.get('www-authenticate')).not.toContain('invalid_token');
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -34,8 +34,8 @@ describe('hosted MCP authorization', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       resource: 'https://openclasp.example/mcp',
-      authorization_servers: ['https://icfg-0ua6bab8d4omtfolx72mrhzo.us.auth0.com/'],
-      scopes_supported: ['openid', 'profile', 'email', 'mcp:access'],
+      authorization_servers: ['https://openclasp.example'],
+      scopes_supported: ['mcp:access'],
     });
   });
 });

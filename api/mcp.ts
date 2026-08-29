@@ -70,6 +70,7 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
   }
   const authentication = await verifyAuth0Token(bearerToken, {
     dashboard: false,
+    requiredScopes: ['mcp:access'],
   });
   return {
     token: bearerToken,
@@ -106,7 +107,7 @@ async function handler(request: Request): Promise<Response> {
   const headers = new Headers(response.headers);
   headers.set(
     'www-authenticate',
-    `Bearer resource_metadata="${new URL(resourceMetadataPath, publicOrigin).href}"`,
+    `Bearer resource_metadata="${new URL(resourceMetadataPath, publicOrigin).href}", scope="mcp:access"`,
   );
   headers.set('cache-control', 'no-store');
   headers.delete('content-length');

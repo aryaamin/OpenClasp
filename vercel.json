@@ -49,6 +49,7 @@
       "source": "/.well-known/oauth-authorization-server",
       "destination": "/api/oauth-authorization-server"
     },
+    { "source": "/oauth/register", "destination": "/api/oauth-register" },
     {
       "source": "/.well-known/openclasp-session-key",
       "destination": "/api/index?path=/.well-known/openclasp-session-key"
