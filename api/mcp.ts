@@ -47,6 +47,7 @@ const mcp = createMcpHandler(
   {
     serverInfo: { name: 'openclasp', version: '0.1.0' },
     instructions: OPENCLASP_MCP_INSTRUCTIONS,
+    verboseLogs: true,
   },
 );
 
@@ -111,6 +112,16 @@ const authenticatedHandler = withMcpAuth(mcp, verifyToken, {
 
 async function handler(request: Request): Promise<Response> {
   const response = await authenticatedHandler(request);
+  if (response.status >= 500) {
+    console.error('[mcp.http] request failed', {
+      status: response.status,
+      method: request.method,
+      protocolVersion: request.headers.get('mcp-protocol-version'),
+      contentType: request.headers.get('content-type'),
+      hasAuthorization: Boolean(request.headers.get('authorization')),
+      response: (await response.clone().text()).slice(0, 1000),
+    });
+  }
   if (response.status !== 401 || request.headers.get('authorization')?.trim()) return response;
 
   // A missing credential is an authentication discovery challenge, not an invalid token.
