@@ -1,4 +1,5 @@
 import {
+  DEFAULT_EXTENSION_URI,
   canonicalHash,
   signObject,
   type InteractionEvent,
@@ -12,6 +13,8 @@ import {
   type LiveSessionEvent,
   type LiveSessionOffer,
   type PublicAgentCard,
+  type HostedThread,
+  type HostedMessage,
 } from '../../protocol/src/index.js';
 import { createPublicKey, verify } from 'node:crypto';
 export { createIdentity } from '../../core/src/index.js';
@@ -111,6 +114,39 @@ export class OpenClaspClient {
     return this.request<FederatedInteraction>(
       `/federated-interactions/${encodeURIComponent(interactionId)}/respond`,
       { method: 'POST', body: JSON.stringify({ agentId, decision }) },
+    );
+  }
+  listHostedThreads(agentId: string): Promise<HostedThread[]> {
+    return this.request(`/agents/${encodeURIComponent(agentId)}/threads`);
+  }
+  getHostedThread(
+    agentId: string,
+    threadId: string,
+  ): Promise<{
+    thread: HostedThread;
+    messages: HostedMessage[];
+    insights: unknown[];
+  }> {
+    return this.request(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
+    );
+  }
+  sendTemporaryMessage(agentId: string, interactionId: string, content: string) {
+    return this.request(`/agents/${encodeURIComponent(agentId)}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ interactionId, content }),
+    });
+  }
+  markHostedThreadRead(agentId: string, threadId: string) {
+    return this.request(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/read`,
+      { method: 'POST' },
+    );
+  }
+  closeHostedThread(agentId: string, threadId: string) {
+    return this.request(
+      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/close`,
+      { method: 'POST' },
     );
   }
 }
@@ -334,17 +370,35 @@ export async function sendOpenClaspDirectMessage(
   payload: unknown,
   requestId = crypto.randomUUID(),
 ) {
+  const message =
+    payload && typeof payload === 'object'
+      ? {
+          ...(payload as Record<string, unknown>),
+          metadata: {
+            ...(((payload as Record<string, unknown>).metadata as Record<string, unknown>) ?? {}),
+            [DEFAULT_EXTENSION_URI]: {
+              interactionId: session.interactionId,
+              termsHash: session.contractHash,
+              initiatorAgentId:
+                session.role === 'initiator' ? session.agentId : session.peer.agentId,
+              responderAgentId:
+                session.role === 'responder' ? session.agentId : session.peer.agentId,
+            },
+          },
+        }
+      : payload;
   const response = await fetch(session.peer.endpoint, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${session.peer.bearerToken}`,
       'content-type': 'application/json',
+      'A2A-Extensions': DEFAULT_EXTENSION_URI,
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: requestId,
       method: 'message/send',
-      params: { message: payload },
+      params: { message },
     }),
   });
   const result = (await response.json()) as unknown;

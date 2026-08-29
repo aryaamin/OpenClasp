@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   AgentIdentitySchema,
   AgentPresenceSchema,
+  AgentModeSchema,
   AgentTransportSchema,
   DelegationCredentialSchema,
   ExpectationManifestSchema,
@@ -15,6 +16,8 @@ import {
   LiveSessionActivationSchema,
   LiveSessionEventSchema,
   LiveSessionOfferSchema,
+  HostedMessageSchema,
+  HostedThreadSchema,
   PublicAgentCardSchema,
   ReceiptSchema,
   RiskDecisionSchema,
@@ -34,12 +37,15 @@ const schemas = {
   risk_decision: RiskDecisionSchema,
   agent_transport: AgentTransportSchema,
   agent_presence: AgentPresenceSchema,
+  agent_mode: AgentModeSchema,
   public_agent_card: PublicAgentCardSchema,
   federated_interaction: FederatedInteractionSchema,
   live_session_offer: LiveSessionOfferSchema,
   live_session_acceptance: LiveSessionAcceptanceSchema,
   live_session_activation: LiveSessionActivationSchema,
   live_session_event: LiveSessionEventSchema,
+  hosted_message: HostedMessageSchema,
+  hosted_thread: HostedThreadSchema,
 };
 await mkdir('schemas/v0.1', { recursive: true });
 await Promise.all(

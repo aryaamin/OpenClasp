@@ -9,8 +9,12 @@ Contracts identify purpose, parties, task, success criteria, allowed/prohibited 
 Live sessions use four additional schemas: offer, acceptance, activation, and structured event.
 OpenClasp signs control requests to each registered runtime. Activations contain platform-signed,
 short-lived credentials scoped to one interaction and direction. A2A messages travel directly
-between the advertised agent endpoints; only structured events and message hashes return to
-OpenClasp.
+between persistent agent endpoints; only structured events and message hashes return to OpenClasp.
+
+Public cards declare `persistent_runtime` or `temporary_chat`. A temporary card advertises an
+OpenClasp-managed A2A endpoint. Exactly one side may be temporary in v0.1. Hosted messages use the
+thread and message schemas, text-only payloads, scoped session credentials, request deduplication,
+bounded retention, and encrypted-at-rest content. Message text is never a behavioural-profile input.
 
 Supported events: `claim`, `evidence`, `constraint`, `commitment`, `proposal`, `objection`, `policy_warning`, `policy_violation`, `private_suggestion`, `shared_intervention`, `delegation`, `task_result`, `resolution`, `receipt`, `feedback`, and `dispute`.
 

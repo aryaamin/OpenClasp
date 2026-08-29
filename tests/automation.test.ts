@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalHash, type FederatedInteraction } from '@openclasp/protocol';
-import { canAutoAcceptInteraction } from '../packages/persistence/src/hosted.js';
+import {
+  buildPublicAgentCard,
+  canAutoAcceptInteraction,
+} from '../packages/persistence/src/hosted.js';
 import type { AgentProfile } from '../packages/persistence/src/onboarding.js';
 
 function fixture(): { agent: AgentProfile; interaction: FederatedInteraction } {
@@ -102,5 +105,27 @@ describe('safe connection automation', () => {
     expect(canAutoAcceptInteraction({ ...agent, autoAcceptPolicy: 'off' }, interaction)).toBe(
       false,
     );
+  });
+
+  it('publishes an OpenClasp-managed endpoint only for temporary chat identities', () => {
+    const { agent } = fixture();
+    const temporaryAgent = { ...agent, agentMode: 'temporary_chat' as const };
+    delete temporaryAgent.a2aEndpoint;
+    const temporary = buildPublicAgentCard(
+      temporaryAgent,
+      'https://openclasp.example',
+    );
+    const persistent = buildPublicAgentCard(
+      { ...agent, agentMode: 'persistent_runtime' },
+      'https://openclasp.example',
+    );
+    expect(temporary.transports[0]).toMatchObject({
+      endpoint: 'https://openclasp.example/a2a/temporary/agent%3Ab',
+      managedBy: 'openclasp',
+    });
+    expect(persistent.transports[0]).toMatchObject({
+      endpoint: 'https://agent-b.example/a2a',
+      managedBy: 'agent',
+    });
   });
 });

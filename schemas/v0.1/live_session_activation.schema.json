@@ -76,6 +76,35 @@
       "required": ["endpoint", "bearerToken"],
       "additionalProperties": false
     },
+    "privateInsights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["info", "caution", "high"]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidenceReferences": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["code", "severity", "message", "evidenceReferences"],
+        "additionalProperties": false
+      }
+    },
     "contractHash": {
       "type": "string",
       "minLength": 1

@@ -8,9 +8,11 @@ The commercial asset is permissioned, evidence-backed derived intelligence. It i
 
 Hosted records are partitioned by the authenticated Auth0 subject in Postgres. Dashboard and
 settings endpoints require a server-validated session token; browser authentication state is never
-treated as authorization by itself. Raw agent messages travel directly between agent-owned
-runtimes and do not enter OpenClasp storage. Only explicitly reported structured events, hashes,
-evidence references, receipts, feedback, and outcomes can feed profiles or network intelligence.
+treated as authorization by itself. Persistent-runtime messages travel directly and do not enter
+OpenClasp storage. A temporary chat identity may explicitly use hosted delivery; OpenClasp then
+processes its text and stores AES-256-GCM ciphertext for 30 days. Message text from either mode is
+never eligible for profiles or network intelligence. Only explicitly reported structured events,
+hashes, evidence references, receipts, feedback, and outcomes can feed those systems.
 
 The shared agent directory is separate and opt-in per agent. A published card contains only the
 agent ID, name, framework, declared capabilities and limitations, assurance method, and timestamps.
@@ -22,7 +24,8 @@ Presence is derived from a two-minute window and is explicitly not a delivery or
 guarantee.
 
 External runtime callback URLs, live-session metadata, and errors remain account-private. Public
-Agent Cards advertise the agent-owned A2A endpoint because peers need it for direct communication.
+Agent Cards advertise either the agent-owned A2A endpoint or the explicitly labelled
+OpenClasp-managed temporary endpoint.
 Runtimes verify OpenClasp with a public platform key; no per-runtime callback secret is exposed.
 
 Federated interaction rows are visible only to the authenticated accounts that own the initiator and

@@ -51,6 +51,12 @@ type DashboardRepository = Pick<
       | 'registerAgentRuntime'
       | 'disableAgentRuntime'
       | 'deleteAgent'
+      | 'receiveTemporaryMessage'
+      | 'sendTemporaryMessage'
+      | 'listHostedThreads'
+      | 'getHostedThread'
+      | 'markHostedThreadRead'
+      | 'closeHostedThread'
     >
   >;
 
@@ -131,6 +137,7 @@ export function buildApi(
       version: '0.1',
       required: false,
       transportsMessages: false,
+      temporaryChatAdapter: true,
       documentation: 'https://github.com/aryaamin/OpenClasp/blob/main/docs/A2A_EXTENSION.md',
     }));
     router.post('/sessions/:id/events', async (request, reply) => {
@@ -145,6 +152,47 @@ export function buildApi(
       if (event.interactionId !== (request.params as { id: string }).id)
         throw new Error('Interaction path does not match the event');
       return repository.recordLiveSessionEvent(authorization.slice(7), event);
+    });
+    router.post('/a2a/temporary/:id', async (request, reply) => {
+      if (!repository?.receiveTemporaryMessage)
+        throw new Error('Temporary chat delivery is not configured');
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith('Bearer '))
+        return reply.status(401).send({ error: 'session_credential_required' });
+      const rpc = z
+        .object({
+          jsonrpc: z.literal('2.0'),
+          id: z.union([z.string().min(1).max(200), z.number()]),
+          method: z.literal('message/send'),
+          params: z.object({
+            message: z.object({
+              parts: z.array(z.record(z.string(), z.unknown())).min(1).max(100),
+            }),
+          }),
+        })
+        .parse(request.body);
+      const content = rpc.params.message.parts
+        .map((part) => (typeof part.text === 'string' ? part.text : ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+      if (!content) throw new Error('Temporary chat MVP accepts text parts only');
+      const recipientAgentId = (request.params as { id: string }).id;
+      const result = await repository.receiveTemporaryMessage(
+        authorization.slice(7),
+        recipientAgentId,
+        String(rpc.id),
+        content,
+      );
+      return {
+        jsonrpc: '2.0',
+        id: rpc.id,
+        result: {
+          task: { id: result.message.messageId, state: 'submitted' },
+          privacyMode: 'openclasp_hosted_temporary',
+          deduplicated: result.deduplicated,
+        },
+      };
     });
     router.get('/agents/:id/card.json', async (request) => {
       if (!repository) throw new Error('Hosted persistence is not configured');
@@ -177,6 +225,7 @@ export function buildApi(
         interactions: [],
         federatedInteractions: [],
         liveSessions: [],
+        hostedThreads: [],
         events: [...engine.events.values()],
         conflicts: [...engine.conflicts.values()],
         receipts: [...engine.receipts.values()],
@@ -362,6 +411,47 @@ export function buildApi(
       const result = await repository.deleteAgent(owner, (request.params as { id: string }).id);
       engines.delete(owner);
       return result;
+    });
+    router.get('/v0.1/agents/:id/threads', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listHostedThreads || !owner)
+        throw new Error('Temporary chat history is not configured');
+      return repository.listHostedThreads(owner, (request.params as { id: string }).id);
+    });
+    router.get('/v0.1/agents/:id/threads/:threadId', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getHostedThread || !owner)
+        throw new Error('Temporary chat history is not configured');
+      const params = request.params as { id: string; threadId: string };
+      return repository.getHostedThread(owner, params.id, params.threadId);
+    });
+    router.post('/v0.1/agents/:id/messages', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.sendTemporaryMessage || !owner)
+        throw new Error('Temporary chat delivery is not configured');
+      const value = z
+        .object({ interactionId: z.string().uuid(), content: z.string().trim().min(1).max(20_000) })
+        .parse(request.body);
+      return repository.sendTemporaryMessage(
+        owner,
+        (request.params as { id: string }).id,
+        value.interactionId,
+        value.content,
+      );
+    });
+    router.post('/v0.1/agents/:id/threads/:threadId/read', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.markHostedThreadRead || !owner)
+        throw new Error('Temporary chat history is not configured');
+      const params = request.params as { id: string; threadId: string };
+      return repository.markHostedThreadRead(owner, params.id, params.threadId);
+    });
+    router.post('/v0.1/agents/:id/threads/:threadId/close', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.closeHostedThread || !owner)
+        throw new Error('Temporary chat history is not configured');
+      const params = request.params as { id: string; threadId: string };
+      return repository.closeHostedThread(owner, params.id, params.threadId);
     });
     router.get('/v0.1/directory', async (request) => {
       operatorId(request);

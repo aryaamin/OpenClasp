@@ -1,7 +1,7 @@
 # Architecture
 
-OpenClasp is the control and assurance plane for direct A2A communication. It is not the
-conversation transport and does not store raw agent messages.
+OpenClasp is primarily the control and assurance plane for direct A2A communication. It provides a
+separate, explicit hosted adapter only for temporary chat identities that cannot expose HTTPS.
 
 ```text
 Agent A -> OpenClasp: contract + session request
@@ -21,6 +21,17 @@ Both runtimes must answer the prepare offer. The responder is activated first so
 the initiator begins. A failed or offline runtime prevents activation; conversation messages are not
 queued for later delivery.
 
+## Temporary chat mode
+
+```text
+Codex/Cursor <-- MCP --> OpenClasp temporary A2A endpoint <-- A2A --> persistent runtime
+```
+
+Exactly one participant may be temporary in the MVP. The persistent runtime must be online; it
+never receives offline queueing. OpenClasp translates the temporary side between MCP and A2A and
+stores that thread encrypted at rest for 30 days. Closing one chat session does not delete the
+persistent OpenClasp agent identity or its hosted thread.
+
 Platform-signed session credentials bind the interaction, sender, recipient, and expiry. Each
 runtime validates the credential locally using the verification key supplied in its signed
 activation. `interactionId` is the durable thread key. The agents own message ordering, model state,
@@ -29,7 +40,8 @@ and any internal job queue.
 OpenClasp stores the immutable contract, bilateral acceptances, runtime/session metadata, message
 hashes, structured claims, evidence references, corrections, terminal outcomes, receipts, and
 feedback. These records can update contextual behavioural profiles. Message bodies and private model
-reasoning stay with the agents.
+reasoning stay with the agents in direct mode. Temporary-hosted message text is excluded from
+profiles and network contribution even though it is retained for user-visible thread continuity.
 
 The protocol package owns wire validation and cryptography. The core package keeps deterministic
 authorization separate from suggestions. REST, SDK, MCP, sidecar, CLI, and dashboard call the same

@@ -90,12 +90,18 @@ so a runtime cannot accidentally upload message bodies through the structured-ev
 
 ## Live-session flow
 
-1. OpenClasp sends both runtimes a signed `openclasp.session.offer` containing the contract,
-   counterparty identity, and private contextual insights.
-2. Both runtimes return `openclasp.session.accepted` with a session ID and public A2A endpoint.
-3. OpenClasp activates the responder, then the initiator, with peer endpoints and scoped credentials.
+1. OpenClasp sends each persistent runtime a signed `openclasp.session.offer` containing the
+   contract, counterparty identity, and private contextual insights.
+2. Persistent runtimes return `openclasp.session.accepted`; a temporary participant is represented
+   by its OpenClasp-managed endpoint.
+3. OpenClasp activates persistent participants with peer endpoints and scoped credentials.
 4. The agents exchange A2A requests directly. OpenClasp is not on that network path.
 5. Both agents submit structured events, receipts, evidence references, feedback, and final outcomes.
+
+If the peer is a `temporary_chat`, its activation endpoint is OpenClasp-managed. The persistent
+runtime still uses normal A2A and its scoped credential, but the temporary user reads and replies
+through MCP. This is explicit hosted mode; it is never used as an offline fallback for another
+persistent runtime.
 
 If either runtime is offline, rejects the offer, times out, or fails activation, the interaction does
 not start. OpenClasp does not retain the conversation for later delivery.

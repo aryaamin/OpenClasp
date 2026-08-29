@@ -32,6 +32,7 @@ describe('HTTP API', () => {
           interactions: [],
           federatedInteractions: [],
           liveSessions: [],
+          hostedThreads: [],
           events: [],
           conflicts: [],
           receipts: [],
@@ -77,6 +78,29 @@ describe('HTTP API', () => {
       deleteAgent: async (operatorId: string, agentId: string) => {
         calls.push(`delete-agent:${operatorId}:${agentId}`);
         return { agentId, deleted: true as const, historyRetained: true as const };
+      },
+      receiveTemporaryMessage: async (
+        token: string,
+        agentId: string,
+        requestKey: string,
+        content: string,
+      ) => {
+        calls.push(`temporary:${token}:${agentId}:${requestKey}:${content}`);
+        return {
+          message: {
+            messageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            threadId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            interactionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            senderAgentId: 'agent-peer',
+            recipientAgentId: agentId,
+            contentType: 'text/plain' as const,
+            content,
+            contentHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            delivery: 'delivered' as const,
+            createdAt: new Date().toISOString(),
+          },
+          deduplicated: false,
+        };
       },
     };
     const app = buildApi(undefined, undefined, repository);
@@ -125,6 +149,39 @@ describe('HTTP API', () => {
       ).json(),
     ).toMatchObject({ agentId: 'agent-a', deleted: true, historyRetained: true });
     expect(calls.at(-1)).toBe('delete-agent:user-a:agent-a');
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/a2a/temporary/agent-a',
+          payload: {
+            jsonrpc: '2.0',
+            id: 'request-1',
+            method: 'message/send',
+            params: { message: { parts: [{ kind: 'text', text: 'Hello engineer' }] } },
+          },
+        })
+      ).statusCode,
+    ).toBe(401);
+    const temporaryDelivery = await app.inject({
+      method: 'POST',
+      url: '/a2a/temporary/agent-a',
+      headers: { authorization: 'Bearer scoped-token' },
+      payload: {
+        jsonrpc: '2.0',
+        id: 'request-1',
+        method: 'message/send',
+        params: { message: { parts: [{ kind: 'text', text: 'Hello engineer' }] } },
+      },
+    });
+    expect(temporaryDelivery.statusCode).toBe(200);
+    expect(temporaryDelivery.json()).toMatchObject({
+      result: {
+        task: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state: 'submitted' },
+        privacyMode: 'openclasp_hosted_temporary',
+      },
+    });
+    expect(calls.at(-1)).toBe('temporary:scoped-token:agent-a:request-1:Hello engineer');
     await app.close();
   });
 

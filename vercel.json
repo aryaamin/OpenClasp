@@ -12,6 +12,10 @@
     { "source": "/openapi.json", "destination": "/api/index?path=/openapi.json" },
     { "source": "/extensions/trust/v0.1", "destination": "/api/index?path=/extensions/trust/v0.1" },
     { "source": "/sessions/:id/events", "destination": "/api/index?path=/sessions/:id/events" },
+    {
+      "source": "/a2a/temporary/:id",
+      "destination": "/api/index?path=/a2a/temporary/:id"
+    },
     { "source": "/agents/:id/card.json", "destination": "/api/index?path=/agents/:id/card.json" },
     {
       "source": "/agents/:id/a2a-agent-card.json",
@@ -39,6 +43,7 @@
     { "source": "/sso-callback", "destination": "/" },
     { "source": "/dashboard", "destination": "/" },
     { "source": "/history", "destination": "/" },
+    { "source": "/conversations", "destination": "/" },
     { "source": "/agents", "destination": "/" },
     { "source": "/insights", "destination": "/" },
     { "source": "/connect", "destination": "/" },

@@ -41,6 +41,11 @@
       "type": "string",
       "enum": ["oauth_authenticated", "cryptographically_verified"]
     },
+    "agentMode": {
+      "default": "persistent_runtime",
+      "type": "string",
+      "enum": ["persistent_runtime", "temporary_chat"]
+    },
     "transports": {
       "type": "array",
       "items": {
@@ -123,6 +128,7 @@
     "capabilities",
     "limitations",
     "assurance",
+    "agentMode",
     "transports",
     "cardUrl",
     "a2aAgentCardUrl",

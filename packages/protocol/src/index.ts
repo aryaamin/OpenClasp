@@ -113,6 +113,8 @@ export const AgentTransportSchema = z.object({
   managedBy: z.enum(['agent', 'openclasp']).default('agent'),
 });
 
+export const AgentModeSchema = z.enum(['persistent_runtime', 'temporary_chat']);
+
 export const AgentPresenceSchema = z.object({
   status: z.enum(['online', 'offline']),
   lastSeenAt: z.string().datetime().optional(),
@@ -129,6 +131,7 @@ export const PublicAgentCardSchema = z.object({
   capabilities: z.array(z.string()),
   limitations: z.array(z.string()),
   assurance: z.enum(['oauth_authenticated', 'cryptographically_verified']),
+  agentMode: AgentModeSchema.default('persistent_runtime'),
   transports: z.array(AgentTransportSchema),
   cardUrl: z.string().url(),
   a2aAgentCardUrl: z.string().url(),
@@ -136,6 +139,34 @@ export const PublicAgentCardSchema = z.object({
   presence: AgentPresenceSchema.optional(),
   publishedAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+});
+
+export const HostedThreadStatusSchema = z.enum(['open', 'closed']);
+
+export const HostedMessageSchema = z.object({
+  messageId: z.string().uuid(),
+  threadId: z.string().uuid(),
+  interactionId: z.string().uuid(),
+  senderAgentId: z.string().min(1),
+  recipientAgentId: z.string().min(1),
+  contentType: z.literal('text/plain'),
+  content: z.string().min(1).max(20_000),
+  contentHash: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
+  delivery: z.enum(['accepted', 'delivered', 'read']),
+  createdAt: z.string().datetime(),
+  readAt: z.string().datetime().optional(),
+});
+
+export const HostedThreadSchema = z.object({
+  threadId: z.string().uuid(),
+  interactionId: z.string().uuid(),
+  participantAgentIds: z.tuple([z.string().min(1), z.string().min(1)]),
+  status: HostedThreadStatusSchema,
+  privacyMode: z.literal('openclasp_hosted_temporary'),
+  unreadCount: z.number().int().nonnegative().default(0),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
 });
 
 export const ContractAcceptanceSchema = z.object({
@@ -228,6 +259,7 @@ export const LiveSessionActivationSchema = z.object({
     endpoint: z.string().url(),
     bearerToken: z.string().min(1),
   }),
+  privateInsights: z.array(LiveSessionInsightSchema).optional(),
   contractHash: z.string().min(1),
   activatedAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
@@ -405,8 +437,11 @@ export type RiskDecision = z.infer<typeof RiskDecisionSchema>;
 export type FactCheckResult = z.infer<typeof FactCheckResultSchema>;
 export type ExpectationManifest = z.infer<typeof ExpectationManifestSchema>;
 export type AgentTransport = z.infer<typeof AgentTransportSchema>;
+export type AgentMode = z.infer<typeof AgentModeSchema>;
 export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
 export type PublicAgentCard = z.infer<typeof PublicAgentCardSchema>;
+export type HostedMessage = z.infer<typeof HostedMessageSchema>;
+export type HostedThread = z.infer<typeof HostedThreadSchema>;
 export type ContractAcceptance = z.infer<typeof ContractAcceptanceSchema>;
 export type FederatedInteraction = z.infer<typeof FederatedInteractionSchema>;
 export type LiveSessionInsight = z.infer<typeof LiveSessionInsightSchema>;

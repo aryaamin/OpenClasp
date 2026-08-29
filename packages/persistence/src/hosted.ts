@@ -7,6 +7,8 @@ import {
   LiveSessionActivationSchema,
   LiveSessionEventSchema,
   LiveSessionOfferSchema,
+  HostedMessageSchema,
+  HostedThreadSchema,
   PublicAgentCardSchema,
   canonicalHash,
   type FederatedInteraction,
@@ -14,10 +16,13 @@ import {
   type LiveSessionActivation,
   type LiveSessionEvent,
   type LiveSessionInsight,
+  type HostedMessage,
+  type HostedThread,
   type PublicAgentCard,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
 import {
+  decryptGatewayPayload,
   encryptGatewayPayload,
   attestSessionRecord,
   getSessionKeyId,
@@ -119,16 +124,28 @@ export function buildPublicAgentCard(
     capabilities: agent.capabilities,
     limitations: agent.limitations,
     assurance: 'oauth_authenticated',
-    transports: agent.a2aEndpoint
-      ? [
-          {
-            protocol: 'A2A/1.0',
-            protocolBinding: 'JSONRPC',
-            endpoint: agent.a2aEndpoint,
-            managedBy: 'agent',
-          },
-        ]
-      : [],
+    agentMode: agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat'),
+    transports:
+      (agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat')) ===
+      'temporary_chat'
+        ? [
+            {
+              protocol: 'A2A/1.0',
+              protocolBinding: 'JSONRPC',
+              endpoint: `${root}/a2a/temporary/${encodeURIComponent(agent.agentId)}`,
+              managedBy: 'openclasp',
+            },
+          ]
+        : agent.a2aEndpoint
+          ? [
+              {
+                protocol: 'A2A/1.0',
+                protocolBinding: 'JSONRPC',
+                endpoint: agent.a2aEndpoint,
+                managedBy: 'agent',
+              },
+            ]
+          : [],
     cardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/card.json`,
     a2aAgentCardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/a2a-agent-card.json`,
     extensionUri: DEFAULT_EXTENSION_URI,
@@ -324,6 +341,47 @@ export class HostedRepository {
           UNIQUE (interaction_id, agent_id, sequence)
         )
       `;
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_hosted_threads (
+          thread_id TEXT PRIMARY KEY,
+          interaction_id TEXT NOT NULL UNIQUE,
+          participant_a_agent_id TEXT NOT NULL,
+          participant_b_agent_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('open', 'closed')) DEFAULT 'open',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          expires_at TIMESTAMPTZ NOT NULL
+        )
+      `;
+      await this.sql`
+        CREATE INDEX IF NOT EXISTS openclasp_hosted_threads_participants
+        ON openclasp_hosted_threads(participant_a_agent_id, participant_b_agent_id, updated_at DESC)
+      `;
+      await this.sql`
+        CREATE TABLE IF NOT EXISTS openclasp_hosted_messages (
+          message_id TEXT PRIMARY KEY,
+          thread_id TEXT NOT NULL REFERENCES openclasp_hosted_threads(thread_id) ON DELETE CASCADE,
+          interaction_id TEXT NOT NULL,
+          sender_agent_id TEXT NOT NULL,
+          recipient_agent_id TEXT NOT NULL,
+          request_key TEXT NOT NULL,
+          content_ciphertext TEXT NOT NULL,
+          content_iv TEXT NOT NULL,
+          content_auth_tag TEXT NOT NULL,
+          content_hash TEXT NOT NULL,
+          delivery TEXT NOT NULL CHECK (delivery IN ('accepted', 'delivered', 'read')),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          read_at TIMESTAMPTZ
+        )
+      `;
+      await this.sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS openclasp_hosted_messages_dedup
+        ON openclasp_hosted_messages(thread_id, sender_agent_id, request_key)
+      `;
+      await this.sql`
+        CREATE INDEX IF NOT EXISTS openclasp_hosted_messages_thread_created
+        ON openclasp_hosted_messages(thread_id, created_at ASC)
+      `;
     })());
   }
 
@@ -396,6 +454,18 @@ export class HostedRepository {
     ]);
     const ofKind = (kind: HostedRecordKind) =>
       rows.filter((row) => row.kind === kind).map((row) => row.payload);
+    const agentProfiles = ofKind('agent_profile') as AgentProfile[];
+    const hostedThreads = (
+      await Promise.all(
+        agentProfiles
+          .filter(
+            (agent) =>
+              (agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat')) ===
+              'temporary_chat',
+          )
+          .map((agent) => this.listHostedThreads(operatorId, agent.agentId)),
+      )
+    ).flat();
     const presence = new Map(
       rows
         .filter((row) => row.kind === 'presence')
@@ -431,6 +501,7 @@ export class HostedRepository {
         expiresAt: new Date(String(row.expires_at)).toISOString(),
         ...(row.last_error ? { lastError: String(row.last_error) } : {}),
       })),
+      hostedThreads,
       runtimes,
     };
   }
@@ -445,6 +516,7 @@ export class HostedRepository {
     if (runtimes[0]) {
       card = PublicAgentCardSchema.parse({
         ...card,
+        agentMode: 'persistent_runtime',
         transports: [
           {
             protocol: 'A2A/1.0',
@@ -483,17 +555,42 @@ export class HostedRepository {
   async getPublishedAgent(agentId: string): Promise<PublicAgentCard | undefined> {
     await this.ensureSchema();
     const rows = await this.sql`
-      SELECT agents.card, runtime.a2a_endpoint, runtime.endpoint
+      SELECT agents.card, runtime.a2a_endpoint, runtime.endpoint, profile.payload AS profile
       FROM openclasp_public_agents agents
       LEFT JOIN openclasp_agent_runtimes runtime
         ON runtime.agent_id = agents.agent_id AND runtime.status = 'verified'
+      LEFT JOIN openclasp_records profile
+        ON profile.operator_id = agents.operator_id AND profile.kind = 'agent_profile'
+        AND profile.record_id = agents.agent_id
       WHERE agents.agent_id = ${agentId}
     `;
     if (!rows[0]?.card) return undefined;
     let card = normalizePublicAgentCard(rows[0].card);
-    if (rows[0].a2a_endpoint || rows[0].endpoint)
+    const profile = rows[0].profile as Partial<AgentProfile> | undefined;
+    const mode =
+      profile?.agentMode ??
+      (rows[0].a2a_endpoint || rows[0].endpoint ? 'persistent_runtime' : 'temporary_chat');
+    if (mode === 'temporary_chat') {
+      const root = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
+        /\/$/,
+        '',
+      );
       card = PublicAgentCardSchema.parse({
         ...card,
+        agentMode: 'temporary_chat',
+        transports: [
+          {
+            protocol: 'A2A/1.0',
+            protocolBinding: 'JSONRPC',
+            endpoint: `${root}/a2a/temporary/${encodeURIComponent(agentId)}`,
+            managedBy: 'openclasp',
+          },
+        ],
+      });
+    } else if (rows[0].a2a_endpoint || rows[0].endpoint)
+      card = PublicAgentCardSchema.parse({
+        ...card,
+        agentMode: 'persistent_runtime',
         transports: [
           {
             protocol: 'A2A/1.0',
@@ -513,10 +610,13 @@ export class HostedRepository {
   }): Promise<PublicAgentCard[]> {
     await this.ensureSchema();
     const rows = await this.sql`
-      SELECT agents.card, runtime.a2a_endpoint, runtime.endpoint
+      SELECT agents.card, runtime.a2a_endpoint, runtime.endpoint, profile.payload AS profile
       FROM openclasp_public_agents agents
       LEFT JOIN openclasp_agent_runtimes runtime
         ON runtime.agent_id = agents.agent_id AND runtime.status = 'verified'
+      LEFT JOIN openclasp_records profile
+        ON profile.operator_id = agents.operator_id AND profile.kind = 'agent_profile'
+        AND profile.record_id = agents.agent_id
       ORDER BY agents.updated_at DESC LIMIT 100
     `;
     const query = input.query?.trim().toLowerCase();
@@ -533,9 +633,31 @@ export class HostedRepository {
     return rows
       .map((row) => {
         let card = normalizePublicAgentCard(row.card);
-        if (row.a2a_endpoint || row.endpoint)
+        const profile = row.profile as Partial<AgentProfile> | undefined;
+        const mode =
+          profile?.agentMode ??
+          (row.a2a_endpoint || row.endpoint ? 'persistent_runtime' : 'temporary_chat');
+        if (mode === 'temporary_chat') {
+          const root = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
+            /\/$/,
+            '',
+          );
           card = PublicAgentCardSchema.parse({
             ...card,
+            agentMode: 'temporary_chat',
+            transports: [
+              {
+                protocol: 'A2A/1.0',
+                protocolBinding: 'JSONRPC',
+                endpoint: `${root}/a2a/temporary/${encodeURIComponent(card.agentId)}`,
+                managedBy: 'openclasp',
+              },
+            ],
+          });
+        } else if (row.a2a_endpoint || row.endpoint)
+          card = PublicAgentCardSchema.parse({
+            ...card,
+            agentMode: 'persistent_runtime',
             transports: [
               {
                 protocol: 'A2A/1.0',
@@ -670,22 +792,28 @@ export class HostedRepository {
     await this.sql`
       UPDATE openclasp_public_agents
       SET card = jsonb_set(
-        card,
-        '{transports}',
-        ${JSON.stringify([
-          {
-            protocol: 'A2A/1.0',
-            protocolBinding: 'JSONRPC',
-            endpoint: a2aEndpoint,
-            managedBy: 'agent',
-          },
-        ])}::jsonb
-      ), updated_at = NOW()
+          jsonb_set(
+            card,
+            '{transports}',
+            ${JSON.stringify([
+              {
+                protocol: 'A2A/1.0',
+                protocolBinding: 'JSONRPC',
+                endpoint: a2aEndpoint,
+                managedBy: 'agent',
+              },
+            ])}::jsonb
+          ),
+          '{agentMode}', '"persistent_runtime"'::jsonb
+        ), updated_at = NOW()
       WHERE agent_id = ${agentId} AND operator_id = ${operatorId}
     `;
     await this.sql`
       UPDATE openclasp_records
-      SET payload = jsonb_set(payload, '{a2aEndpoint}', to_jsonb(${a2aEndpoint}::text)),
+      SET payload = jsonb_set(
+          jsonb_set(payload, '{a2aEndpoint}', to_jsonb(${a2aEndpoint}::text)),
+          '{agentMode}', '"persistent_runtime"'::jsonb
+        ),
         updated_at = NOW()
       WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
     `;
@@ -734,6 +862,10 @@ export class HostedRepository {
       throw error;
     }
     await this.sql`
+      DELETE FROM openclasp_hosted_threads
+      WHERE participant_a_agent_id = ${agentId} OR participant_b_agent_id = ${agentId}
+    `;
+    await this.sql`
       DELETE FROM openclasp_public_agents
       WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
     `;
@@ -757,27 +889,48 @@ export class HostedRepository {
     };
   }
 
-  private async liveRuntime(agentId: string) {
+  private async sessionParticipant(agentId: string) {
     const rows = await this.sql`
-      SELECT runtime.*, agents.card
-      FROM openclasp_agent_runtimes runtime
-      INNER JOIN openclasp_public_agents agents ON agents.agent_id = runtime.agent_id
-      WHERE runtime.agent_id = ${agentId} AND runtime.status = 'verified'
+      SELECT agents.operator_id, agents.card, profile.payload AS profile,
+        runtime.endpoint, runtime.a2a_endpoint
+      FROM openclasp_public_agents agents
+      LEFT JOIN openclasp_records profile
+        ON profile.operator_id = agents.operator_id
+        AND profile.kind = 'agent_profile'
+        AND profile.record_id = agents.agent_id
+      LEFT JOIN openclasp_agent_runtimes runtime
+        ON runtime.agent_id = agents.agent_id AND runtime.status = 'verified'
+      WHERE agents.agent_id = ${agentId}
       LIMIT 1
     `;
     const row = rows[0];
-    if (!row) throw new Error(`Agent ${agentId} does not have a verified live runtime`);
+    if (!row) throw new Error(`Published agent ${agentId} was not found`);
+    const card = normalizePublicAgentCard(row.card);
+    const profile = row.profile as Partial<AgentProfile> | undefined;
+    const mode =
+      profile?.agentMode ??
+      (row.endpoint || row.a2a_endpoint ? 'persistent_runtime' : 'temporary_chat');
+    if (mode === 'persistent_runtime' && !row.endpoint)
+      throw new Error(`Agent ${agentId} does not have a verified live runtime`);
+    const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
+      /\/$/,
+      '',
+    );
     return {
       agentId,
       operatorId: String(row.operator_id),
-      callbackEndpoint: String(row.endpoint),
-      a2aEndpoint: String(row.a2a_endpoint ?? row.endpoint),
-      card: normalizePublicAgentCard(row.card),
+      mode: mode as 'persistent_runtime' | 'temporary_chat',
+      ...(row.endpoint ? { callbackEndpoint: String(row.endpoint) } : {}),
+      a2aEndpoint:
+        mode === 'temporary_chat'
+          ? `${baseUrl}/a2a/temporary/${encodeURIComponent(agentId)}`
+          : String(row.a2a_endpoint ?? row.endpoint),
+      card: PublicAgentCardSchema.parse({ ...card, agentMode: mode }),
     };
   }
 
   private async signedRuntimeRequest(
-    runtime: Awaited<ReturnType<HostedRepository['liveRuntime']>>,
+    runtime: { callbackEndpoint: string },
     requestId: string,
     value: unknown,
   ) {
@@ -805,7 +958,7 @@ export class HostedRepository {
 
   private async privateCounterpartyInsights(
     viewerOperatorId: string,
-    counterparty: Awaited<ReturnType<HostedRepository['liveRuntime']>>,
+    counterparty: { agentId: string; card: PublicAgentCard },
     taskCategory: string,
   ): Promise<LiveSessionInsight[]> {
     const rows = await this.sql`
@@ -910,9 +1063,11 @@ export class HostedRepository {
     `;
     if (existing[0]?.status === 'active') return;
     const [initiator, responder] = await Promise.all([
-      this.liveRuntime(interaction.initiatorAgentId),
-      this.liveRuntime(interaction.responderAgentId),
+      this.sessionParticipant(interaction.initiatorAgentId),
+      this.sessionParticipant(interaction.responderAgentId),
     ]);
+    if (initiator.mode === 'temporary_chat' && responder.mode === 'temporary_chat')
+      throw new Error('Temporary-to-temporary hosted conversations are not supported in this MVP');
     const [initiatorInsights, responderInsights] = await Promise.all([
       this.privateCounterpartyInsights(
         initiator.operatorId,
@@ -953,16 +1108,36 @@ export class HostedRepository {
       });
     const initiatorOffer = makeOffer(initiator, responder, 'initiator', initiatorInsights);
     const responderOffer = makeOffer(responder, initiator, 'responder', responderInsights);
-    const [initiatorResponse, responderResponse] = await Promise.all([
-      this.signedRuntimeRequest(initiator, initiatorOffer.offerId, initiatorOffer),
-      this.signedRuntimeRequest(responder, responderOffer.offerId, responderOffer),
+    const prepare = async (
+      participant: typeof initiator,
+      offer: typeof initiatorOffer,
+      label: 'Initiator' | 'Responder',
+    ) => {
+      if (participant.mode === 'temporary_chat')
+        return LiveSessionAcceptanceSchema.parse({
+          type: 'openclasp.session.accepted',
+          version: '1',
+          offerId: offer.offerId,
+          interactionId: interaction.interactionId,
+          agentId: participant.agentId,
+          sessionId: crypto.randomUUID(),
+          a2aEndpoint: participant.a2aEndpoint,
+          expiresAt: interaction.expiresAt,
+        });
+      if (!participant.callbackEndpoint) throw new Error(`${label} runtime is not configured`);
+      const response = await this.signedRuntimeRequest(
+        { callbackEndpoint: participant.callbackEndpoint },
+        offer.offerId,
+        offer,
+      );
+      if (response.status < 200 || response.status >= 300)
+        throw new Error(`${label} runtime is not live (HTTP ${response.status})`);
+      return LiveSessionAcceptanceSchema.parse(response.body);
+    };
+    const [initiatorAcceptance, responderAcceptance] = await Promise.all([
+      prepare(initiator, initiatorOffer, 'Initiator'),
+      prepare(responder, responderOffer, 'Responder'),
     ]);
-    if (initiatorResponse.status < 200 || initiatorResponse.status >= 300)
-      throw new Error(`Initiator runtime is not live (HTTP ${initiatorResponse.status})`);
-    if (responderResponse.status < 200 || responderResponse.status >= 300)
-      throw new Error(`Responder runtime is not live (HTTP ${responderResponse.status})`);
-    const initiatorAcceptance = LiveSessionAcceptanceSchema.parse(initiatorResponse.body);
-    const responderAcceptance = LiveSessionAcceptanceSchema.parse(responderResponse.body);
     if (
       initiatorAcceptance.offerId !== initiatorOffer.offerId ||
       initiatorAcceptance.agentId !== initiator.agentId ||
@@ -971,8 +1146,12 @@ export class HostedRepository {
     )
       throw new Error('Runtime returned a mismatched live-session acceptance');
     await Promise.all([
-      resolvePublicRuntimeEndpoint(initiatorAcceptance.a2aEndpoint),
-      resolvePublicRuntimeEndpoint(responderAcceptance.a2aEndpoint),
+      ...(initiator.mode === 'persistent_runtime'
+        ? [resolvePublicRuntimeEndpoint(initiatorAcceptance.a2aEndpoint)]
+        : []),
+      ...(responder.mode === 'persistent_runtime'
+        ? [resolvePublicRuntimeEndpoint(responderAcceptance.a2aEndpoint)]
+        : []),
     ]);
     await this.sql`
       INSERT INTO openclasp_live_sessions(
@@ -1005,6 +1184,7 @@ export class HostedRepository {
       peerAgentId: string,
       peerSessionId: string,
       peerEndpoint: string,
+      privateInsights: LiveSessionInsight[],
     ): LiveSessionActivation => {
       const bearerToken = this.sessionGrant(interaction, agentId, peerAgentId);
       return LiveSessionActivationSchema.parse({
@@ -1026,6 +1206,7 @@ export class HostedRepository {
           endpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/events`,
           bearerToken,
         },
+        privateInsights,
         contractHash: interaction.termsHash,
         activatedAt,
         expiresAt: interaction.expiresAt,
@@ -1038,6 +1219,7 @@ export class HostedRepository {
       responder.agentId,
       responderAcceptance.sessionId,
       responderAcceptance.a2aEndpoint,
+      initiatorInsights,
     );
     const responderActivation = makeActivation(
       responder.agentId,
@@ -1046,22 +1228,26 @@ export class HostedRepository {
       initiator.agentId,
       initiatorAcceptance.sessionId,
       initiatorAcceptance.a2aEndpoint,
+      responderInsights,
     );
     try {
-      const responderActivated = await this.signedRuntimeRequest(
-        responder,
-        responderActivation.activationId,
-        responderActivation,
-      );
-      if (responderActivated.status < 200 || responderActivated.status >= 300)
-        throw new Error(`Responder activation failed with HTTP ${responderActivated.status}`);
-      const initiatorActivated = await this.signedRuntimeRequest(
-        initiator,
-        initiatorActivation.activationId,
-        initiatorActivation,
-      );
-      if (initiatorActivated.status < 200 || initiatorActivated.status >= 300)
-        throw new Error(`Initiator activation failed with HTTP ${initiatorActivated.status}`);
+      const activate = async (
+        participant: typeof initiator,
+        activation: LiveSessionActivation,
+        label: 'Initiator' | 'Responder',
+      ) => {
+        if (participant.mode === 'temporary_chat') return;
+        if (!participant.callbackEndpoint) throw new Error(`${label} runtime is not configured`);
+        const response = await this.signedRuntimeRequest(
+          { callbackEndpoint: participant.callbackEndpoint },
+          activation.activationId,
+          activation,
+        );
+        if (response.status < 200 || response.status >= 300)
+          throw new Error(`${label} activation failed with HTTP ${response.status}`);
+      };
+      await activate(responder, responderActivation, 'Responder');
+      await activate(initiator, initiatorActivation, 'Initiator');
       await this.sql`
         UPDATE openclasp_live_sessions
         SET status = 'active', activated_at = NOW(), last_error = NULL
@@ -1096,9 +1282,9 @@ export class HostedRepository {
       FROM openclasp_live_sessions session
       INNER JOIN openclasp_federated_interactions interaction
         ON interaction.interaction_id = session.interaction_id
-      INNER JOIN openclasp_agent_runtimes initiator
+      INNER JOIN openclasp_public_agents initiator
         ON initiator.agent_id = session.initiator_agent_id
-      INNER JOIN openclasp_agent_runtimes responder
+      INNER JOIN openclasp_public_agents responder
         ON responder.agent_id = session.responder_agent_id
       WHERE session.interaction_id = ${interactionId} AND session.status = 'active'
       LIMIT 1
@@ -1112,6 +1298,12 @@ export class HostedRepository {
     if (owner !== operatorId) throw new Error('Agent is not owned by this account');
     const interaction = FederatedInteractionSchema.parse(row.payload);
     const peerAgentId = String(isInitiator ? row.responder_agent_id : row.initiator_agent_id);
+    const peer = await this.sessionParticipant(peerAgentId);
+    const privateInsights = await this.privateCounterpartyInsights(
+      String(owner),
+      peer,
+      interaction.contract.taskCategory,
+    );
     const bearerToken = this.sessionGrant(interaction, agentId, peerAgentId);
     return {
       type: 'openclasp.session.activation' as const,
@@ -1132,12 +1324,311 @@ export class HostedRepository {
         endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/events`,
         bearerToken,
       },
+      privateInsights,
       contractHash: interaction.termsHash,
       activatedAt: row.activated_at
         ? new Date(String(row.activated_at)).toISOString()
         : new Date().toISOString(),
       expiresAt: new Date(String(row.expires_at)).toISOString(),
     };
+  }
+
+  private async ownedTemporaryAgent(operatorId: string, agentId: string) {
+    const rows = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
+      LIMIT 1
+    `;
+    const profile = rows[0]?.payload as Partial<AgentProfile> | undefined;
+    if (!profile) throw new Error('Agent is not owned by this account');
+    const mode =
+      profile.agentMode ?? (profile.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat');
+    if (mode !== 'temporary_chat')
+      throw new Error('Hosted conversations are available only to temporary chat agents');
+    return profile;
+  }
+
+  private hostedMessage(row: Record<string, any>): HostedMessage {
+    const decrypted = decryptGatewayPayload(this.gatewaySecret(), {
+      ciphertext: String(row.content_ciphertext),
+      iv: String(row.content_iv),
+      authTag: String(row.content_auth_tag),
+    }) as { content?: unknown };
+    return HostedMessageSchema.parse({
+      messageId: String(row.message_id),
+      threadId: String(row.thread_id),
+      interactionId: String(row.interaction_id),
+      senderAgentId: String(row.sender_agent_id),
+      recipientAgentId: String(row.recipient_agent_id),
+      contentType: 'text/plain',
+      content: decrypted.content,
+      contentHash: String(row.content_hash),
+      delivery: row.delivery,
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      ...(row.read_at ? { readAt: new Date(String(row.read_at)).toISOString() } : {}),
+    });
+  }
+
+  private async storeHostedMessage(input: {
+    interactionId: string;
+    senderAgentId: string;
+    recipientAgentId: string;
+    requestKey: string;
+    content: string;
+    delivery: 'accepted' | 'delivered';
+  }) {
+    const content = input.content.trim();
+    if (!content || content.length > 20_000)
+      throw new Error('Message must contain 1-20000 characters');
+    const sessions = await this.sql`
+      SELECT session.status, interaction.status AS interaction_status,
+        session.initiator_agent_id, session.responder_agent_id
+      FROM openclasp_live_sessions session
+      INNER JOIN openclasp_federated_interactions interaction
+        ON interaction.interaction_id = session.interaction_id
+      WHERE session.interaction_id = ${input.interactionId}
+      LIMIT 1
+    `;
+    const session = sessions[0];
+    if (!session || session.status !== 'active' || session.interaction_status !== 'active')
+      throw new Error('Active interaction not found');
+    const participants = new Set([
+      String(session.initiator_agent_id),
+      String(session.responder_agent_id),
+    ]);
+    if (!participants.has(input.senderAgentId) || !participants.has(input.recipientAgentId))
+      throw new Error('Message participants do not match the active interaction');
+    const now = new Date();
+    const threadId = input.interactionId;
+    const expiresAt = new Date(now.getTime() + 30 * 86_400_000).toISOString();
+    await this.sql`
+      INSERT INTO openclasp_hosted_threads(
+        thread_id, interaction_id, participant_a_agent_id, participant_b_agent_id,
+        status, expires_at
+      ) VALUES (
+        ${threadId}, ${input.interactionId}, ${String(session.initiator_agent_id)},
+        ${String(session.responder_agent_id)}, 'open', ${expiresAt}
+      )
+      ON CONFLICT (thread_id) DO UPDATE SET updated_at = NOW()
+      WHERE openclasp_hosted_threads.status = 'open'
+    `;
+    const thread = await this.sql`
+      SELECT status, expires_at FROM openclasp_hosted_threads WHERE thread_id = ${threadId}
+    `;
+    if (thread[0]?.status !== 'open') throw new Error('Hosted thread is closed');
+    if (Date.parse(String(thread[0].expires_at)) <= Date.now())
+      throw new Error('Hosted thread has expired');
+    const encrypted = encryptGatewayPayload(this.gatewaySecret(), { content });
+    const messageId = crypto.randomUUID();
+    const contentHash = canonicalHash(content);
+    const inserted = await this.sql`
+      INSERT INTO openclasp_hosted_messages(
+        message_id, thread_id, interaction_id, sender_agent_id, recipient_agent_id,
+        request_key, content_ciphertext, content_iv, content_auth_tag, content_hash, delivery
+      ) VALUES (
+        ${messageId}, ${threadId}, ${input.interactionId}, ${input.senderAgentId},
+        ${input.recipientAgentId}, ${input.requestKey}, ${encrypted.ciphertext}, ${encrypted.iv},
+        ${encrypted.authTag}, ${contentHash}, ${input.delivery}
+      )
+      ON CONFLICT (thread_id, sender_agent_id, request_key) DO NOTHING
+      RETURNING *
+    `;
+    if (!inserted[0]) {
+      const existing = await this.sql`
+        SELECT * FROM openclasp_hosted_messages
+        WHERE thread_id = ${threadId} AND sender_agent_id = ${input.senderAgentId}
+          AND request_key = ${input.requestKey}
+        LIMIT 1
+      `;
+      return { message: this.hostedMessage(existing[0]!), deduplicated: true };
+    }
+    const sequenceRows = await this.sql`
+      SELECT COALESCE(MAX(sequence), -1) + 1 AS sequence
+      FROM openclasp_live_session_events
+      WHERE interaction_id = ${input.interactionId} AND agent_id = ${input.senderAgentId}
+    `;
+    const event = LiveSessionEventSchema.parse({
+      eventId: crypto.randomUUID(),
+      interactionId: input.interactionId,
+      agentId: input.senderAgentId,
+      sequence: Number(sequenceRows[0]?.sequence ?? 0),
+      type: 'message_sent',
+      occurredAt: now.toISOString(),
+      messageHash: contentHash,
+      evidenceReferences: [],
+      details: { labels: ['hosted_temporary'], metrics: {}, flags: { rawStoredEncrypted: true } },
+    });
+    const eventWithAttestation = JSON.stringify({
+      ...event,
+      attestation: attestSessionRecord(this.gatewaySecret(), event),
+    });
+    await this.sql`
+      INSERT INTO openclasp_live_session_events(interaction_id, event_id, agent_id, sequence, event)
+      VALUES (${event.interactionId}, ${event.eventId}, ${event.agentId}, ${event.sequence}, ${eventWithAttestation}::jsonb)
+      ON CONFLICT DO NOTHING
+    `;
+    return { message: this.hostedMessage(inserted[0]), deduplicated: false };
+  }
+
+  async receiveTemporaryMessage(
+    token: string,
+    recipientAgentId: string,
+    requestKey: string,
+    content: string,
+  ) {
+    await this.ensureSchema();
+    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    if (grant.recipientAgentId !== recipientAgentId)
+      throw new Error('Session credential is not valid for this temporary agent');
+    const recipient = await this.sessionParticipant(recipientAgentId);
+    if (recipient.mode !== 'temporary_chat')
+      throw new Error('Target is not a temporary chat agent');
+    const stored = await this.storeHostedMessage({
+      interactionId: grant.interactionId,
+      senderAgentId: grant.senderAgentId,
+      recipientAgentId,
+      requestKey,
+      content,
+      delivery: 'delivered',
+    });
+    return stored;
+  }
+
+  async sendTemporaryMessage(
+    operatorId: string,
+    senderAgentId: string,
+    interactionId: string,
+    content: string,
+  ) {
+    await this.ensureSchema();
+    await this.ownedTemporaryAgent(operatorId, senderAgentId);
+    const session = await this.getLiveSession(operatorId, interactionId, senderAgentId);
+    const peer = await this.sessionParticipant(session.peer.agentId);
+    if (peer.mode !== 'persistent_runtime')
+      throw new Error('Temporary-to-temporary hosted conversations are not supported');
+    const requestKey = crypto.randomUUID();
+    const stored = await this.storeHostedMessage({
+      interactionId,
+      senderAgentId,
+      recipientAgentId: session.peer.agentId,
+      requestKey,
+      content,
+      delivery: 'accepted',
+    });
+    const response = await postRuntimeJson(
+      session.peer.endpoint,
+      {
+        jsonrpc: '2.0',
+        id: requestKey,
+        method: 'message/send',
+        params: {
+          message: {
+            role: 'user',
+            parts: [{ kind: 'text', text: content.trim() }],
+            metadata: {
+              [DEFAULT_EXTENSION_URI]: {
+                interactionId,
+                termsHash: session.contractHash,
+                initiatorAgentId:
+                  session.role === 'initiator' ? senderAgentId : session.peer.agentId,
+                responderAgentId:
+                  session.role === 'responder' ? senderAgentId : session.peer.agentId,
+              },
+            },
+          },
+        },
+      },
+      {
+        authorization: `Bearer ${session.peer.bearerToken}`,
+        'A2A-Extensions': DEFAULT_EXTENSION_URI,
+      },
+    );
+    if (response.status < 200 || response.status >= 300)
+      throw new Error(`Peer A2A endpoint returned HTTP ${response.status}`);
+    await this.sql`
+      UPDATE openclasp_hosted_messages SET delivery = 'delivered'
+      WHERE message_id = ${stored.message.messageId}
+    `;
+    return {
+      ...stored,
+      message: { ...stored.message, delivery: 'delivered' as const },
+      peerResponse: response.body,
+    };
+  }
+
+  async listHostedThreads(operatorId: string, agentId: string): Promise<HostedThread[]> {
+    await this.ensureSchema();
+    await this.ownedTemporaryAgent(operatorId, agentId);
+    await this.sql`DELETE FROM openclasp_hosted_threads WHERE expires_at <= NOW()`;
+    const rows = await this.sql`
+      SELECT thread.*,
+        (SELECT COUNT(*) FROM openclasp_hosted_messages message
+          WHERE message.thread_id = thread.thread_id
+            AND message.recipient_agent_id = ${agentId} AND message.read_at IS NULL) AS unread_count
+      FROM openclasp_hosted_threads thread
+      WHERE ${agentId} IN (thread.participant_a_agent_id, thread.participant_b_agent_id)
+      ORDER BY thread.updated_at DESC
+    `;
+    return rows.map((row) =>
+      HostedThreadSchema.parse({
+        threadId: String(row.thread_id),
+        interactionId: String(row.interaction_id),
+        participantAgentIds: [
+          String(row.participant_a_agent_id),
+          String(row.participant_b_agent_id),
+        ],
+        status: row.status,
+        privacyMode: 'openclasp_hosted_temporary',
+        unreadCount: Number(row.unread_count ?? 0),
+        createdAt: new Date(String(row.created_at)).toISOString(),
+        updatedAt: new Date(String(row.updated_at)).toISOString(),
+        expiresAt: new Date(String(row.expires_at)).toISOString(),
+      }),
+    );
+  }
+
+  async getHostedThread(operatorId: string, agentId: string, threadId: string) {
+    const threads = await this.listHostedThreads(operatorId, agentId);
+    const thread = threads.find((value) => value.threadId === threadId);
+    if (!thread) throw new Error('Hosted thread not found');
+    const rows = await this.sql`
+      SELECT * FROM openclasp_hosted_messages
+      WHERE thread_id = ${threadId} ORDER BY created_at ASC
+    `;
+    const peerAgentId = thread.participantAgentIds.find((value) => value !== agentId);
+    if (!peerAgentId) throw new Error('Hosted thread has invalid participants');
+    const peer = await this.sessionParticipant(peerAgentId);
+    const interactions = await this.sql`
+      SELECT payload FROM openclasp_federated_interactions
+      WHERE interaction_id = ${thread.interactionId} LIMIT 1
+    `;
+    const interaction = FederatedInteractionSchema.parse(interactions[0]?.payload);
+    const insights = await this.privateCounterpartyInsights(
+      operatorId,
+      peer,
+      interaction.contract.taskCategory,
+    );
+    return { thread, messages: rows.map((row) => this.hostedMessage(row)), insights };
+  }
+
+  async markHostedThreadRead(operatorId: string, agentId: string, threadId: string) {
+    await this.getHostedThread(operatorId, agentId, threadId);
+    const rows = await this.sql`
+      UPDATE openclasp_hosted_messages
+      SET delivery = 'read', read_at = COALESCE(read_at, NOW())
+      WHERE thread_id = ${threadId} AND recipient_agent_id = ${agentId} AND read_at IS NULL
+      RETURNING message_id
+    `;
+    return { threadId, markedRead: rows.length };
+  }
+
+  async closeHostedThread(operatorId: string, agentId: string, threadId: string) {
+    await this.getHostedThread(operatorId, agentId, threadId);
+    await this.sql`
+      UPDATE openclasp_hosted_threads SET status = 'closed', updated_at = NOW()
+      WHERE thread_id = ${threadId}
+    `;
+    return { threadId, status: 'closed' as const };
   }
 
   async recordLiveSessionEvent(token: string, value: LiveSessionEvent) {

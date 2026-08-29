@@ -1475,6 +1475,103 @@ textarea {
   }
 }
 
+.conversationLayout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.7fr) minmax(360px, 1.3fr);
+  gap: 16px;
+}
+
+.threadList,
+.conversationDetail,
+.messageList {
+  display: grid;
+  gap: 10px;
+}
+
+.threadList > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg-well);
+  text-align: left;
+  cursor: pointer;
+}
+
+.threadList > button.active,
+.threadList > button:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.threadList span,
+.threadList small {
+  display: block;
+}
+
+.threadList small,
+.messageList span {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.threadList b,
+.conversationInsights b {
+  color: var(--accent);
+  font: 10px/1.2 var(--mono);
+}
+
+.conversationInsights {
+  padding: 12px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-sm);
+  background: var(--warn-dim);
+}
+
+.conversationInsights p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.conversationInsights p:last-child {
+  margin-bottom: 0;
+}
+
+.messageList article {
+  max-width: 82%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-well);
+}
+
+.messageList article.sent {
+  justify-self: end;
+  border-color: var(--accent-line);
+  background: var(--accent-dim);
+}
+
+.messageList article p {
+  margin: 4px 0;
+  white-space: pre-wrap;
+}
+
+.replyBox {
+  display: grid;
+  gap: 8px;
+}
+
+.replyBox textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .spinner,
   .toggle span {
@@ -1485,7 +1582,8 @@ textarea {
 
 @media (max-width: 980px) {
   .contentGrid,
-  .connectLayout {
+  .connectLayout,
+  .conversationLayout {
     grid-template-columns: 1fr;
   }
 
@@ -1543,7 +1641,7 @@ textarea {
   .appShell nav {
     display: grid;
     width: 100%;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 2px;
     margin: 0;
   }

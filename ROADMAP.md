@@ -2,11 +2,11 @@
 
 ## v0.1
 
-Local identities, delegation, contracts, structured events, deterministic policy, fixture fact-checking, mutual mediation, receipts, feedback, contextual profiles, REST/SDK/MCP/A2A sidecar, internet Agent Cards, cross-account invitations, shared interactions, CLI demo, and dashboard.
+Local identities, delegation, contracts, structured events, deterministic policy, fixture fact-checking, mutual mediation, receipts, feedback, contextual profiles, REST/SDK/MCP/A2A sidecar, internet Agent Cards, cross-account invitations, direct persistent sessions, one-sided temporary-chat hosting, CLI demo, and dashboard.
 
 ## v0.2
 
-PostgreSQL repository, production key-management adapters, OAuth authorization, live search providers, retention workers, contribution export/deletion workflows, and conformance vectors.
+Production key-management adapters, service-account OAuth, live search providers, retention workers, end-to-end temporary-inbox encryption, contribution export/deletion workflows, and A2A conformance vectors.
 
 ## Network
 

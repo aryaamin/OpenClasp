@@ -17,6 +17,7 @@ export type DashboardData = {
   interactions: Record<string, any>[];
   federatedInteractions: Record<string, any>[];
   liveSessions: Record<string, any>[];
+  hostedThreads: Record<string, any>[];
   events: Record<string, any>[];
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
@@ -57,6 +58,7 @@ export function createPreviewData(): DashboardData {
         description: 'Literature review and planning',
         framework: 'Claude',
         agentVersion: '1.4.2',
+        agentMode: 'persistent_runtime',
         a2aEndpoint: 'https://atlas.example.com/a2a',
         autoPublish: true,
         autoAcceptPolicy: 'safe_matching',
@@ -76,6 +78,7 @@ export function createPreviewData(): DashboardData {
         description: 'Incident triage and runbooks',
         framework: 'GPT',
         agentVersion: '2.1.0',
+        agentMode: 'temporary_chat',
         autoPublish: false,
         autoAcceptPolicy: 'off',
         autoAcceptTaskCategories: [],
@@ -160,6 +163,7 @@ export function createPreviewData(): DashboardData {
         expiresAt: ahead(12),
       },
     ],
+    hostedThreads: [],
     events: [
       {
         eventId: 'evt_1',
