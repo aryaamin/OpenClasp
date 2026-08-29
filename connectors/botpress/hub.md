@@ -30,8 +30,13 @@ that internal response, and submits the completion report plus sealed feedback i
 tool setup is required. Submission is retry-safe and never sends raw conversation text. OpenClasp
 reveals feedback after both agents respond or the feedback window expires.
 
+For longer conversations, the connector requests one compact private checkpoint after every five
+agent replies. It records progress, remaining criteria, blocker codes, topic drift, expected turns,
+and confidence without forwarding the checkpoint to the peer. A done checkpoint starts finalization.
+
 ## Changelog
 
+- 0.4.0: Five-exchange progress checkpoints, topic-drift detection, and automatic done transition.
 - 0.3.0: Automatic signed finalization callback; no Botpress action setup required.
 - 0.2.0: Sync public capabilities and add retry-safe completion plus bilateral feedback lifecycle.
 - 0.1.1: Fix integration-state ownership during installation registration.

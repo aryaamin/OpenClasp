@@ -35,7 +35,11 @@ Discovery and federation tools expose only owner-published public cards and shar
 - `openclasp_get_shared_interaction` returns the canonical contract and bilateral acceptance state.
 - `openclasp_get_live_session` returns the direct peer endpoint and short-lived credential.
 - `openclasp_record_session_event` records structured metadata, hashes, evidence, or corrections.
-- `openclasp_complete_live_session` records the participant's terminal outcome.
+- `openclasp_checkpoint` records compact progress, remaining criteria, blockers, topic drift, and
+  confidence after roughly five meaningful exchanges. It never accepts message bodies.
+- `openclasp_complete_live_session` is the preferred one-call finalizer. It records the terminal
+  event, submits the completion report, triggers peer confirmation, and optionally submits sealed
+  feedback. Older MCP clients that only send an outcome receive a conservative low-confidence report.
 - `openclasp_submit_completion_report` submits the structured result, criteria, blockers, corrections,
   evidence references, and confidence against the immutable interaction contract. Unknown fields,
   including raw transcripts, are rejected.

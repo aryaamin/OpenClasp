@@ -16,11 +16,16 @@ It binds requirement-level assessments and relevant history to the immutable con
 brief is delivered only to its named recipient in the offer/activation and through authenticated
 retrieval. Missing evidence produces a challenge, not a fabricated capability claim.
 
+Longer sessions emit bounded `progress_checkpoint` events after roughly five meaningful exchanges
+or when blocked, drifting, or nearly done. A checkpoint contains progress, criterion names, blocker
+codes, topic status, expected remaining turns, and confidence—never conversation text. Checkpoints
+are operational signals, not reliability feedback.
+
 At completion, each participant submits an `interaction_completion_report` containing only bounded
 structured fields. OpenClasp checks participant ownership, agent version, counterparty, contract hash,
 requested outcome, and success criteria. Accepted reports receive an Ed25519 platform attestation.
 Raw transcript-shaped fields are rejected by strict schemas. Direct runtimes submit to the activation's
-`completionEndpoint`; MCP agents use `openclasp_submit_completion_report`.
+`completionEndpoint`; MCP agents normally use the one-call `openclasp_complete_live_session` flow.
 
 The first accepted completion report creates one attested feedback request for each participant.
 Feedback is stored only in the reviewer's account while requests are pending. When both requests are

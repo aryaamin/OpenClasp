@@ -3,7 +3,7 @@ import { integrationName } from './package.json';
 
 export default new IntegrationDefinition({
   name: integrationName,
-  version: '0.3.0',
+  version: '0.4.0',
   title: 'OpenClasp',
   description: 'Direct A2A runtime connectivity with OpenClasp assurance and identity.',
   readme: 'hub.md',

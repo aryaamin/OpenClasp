@@ -344,31 +344,62 @@ export const StructuredSessionDetailsSchema = z
   .strict()
   .default({ labels: [], metrics: {}, flags: {} });
 
-export const LiveSessionEventSchema = z.object({
-  eventId: z.string().uuid(),
-  interactionId: z.string().uuid(),
-  agentId: z.string().min(1),
-  sequence: z.number().int().nonnegative(),
-  type: z.enum([
-    'session_started',
-    'message_sent',
-    'claim',
-    'evidence',
-    'correction',
-    'constraint',
-    'task_result',
-    'session_completed',
-    'session_failed',
-  ]),
-  occurredAt: z.string().datetime(),
-  messageHash: z
-    .string()
-    .regex(/^[a-zA-Z0-9_-]{43}$/)
-    .optional(),
-  evidenceReferences: z.array(z.string()).default([]),
-  outcome: z.enum(['success', 'failure', 'partial']).optional(),
-  details: StructuredSessionDetailsSchema,
-});
+export const ProgressCheckpointSchema = z
+  .object({
+    state: z.enum(['active', 'blocked', 'ready_to_finalize', 'done', 'cancelled']),
+    progress: z.number().min(0).max(1),
+    criteriaMet: z.array(z.string().min(1).max(1000)).max(100).default([]),
+    criteriaRemaining: z.array(z.string().min(1).max(1000)).max(100).default([]),
+    blockerCodes: z.array(SessionDetailKeySchema).max(32).default([]),
+    topicStatus: z.enum(['in_scope', 'drifting', 'changed']),
+    expectedRemainingTurns: z.number().int().nonnegative().max(1000).optional(),
+    needsHuman: z.boolean().default(false),
+    confidence: z.number().min(0).max(1),
+  })
+  .strict();
+
+export const LiveSessionEventSchema = z
+  .object({
+    eventId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    agentId: z.string().min(1),
+    sequence: z.number().int().nonnegative(),
+    type: z.enum([
+      'session_started',
+      'message_sent',
+      'progress_checkpoint',
+      'claim',
+      'evidence',
+      'correction',
+      'constraint',
+      'task_result',
+      'session_completed',
+      'session_failed',
+    ]),
+    occurredAt: z.string().datetime(),
+    messageHash: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]{43}$/)
+      .optional(),
+    evidenceReferences: z.array(z.string()).default([]),
+    outcome: z.enum(['success', 'failure', 'partial']).optional(),
+    checkpoint: ProgressCheckpointSchema.optional(),
+    details: StructuredSessionDetailsSchema,
+  })
+  .superRefine((event, context) => {
+    if (event.type === 'progress_checkpoint' && !event.checkpoint)
+      context.addIssue({
+        code: 'custom',
+        path: ['checkpoint'],
+        message: 'Progress checkpoint events require structured checkpoint data',
+      });
+    if (event.type !== 'progress_checkpoint' && event.checkpoint)
+      context.addIssue({
+        code: 'custom',
+        path: ['checkpoint'],
+        message: 'Checkpoint data is only valid on progress checkpoint events',
+      });
+  });
 
 export const CompletionOutcomeSchema = z.enum(['success', 'partial', 'failure', 'cancelled']);
 

@@ -932,7 +932,9 @@ function Conversations({
 
 function History({ data }: { data: DashboardData }) {
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<'all' | 'pending' | 'active' | 'completed'>('all');
+  const [status, setStatus] = useState<'all' | 'pending' | 'active' | 'finalizing' | 'completed'>(
+    'all',
+  );
   const journeys = useMemo(() => interactionJourneys(data), [data]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -966,7 +968,7 @@ function History({ data }: { data: DashboardData }) {
           aria-label="Search interaction history"
         />
         <div className="filterRow" aria-label="Interaction status filters">
-          {(['all', 'pending', 'active', 'completed'] as const).map((value) => (
+          {(['all', 'pending', 'active', 'finalizing', 'completed'] as const).map((value) => (
             <button
               key={value}
               className={status === value ? 'filterChip active' : 'filterChip'}
@@ -1129,7 +1131,9 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
         status: String(
           conclusion || receipt
             ? 'completed'
-            : (session?.status ?? interaction.status ?? 'pending'),
+            : reports.length > 0
+              ? 'finalizing'
+              : (session?.status ?? interaction.status ?? 'pending'),
         ),
         participants,
         updatedAt:
@@ -1167,6 +1171,14 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
 function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
   const timeline = interactionTimeline(journey);
   const conclusion = journey.conclusion;
+  const checkpoints = journey.events.filter(
+    (event) => (event.type ?? event.eventType) === 'progress_checkpoint' && event.checkpoint,
+  );
+  const latestCheckpoint = checkpoints.at(-1)?.checkpoint;
+  const progress = Number(latestCheckpoint?.progress ?? 0);
+  const submittedFeedback = new Set(
+    journey.feedback.map((item) => item.reviewerAgentId).filter(Boolean),
+  ).size;
   return (
     <article className="journeyDetail">
       <header className="journeyHero">
@@ -1180,13 +1192,38 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
 
       <div className="journeySummaryGrid">
         <section>
-          <span>Outcome</span>
-          <strong>{humanize(conclusion?.outcome ?? 'In progress')}</strong>
-          <small>{humanize(conclusion?.consensus ?? 'Awaiting bilateral conclusion')}</small>
+          <span>Progress</span>
+          <strong>
+            {latestCheckpoint
+              ? `${Math.round(progress * 100)}% · ${humanize(latestCheckpoint.state)}`
+              : journey.reports.length
+                ? 'Finalizing'
+                : 'Awaiting checkpoint'}
+          </strong>
+          <small>
+            {latestCheckpoint
+              ? `${humanize(latestCheckpoint.topicStatus)} · ${Math.round(Number(latestCheckpoint.confidence ?? 0) * 100)}% confidence`
+              : 'Agents report compact progress every few exchanges'}
+          </small>
         </section>
         <section>
-          <span>Feedback</span>
-          <strong>{conclusion ? 'Closed' : `${journey.feedback.length} submitted locally`}</strong>
+          <span>Outcome</span>
+          <strong>
+            {conclusion
+              ? humanize(conclusion.outcome)
+              : `${journey.reports.length}/2 terminal reports`}
+          </strong>
+          <small>
+            {conclusion
+              ? humanize(conclusion.consensus)
+              : journey.reports.length === 1
+                ? 'One agent finished; confirming with the peer'
+                : 'Conversation remains active'}
+          </small>
+        </section>
+        <section>
+          <span>Sealed feedback</span>
+          <strong>{conclusion ? 'Released' : `${submittedFeedback}/2 submitted`}</strong>
           <small>{feedbackState(journey.feedbackRequests)}</small>
         </section>
         <section>
@@ -1201,6 +1238,42 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
           <small>{humanize(journey.eligibility?.contributionMode ?? 'Local only')}</small>
         </section>
       </div>
+
+      {latestCheckpoint ? (
+        <section className="progressCard">
+          <div className="progressCardTop">
+            <div>
+              <span className="eyebrow">LATEST PRIVATE CHECKPOINT</span>
+              <h3>{humanize(latestCheckpoint.state)}</h3>
+            </div>
+            <strong>{Math.round(progress * 100)}%</strong>
+          </div>
+          <div
+            className="progressTrack"
+            role="progressbar"
+            aria-label="Interaction progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress * 100)}
+          >
+            <i style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
+          <div className="progressFacts">
+            <span>{latestCheckpoint.criteriaMet?.length ?? 0} criteria met</span>
+            <span>{latestCheckpoint.criteriaRemaining?.length ?? 0} remaining</span>
+            <span>{latestCheckpoint.expectedRemainingTurns ?? '—'} expected turns</span>
+            <span>
+              {latestCheckpoint.needsHuman ? 'Human input needed' : 'No human input needed'}
+            </span>
+          </div>
+          {latestCheckpoint.topicStatus !== 'in_scope' ? (
+            <p className="progressWarning">
+              Topic {humanize(latestCheckpoint.topicStatus)}. Amend the contract or start a new
+              interaction before continuing.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {conclusion ? (
         <section className="outcomeCard">
@@ -1228,7 +1301,11 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
         </section>
       ) : (
         <div className="journeyNotice">
-          No conclusion yet. It appears after terminal reports and bilateral feedback or timeout.
+          {journey.reports.length === 1
+            ? 'Finalizing: one agent submitted its terminal report. OpenClasp has requested independent confirmation from the peer.'
+            : journey.reports.length >= 2
+              ? 'Both agents finished. Sealed feedback remains private until both respond or the feedback window expires.'
+              : 'Active interaction. Progress checkpoints appear after several meaningful exchanges; either agent can finalize immediately when the task is done.'}
         </div>
       )}
 
@@ -1290,17 +1367,32 @@ function interactionTimeline(journey: InteractionJourneyModel) {
           },
         ]
       : []),
-    ...journey.events.map((event) => ({
-      at: timestamp(event),
-      title: humanize(event.eventType ?? 'Structured event'),
-      detail: String(event.agentId ?? 'OpenClasp') + ' submitted structured metadata.',
-      status: String(event.visibility ?? 'recorded'),
-      tone: String(event.eventType).includes('violation')
-        ? 'danger'
-        : String(event.eventType).includes('warning')
-          ? 'warn'
-          : 'neutral',
-    })),
+    ...journey.events.map((event) => {
+      const eventType = String(event.type ?? event.eventType ?? 'structured_event');
+      const checkpoint = event.checkpoint;
+      return {
+        at: timestamp(event),
+        title:
+          eventType === 'progress_checkpoint'
+            ? `${Math.round(Number(checkpoint?.progress ?? 0) * 100)}% progress checkpoint`
+            : humanize(eventType),
+        detail:
+          eventType === 'progress_checkpoint'
+            ? `${event.agentId} · ${humanize(checkpoint?.state ?? 'active')} · ${humanize(checkpoint?.topicStatus ?? 'in_scope')}`
+            : String(event.agentId ?? 'OpenClasp') + ' submitted structured metadata.',
+        status: String(checkpoint?.state ?? event.visibility ?? 'recorded'),
+        tone:
+          checkpoint?.topicStatus === 'changed' || checkpoint?.state === 'blocked'
+            ? 'warn'
+            : eventType.includes('violation')
+              ? 'danger'
+              : eventType.includes('warning')
+                ? 'warn'
+                : checkpoint
+                  ? 'good'
+                  : 'neutral',
+      };
+    }),
     ...journey.reports.map((report) => ({
       at: timestamp(report),
       title: `Completion reported by ${report.reportingAgentId}`,

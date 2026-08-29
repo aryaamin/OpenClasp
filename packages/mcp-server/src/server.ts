@@ -11,6 +11,7 @@ import {
   InteractionFeedbackSchema,
   InteractionEventSchema,
   LiveSessionEventSchema,
+  ProgressCheckpointSchema,
   ReceiptSchema,
   TrustEnvelopeSchema,
   canonicalHash,
@@ -67,6 +68,7 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_submit_completion_report',
   'openclasp_list_feedback_requests',
   'openclasp_submit_interaction_feedback',
+  'openclasp_checkpoint',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -89,7 +91,7 @@ const text = (value: unknown) => ({
 });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Call openclasp_connection_status and openclasp_heartbeat. Persistent runtimes use direct A2A. Temporary agents use openclasp_list_threads, openclasp_get_thread, openclasp_send_message, and openclasp_reply. At a terminal outcome, call openclasp_submit_completion_report, then openclasp_submit_interaction_feedback for your pending request. Submit evidence-backed structured facts only; never upload transcripts or invent peer feedback.';
+  'Start with openclasp_connection_status and heartbeat while active. Persistent runtimes use direct A2A; temporary agents use hosted thread tools. For longer tasks, call openclasp_checkpoint about every five meaningful exchanges or when blocked, drifting, or nearly done. At a terminal outcome call openclasp_complete_live_session with an honest assessment and feedback; it triggers peer finalization. Submit structured evidence only; never upload transcripts or invent feedback.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -1108,18 +1110,67 @@ export function registerOpenClaspTools(
     OPENCLASP_TOOL_NAMES[30],
     {
       title: 'Complete live session',
-      description: 'Record this participant’s terminal outcome for a live session.',
-      inputSchema: z.object({
-        interactionId: z.string().uuid(),
-        sequence: z.number().int().nonnegative(),
-        outcome: z.enum(['success', 'failure', 'partial']),
-        evidenceReferences: z.array(z.string()).default([]),
-        details: LiveSessionEventSchema.shape.details,
-      }),
+      description:
+        'Finalize this participant’s side of a live session. Records the terminal event and submits a structured completion report, which triggers the persistent peer’s private finalization. Optional assessment and feedback improve the resulting reliability history.',
+      inputSchema: z
+        .object({
+          interactionId: z.string().uuid(),
+          sequence: z.number().int().nonnegative(),
+          outcome: z.enum(['success', 'failure', 'partial']),
+          evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
+          details: LiveSessionEventSchema.shape.details,
+          assessment: z
+            .object({
+              summary: z.string().min(1).max(2000),
+              criteria: z
+                .array(
+                  z
+                    .object({
+                      criterion: z.string().min(1).max(1000),
+                      status: z.enum(['met', 'partially_met', 'missed', 'unknown']),
+                      explanation: z.string().max(1000).optional(),
+                      evidenceReferences: z.array(z.string().min(1).max(2048)).max(50).default([]),
+                    })
+                    .strict(),
+                )
+                .max(100)
+                .default([]),
+              deliverables: z.array(z.string().min(1).max(1000)).max(100).default([]),
+              actionsTaken: z.array(z.string().min(1).max(1000)).max(100).default([]),
+              blockers: z.array(z.string().min(1).max(1000)).max(100).default([]),
+              corrections: z.array(z.string().min(1).max(1000)).max(100).default([]),
+              confidence: z.number().min(0).max(1),
+            })
+            .strict()
+            .optional(),
+          feedback: z
+            .object({
+              ratings: z
+                .object({
+                  overall_satisfaction: z.number().min(0).max(1),
+                  outcome_satisfaction: z.number().min(0).max(1),
+                  communication: z.number().min(0).max(1),
+                  timeliness: z.number().min(0).max(1),
+                  scope_adherence: z.number().min(0).max(1),
+                  evidence_quality: z.number().min(0).max(1),
+                  correction_handling: z.number().min(0).max(1),
+                  reliability: z.number().min(0).max(1),
+                })
+                .strict(),
+              wouldWorkAgain: z.enum(['yes', 'no', 'unsure']),
+              reasonCodes: z.array(z.string().min(1).max(128)).max(32).default([]),
+              privateComment: z.string().max(1000).optional(),
+              confidence: z.number().min(0).max(1),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
       annotations: WRITE_TOOL,
     },
     async (input, context) => {
-      if (!agentDirectory) throw new Error('Live agent sessions are not configured');
+      if (!agentDirectory?.submitCompletionReport)
+        throw new Error('Live agent session completion is not configured');
       const binding = await requireBoundAgent(context);
       if (!binding) throw new Error('A bound MCP installation is required');
       const connection = installationContext(context);
@@ -1128,19 +1179,101 @@ export function registerOpenClaspTools(
         input.interactionId,
         binding.agent.agentId,
       );
-      return text(
-        await agentDirectory.recordLiveSessionEvent(session.reporting.bearerToken, {
-          eventId: crypto.randomUUID(),
-          interactionId: input.interactionId,
-          agentId: binding.agent.agentId,
-          sequence: input.sequence,
-          type: input.outcome === 'failure' ? 'session_failed' : 'session_completed',
-          occurredAt: new Date().toISOString(),
-          evidenceReferences: input.evidenceReferences,
-          outcome: input.outcome,
-          details: input.details,
-        }),
+      const interaction = await agentDirectory.getFederatedInteraction(
+        connection.operatorId,
+        input.interactionId,
       );
+      if (!interaction || !interaction.contract.parties.includes(binding.agent.agentId))
+        throw new Error('Bound agent is not an interaction participant');
+      const counterpartyAgentId =
+        interaction.initiatorAgentId === binding.agent.agentId
+          ? interaction.responderAgentId
+          : interaction.initiatorAgentId;
+      const occurredAt = new Date().toISOString();
+      const event = await agentDirectory.recordLiveSessionEvent(session.reporting.bearerToken, {
+        eventId: crypto.randomUUID(),
+        interactionId: input.interactionId,
+        agentId: binding.agent.agentId,
+        sequence: input.sequence,
+        type: input.outcome === 'failure' ? 'session_failed' : 'session_completed',
+        occurredAt,
+        evidenceReferences: input.evidenceReferences,
+        outcome: input.outcome,
+        details: input.details,
+      });
+      const suppliedCriteria = input.assessment?.criteria ?? [];
+      const report = InteractionCompletionReportSchema.parse({
+        reportId: crypto.randomUUID(),
+        interactionId: input.interactionId,
+        contractHash: interaction.termsHash,
+        reportingAgentId: binding.agent.agentId,
+        counterpartyAgentId,
+        agentVersion: binding.agent.agentVersion,
+        outcome: input.outcome,
+        summary:
+          input.assessment?.summary ??
+          `The agent reported this live session as ${input.outcome}. Detailed assessment was not supplied by the MCP client.`,
+        requestedOutcome: interaction.contract.requestedOutcome,
+        criteria: interaction.contract.successCriteria.map(
+          (criterion) =>
+            suppliedCriteria.find((candidate) => candidate.criterion === criterion) ?? {
+              criterion,
+              status: 'unknown',
+              evidenceReferences: [],
+            },
+        ),
+        deliverables: input.assessment?.deliverables ?? [],
+        actionsTaken: input.assessment?.actionsTaken ?? [],
+        blockers: input.assessment?.blockers ?? [],
+        scopeChanges: [],
+        corrections: input.assessment?.corrections ?? [],
+        evidenceReferences: input.evidenceReferences,
+        ...(session.activatedAt ? { startedAt: session.activatedAt } : {}),
+        completedAt: occurredAt,
+        confidence: input.assessment?.confidence ?? 0.25,
+        dataSharingMode: 'structured_only',
+      });
+      const submissionMethod =
+        connection.credentialType === 'agent_access_token'
+          ? 'agent_access_token'
+          : 'oauth_installation';
+      const completion = (await agentDirectory.submitCompletionReport(
+        connection.operatorId,
+        binding.agent.agentId,
+        report,
+        submissionMethod,
+      )) as { feedbackRequest?: { requestId?: string; status?: string } };
+      let feedback: unknown;
+      if (
+        input.feedback &&
+        completion.feedbackRequest?.requestId &&
+        completion.feedbackRequest.status !== 'submitted' &&
+        agentDirectory.submitInteractionFeedback
+      ) {
+        feedback = await agentDirectory.submitInteractionFeedback(
+          connection.operatorId,
+          binding.agent.agentId,
+          InteractionFeedbackSchema.parse({
+            feedbackId: crypto.randomUUID(),
+            requestId: completion.feedbackRequest.requestId,
+            interactionId: input.interactionId,
+            reviewerAgentId: binding.agent.agentId,
+            subjectAgentId: counterpartyAgentId,
+            reviewerAgentVersion: binding.agent.agentVersion,
+            ratings: input.feedback.ratings,
+            wouldWorkAgain: input.feedback.wouldWorkAgain,
+            reasonCodes: input.feedback.reasonCodes,
+            ...(input.feedback.privateComment
+              ? { privateComment: input.feedback.privateComment }
+              : {}),
+            evidenceReferences: input.evidenceReferences,
+            confidence: input.feedback.confidence,
+            submittedAt: occurredAt,
+          }),
+          submissionMethod,
+        );
+      }
+      return text({ event, completion, ...(feedback ? { feedback } : {}) });
     },
   );
   server.registerTool(
@@ -1164,6 +1297,54 @@ export function registerOpenClaspTools(
           connection.operatorId,
           binding.agent.agentId,
         ),
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[41],
+    {
+      title: 'Checkpoint interaction progress',
+      description:
+        'Send a compact structured progress pulse without raw conversation text. Use after roughly five meaningful exchanges, or immediately when blocked, drifting from scope, or ready to finish.',
+      inputSchema: z
+        .object({
+          interactionId: z.string().uuid(),
+          sequence: z.number().int().nonnegative(),
+          checkpoint: ProgressCheckpointSchema,
+        })
+        .strict(),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory) throw new Error('Live agent sessions are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const session = await agentDirectory.getLiveSession(
+        connection.operatorId,
+        input.interactionId,
+        binding.agent.agentId,
+      );
+      const result = await agentDirectory.recordLiveSessionEvent(session.reporting.bearerToken, {
+        eventId: crypto.randomUUID(),
+        interactionId: input.interactionId,
+        agentId: binding.agent.agentId,
+        sequence: input.sequence,
+        type: 'progress_checkpoint',
+        occurredAt: new Date().toISOString(),
+        evidenceReferences: [],
+        checkpoint: input.checkpoint,
+        details: {
+          labels: [`state:${input.checkpoint.state}`, `topic:${input.checkpoint.topicStatus}`],
+          metrics: { progress: input.checkpoint.progress, confidence: input.checkpoint.confidence },
+          flags: { needsHuman: input.checkpoint.needsHuman },
+        },
+      });
+      return text({
+        checkpoint: result,
+        ...(input.checkpoint.state === 'done' || input.checkpoint.state === 'ready_to_finalize'
+          ? { nextAction: 'Call openclasp_complete_live_session now.' }
+          : {}),
       });
     },
   );

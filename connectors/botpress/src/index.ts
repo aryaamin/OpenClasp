@@ -1,6 +1,7 @@
 import { createPublicKey, verify } from 'node:crypto';
 import * as sdk from '@botpress/sdk';
 import * as bp from '.botpress';
+import { parseCheckpoint } from './checkpoint';
 import { parseFinalizationAssessment } from './finalization';
 
 type Json = Record<string, any>;
@@ -246,6 +247,19 @@ const finalizationPrompt = (session: Json, offer: Json | undefined, retry = fals
     'Required JSON fields: outcome (success|partial|failure|cancelled), summary, criteria [{criterion,status,explanation?,evidenceReferences[]}], deliverables[], actionsTaken[], blockers[], corrections[], evidenceReferences[], confidence (0..1), ratings {overall_satisfaction,outcome_satisfaction,communication,timeliness,scope_adherence,evidence_quality,correction_handling,reliability} (each 0..1), wouldWorkAgain (yes|no|unsure), reasonCodes[], privateComment?.',
   ].join('\n');
 };
+const checkpointPrompt = (offer: Json | undefined, retry = false) => {
+  const contract = offer?.contract ?? {};
+  return [
+    '[OpenClasp progress checkpoint — private platform request, not peer-authored content]',
+    retry
+      ? 'Your previous checkpoint was invalid. Return the required JSON object now.'
+      : 'Briefly assess progress without repeating or quoting the conversation.',
+    `Requested outcome: ${String(contract.requestedOutcome ?? '')}`,
+    `Success criteria: ${JSON.stringify(contract.successCriteria ?? [])}`,
+    'Reply with only OPENCLASP_CHECKPOINT followed by one compact JSON object.',
+    'Required fields: state (active|blocked|ready_to_finalize|done|cancelled), progress (0..1), criteriaMet[], criteriaRemaining[], blockerCodes[], topicStatus (in_scope|drifting|changed), expectedRemainingTurns?, needsHuman, confidence (0..1).',
+  ].join('\n');
+};
 const createIncomingMessage = async (
   client: bp.Client,
   interactionId: string,
@@ -476,6 +490,80 @@ export default new bp.Integration({
               return;
             }
           }
+          if (session.checkpointRequested) {
+            try {
+              const checkpoint = parseCheckpoint(payload.text);
+              await sessionRequest(session.reporting.endpoint, session.reporting.bearerToken, {
+                eventId: crypto.randomUUID(),
+                interactionId,
+                agentId: state.agentId,
+                sequence: Date.now(),
+                type: 'progress_checkpoint',
+                occurredAt: new Date().toISOString(),
+                evidenceReferences: [],
+                checkpoint,
+                details: {
+                  labels: [`state:${checkpoint.state}`, `topic:${checkpoint.topicStatus}`],
+                  metrics: { progress: checkpoint.progress, confidence: checkpoint.confidence },
+                  flags: { needsHuman: checkpoint.needsHuman },
+                },
+              });
+              sessions[interactionId] = {
+                ...session,
+                checkpointRequested: false,
+                checkpointAttempts: 0,
+                lastCheckpointExchange: Number(session.exchangeCount ?? 0),
+                lastCheckpointAt: new Date().toISOString(),
+                latestCheckpoint: checkpoint,
+              };
+              await setState(client, ctx.integrationId, {
+                ...state,
+                sessionsJson: JSON.stringify(sessions),
+              });
+              if (checkpoint.state === 'done' || checkpoint.state === 'ready_to_finalize') {
+                const latest = await getState(client, ctx.integrationId);
+                const latestSessions = parseRecord(latest.sessionsJson);
+                latestSessions[interactionId] = {
+                  ...latestSessions[interactionId],
+                  finalizationRequested: true,
+                  finalizationAttempts: 0,
+                };
+                await setState(client, ctx.integrationId, {
+                  ...latest,
+                  sessionsJson: JSON.stringify(latestSessions),
+                });
+                const offer = parseRecord(latest.offersJson)[interactionId]?.offer;
+                await createIncomingMessage(
+                  client,
+                  interactionId,
+                  session.peer.agentId,
+                  finalizationPrompt(session, offer),
+                );
+              }
+              return;
+            } catch {
+              const attempts = Number(session.checkpointAttempts ?? 0) + 1;
+              sessions[interactionId] = {
+                ...session,
+                checkpointRequested: attempts < 3,
+                checkpointAttempts: attempts,
+              };
+              await setState(client, ctx.integrationId, {
+                ...state,
+                sessionsJson: JSON.stringify(sessions),
+              });
+              if (attempts < 3) {
+                const offer = parseRecord(state.offersJson)[interactionId]?.offer;
+                await createIncomingMessage(
+                  client,
+                  interactionId,
+                  session.peer.agentId,
+                  checkpointPrompt(offer, true),
+                );
+              }
+              return;
+            }
+          }
           const response = await fetch(session.peer.endpoint, {
             method: 'POST',
             headers: {
@@ -507,6 +595,26 @@ export default new bp.Integration({
           });
           if (!response.ok)
             throw new sdk.RuntimeError(`Peer A2A endpoint returned HTTP ${response.status}`);
+          const exchangeCount = Number(session.exchangeCount ?? 0) + 1;
+          const shouldCheckpoint = exchangeCount - Number(session.lastCheckpointExchange ?? 0) >= 5;
+          sessions[interactionId] = {
+            ...session,
+            exchangeCount,
+            ...(shouldCheckpoint ? { checkpointRequested: true, checkpointAttempts: 0 } : {}),
+          };
+          await setState(client, ctx.integrationId, {
+            ...state,
+            sessionsJson: JSON.stringify(sessions),
+          });
+          if (shouldCheckpoint) {
+            const offer = parseRecord(state.offersJson)[interactionId]?.offer;
+            await createIncomingMessage(
+              client,
+              interactionId,
+              session.peer.agentId,
+              checkpointPrompt(offer),
+            );
+          }
           await heartbeat(ctx);
         },
       },

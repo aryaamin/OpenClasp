@@ -8,6 +8,7 @@ import {
   InteractionCompletionReportSchema,
   InteractionFeedbackSchema,
   LearningEligibilityDecisionSchema,
+  LiveSessionEventSchema,
   PublicAgentCardSchema,
   canonicalHash,
   signObject,
@@ -16,6 +17,33 @@ import {
 import { toA2AAgentCard } from '@openclasp/sidecar';
 
 describe('protocol cryptography and delegation', () => {
+  it('requires compact structured data for progress checkpoints', () => {
+    const checkpoint = LiveSessionEventSchema.parse({
+      eventId: '11111111-1111-4111-8111-111111111111',
+      interactionId: '22222222-2222-4222-8222-222222222222',
+      agentId: 'agent:a',
+      sequence: 5,
+      type: 'progress_checkpoint',
+      occurredAt: '2026-08-29T00:00:00.000Z',
+      checkpoint: {
+        state: 'active',
+        progress: 0.5,
+        criteriaMet: ['price quoted'],
+        criteriaRemaining: ['delivery confirmed'],
+        blockerCodes: [],
+        topicStatus: 'in_scope',
+        expectedRemainingTurns: 2,
+        needsHuman: false,
+        confidence: 0.8,
+      },
+      details: {},
+    });
+    expect(checkpoint.checkpoint?.progress).toBe(0.5);
+    expect(() => LiveSessionEventSchema.parse({ ...checkpoint, checkpoint: undefined })).toThrow(
+      'structured checkpoint data',
+    );
+  });
+
   it('canonicalizes object key order and rejects tampering', () => {
     expect(canonicalHash({ b: 2, a: 1 })).toBe(canonicalHash({ a: 1, b: 2 }));
     const agent = createIdentity({

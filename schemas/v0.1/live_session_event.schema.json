@@ -26,6 +26,7 @@
       "enum": [
         "session_started",
         "message_sent",
+        "progress_checkpoint",
         "claim",
         "evidence",
         "correction",
@@ -54,6 +55,78 @@
     "outcome": {
       "type": "string",
       "enum": ["success", "failure", "partial"]
+    },
+    "checkpoint": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["active", "blocked", "ready_to_finalize", "done", "cancelled"]
+        },
+        "progress": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "criteriaMet": {
+          "default": [],
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "criteriaRemaining": {
+          "default": [],
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "blockerCodes": {
+          "default": [],
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}$"
+          }
+        },
+        "topicStatus": {
+          "type": "string",
+          "enum": ["in_scope", "drifting", "changed"]
+        },
+        "expectedRemainingTurns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "needsHuman": {
+          "default": false,
+          "type": "boolean"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "state",
+        "progress",
+        "criteriaMet",
+        "criteriaRemaining",
+        "blockerCodes",
+        "topicStatus",
+        "needsHuman",
+        "confidence"
+      ],
+      "additionalProperties": false
     },
     "details": {
       "default": {
