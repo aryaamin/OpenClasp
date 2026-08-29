@@ -111,10 +111,7 @@ describe('safe connection automation', () => {
     const { agent } = fixture();
     const temporaryAgent = { ...agent, agentMode: 'temporary_chat' as const };
     delete temporaryAgent.a2aEndpoint;
-    const temporary = buildPublicAgentCard(
-      temporaryAgent,
-      'https://openclasp.example',
-    );
+    const temporary = buildPublicAgentCard(temporaryAgent, 'https://openclasp.example');
     const persistent = buildPublicAgentCard(
       { ...agent, agentMode: 'persistent_runtime' },
       'https://openclasp.example',
