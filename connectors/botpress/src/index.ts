@@ -43,17 +43,22 @@ const openClaspRequest = async <T>(
   return body as T;
 };
 
-const getState = async (client: bp.Client, botId: string): Promise<RuntimeState> => {
+const getState = async (client: bp.Client, integrationId: string): Promise<RuntimeState> => {
   const { state } = await client.getOrSetState({
     type: 'integration',
-    id: botId,
+    id: integrationId,
     name: 'runtime',
     payload: { agentId: '', sessionsJson: '{}', offersJson: '{}' },
   });
   return state.payload;
 };
-const setState = async (client: bp.Client, botId: string, value: RuntimeState) => {
-  await client.setState({ type: 'integration', id: botId, name: 'runtime', payload: value });
+const setState = async (client: bp.Client, integrationId: string, value: RuntimeState) => {
+  await client.setState({
+    type: 'integration',
+    id: integrationId,
+    name: 'runtime',
+    payload: value,
+  });
 };
 
 const bootstrapAndConnect = async (props: {
@@ -69,8 +74,11 @@ const bootstrapAndConnect = async (props: {
     '/v0.1/runtime/bootstrap',
   );
   const endpoint = props.webhookUrl;
-  const current = await getState(props.client, props.ctx.botId);
-  await setState(props.client, props.ctx.botId, { ...current, agentId: bootstrap.agentId });
+  const current = await getState(props.client, props.ctx.integrationId);
+  await setState(props.client, props.ctx.integrationId, {
+    ...current,
+    agentId: bootstrap.agentId,
+  });
   await openClaspRequest(openClaspUrl, openClaspAgentToken, '/v0.1/runtime', {
     method: 'PUT',
     body: JSON.stringify({ endpoint }),
@@ -195,7 +203,7 @@ export default new bp.Integration({
         text: async ({ ctx, client, conversation, payload }) => {
           const interactionId = conversation.tags.interactionId;
           if (!interactionId) throw new sdk.RuntimeError('Missing OpenClasp interaction ID');
-          const state = await getState(client, ctx.botId);
+          const state = await getState(client, ctx.integrationId);
           const session = parseRecord(state.sessionsJson)[interactionId];
           if (!session) throw new sdk.RuntimeError('OpenClasp live session is unavailable');
           const response = await fetch(session.peer.endpoint, {
@@ -243,7 +251,7 @@ export default new bp.Integration({
     } catch {
       return jsonResponse(400, { error: 'invalid_json' });
     }
-    const state = await getState(client, ctx.botId);
+    const state = await getState(client, ctx.integrationId);
     if (body.type === 'openclasp.runtime.verify') {
       if (body.agentId !== state.agentId) return jsonResponse(403, { error: 'wrong_agent' });
       return jsonResponse(200, {
@@ -280,7 +288,10 @@ export default new bp.Integration({
           return jsonResponse(409, { error: 'interaction_offer_conflict' });
         const sessionId = previous?.sessionId ?? crypto.randomUUID();
         offers[body.interactionId] = { offer: body, sessionId };
-        await setState(client, ctx.botId, { ...state, offersJson: JSON.stringify(offers) });
+        await setState(client, ctx.integrationId, {
+          ...state,
+          offersJson: JSON.stringify(offers),
+        });
         return jsonResponse(200, {
           type: 'openclasp.session.accepted',
           version: '1',
@@ -303,7 +314,10 @@ export default new bp.Integration({
       if (sessions[body.interactionId]?.activationId === body.activationId)
         return jsonResponse(200, { accepted: true, activationId: body.activationId });
       sessions[body.interactionId] = body;
-      await setState(client, ctx.botId, { ...state, sessionsJson: JSON.stringify(sessions) });
+      await setState(client, ctx.integrationId, {
+        ...state,
+        sessionsJson: JSON.stringify(sessions),
+      });
       if (body.role === 'initiator') {
         const offer = parseRecord(state.offersJson)[body.interactionId]?.offer;
         await createIncomingMessage(

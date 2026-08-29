@@ -25,4 +25,5 @@ conversation text is not uploaded to OpenClasp.
 
 ## Changelog
 
+- 0.1.1: Fix integration-state ownership during installation registration.
 - 0.1.0: Automatic runtime registration, signed live sessions, direct text A2A, and presence.
