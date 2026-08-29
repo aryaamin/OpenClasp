@@ -1755,6 +1755,37 @@ export class HostedRepository {
     return request;
   }
 
+  private async requestRuntimeFinalization(
+    interactionId: string,
+    reportingAgentId: string,
+    counterpartyAgentId: string,
+    contractHash: string,
+  ) {
+    const rows = await this.sql`
+      SELECT endpoint FROM openclasp_agent_runtimes
+      WHERE agent_id = ${counterpartyAgentId} AND status = 'verified'
+      LIMIT 1
+    `;
+    if (!rows[0]?.endpoint) return false;
+    const requestId = crypto.randomUUID();
+    const value = {
+      type: 'openclasp.session.finalization_request',
+      version: '1',
+      requestId,
+      interactionId,
+      agentId: counterpartyAgentId,
+      peerAgentId: reportingAgentId,
+      contractHash,
+      requestedAt: new Date().toISOString(),
+    };
+    const response = await this.signedRuntimeRequest(
+      { callbackEndpoint: String(rows[0].endpoint) },
+      requestId,
+      value,
+    );
+    return response.status >= 200 && response.status < 300;
+  }
+
   async listFeedbackRequests(operatorId: string, agentId: string) {
     const rows = await this.sql`
       SELECT payload FROM openclasp_records
@@ -1877,6 +1908,13 @@ export class HostedRepository {
           WHERE interaction_id = ${stored.interactionId} AND status = 'active'
         `,
       ]);
+    } else {
+      await this.requestRuntimeFinalization(
+        stored.interactionId,
+        stored.reportingAgentId,
+        stored.counterpartyAgentId,
+        stored.contractHash,
+      ).catch(() => false);
     }
     return { report: stored, feedbackRequest };
   }
@@ -2318,6 +2356,29 @@ export class HostedRepository {
 
   async processDueFeedback(now = new Date()) {
     await this.ensureSchema();
+    const expiredInteractions = await this.sql`
+      UPDATE openclasp_federated_interactions
+      SET status = 'expired',
+        payload = jsonb_set(
+          jsonb_set(payload, '{status}', '"expired"'::jsonb),
+          '{updatedAt}', to_jsonb(${now.toISOString()}::text)
+        ),
+        updated_at = NOW()
+      WHERE status IN ('pending', 'active') AND expires_at <= ${now.toISOString()}
+      RETURNING interaction_id
+    `;
+    if (expiredInteractions.length) {
+      await this.sql`
+        UPDATE openclasp_live_sessions
+        SET status = 'failed', completed_at = COALESCE(completed_at, NOW()),
+          last_error = COALESCE(last_error, 'Interaction expired before bilateral completion')
+        WHERE status IN ('preparing', 'active')
+          AND interaction_id IN (
+            SELECT interaction_id FROM openclasp_federated_interactions
+            WHERE status = 'expired' AND expires_at <= ${now.toISOString()}
+          )
+      `;
+    }
     const [rows, backfillRows] = await Promise.all([
       this.sql`
         SELECT operator_id, record_id, payload FROM openclasp_records
@@ -2364,7 +2425,12 @@ export class HostedRepository {
       const result = await this.finalizeInteractionConclusion(interactionId);
       if (result.released) released += 1;
     }
-    return { expired: rows.length, released, backfilled: backfillRows.length };
+    return {
+      expired: rows.length,
+      interactionsExpired: expiredInteractions.length,
+      released,
+      backfilled: backfillRows.length,
+    };
   }
 
   async recordSessionFeedback(token: string, value: InteractionFeedback) {

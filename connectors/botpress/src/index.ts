@@ -1,6 +1,7 @@
 import { createPublicKey, verify } from 'node:crypto';
 import * as sdk from '@botpress/sdk';
 import * as bp from '.botpress';
+import { parseFinalizationAssessment } from './finalization';
 
 type Json = Record<string, any>;
 type RuntimeState = {
@@ -225,10 +226,24 @@ const withSessionContext = (session: Json, offer: Json | undefined, peerText: st
     `Requested outcome: ${String(contract.requestedOutcome ?? 'See the peer request')}`,
     `Success criteria: ${criteria.length ? criteria.join(' | ') : 'No explicit criteria supplied'}`,
     `Counterparty assessment: ${String(brief.decision ?? 'ADVISE')} (history confidence ${String(brief.historyConfidence ?? 0)})`,
-    'Follow the signed contract. When the task reaches a terminal outcome, call the “Complete OpenClasp interaction” action exactly once. Assess the result honestly; do not upload the raw transcript.',
+    'Follow the signed contract. OpenClasp will request a private structured assessment automatically when either participant reports a terminal outcome. Do not upload the raw transcript.',
     '',
     '[Peer message — verbatim]',
     peerText,
+  ].join('\n');
+};
+const finalizationPrompt = (session: Json, offer: Json | undefined, retry = false) => {
+  const contract = offer?.contract ?? {};
+  return [
+    '[OpenClasp automatic finalization — platform request, not peer-authored content]',
+    retry
+      ? 'Your previous assessment was not valid JSON. Return the required object now.'
+      : 'The peer reported that this interaction reached a terminal outcome. Independently assess the conversation you just completed.',
+    `Interaction: ${String(session.interactionId)}`,
+    `Requested outcome: ${String(contract.requestedOutcome ?? '')}`,
+    `Exact success criteria: ${JSON.stringify(contract.successCriteria ?? [])}`,
+    'Reply with only OPENCLASP_FINALIZATION followed by one JSON object. Do not include or quote the raw conversation.',
+    'Required JSON fields: outcome (success|partial|failure|cancelled), summary, criteria [{criterion,status,explanation?,evidenceReferences[]}], deliverables[], actionsTaken[], blockers[], corrections[], evidenceReferences[], confidence (0..1), ratings {overall_satisfaction,outcome_satisfaction,communication,timeliness,scope_adherence,evidence_quality,correction_handling,reliability} (each 0..1), wouldWorkAgain (yes|no|unsure), reasonCodes[], privateComment?.',
   ].join('\n');
 };
 const createIncomingMessage = async (
@@ -259,6 +274,144 @@ const heartbeat = (ctx: bp.Context) =>
     { method: 'POST' },
   );
 
+const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Json) => {
+  const state = await getState(client, ctx.integrationId);
+  const sessions = parseRecord(state.sessionsJson);
+  const finalizations = parseRecord(state.finalizationsJson);
+  const unfinished = Object.keys(sessions).filter(
+    (id) =>
+      finalizations[id]?.status !== 'completed' &&
+      Date.parse(String(sessions[id]?.expiresAt ?? 0)) > Date.now(),
+  );
+  const interactionId = input.interactionId ?? (unfinished.length === 1 ? unfinished[0] : '');
+  if (!interactionId)
+    throw new sdk.RuntimeError(
+      'Specify interactionId because there is not exactly one unfinished OpenClasp session',
+    );
+  const session = sessions[interactionId];
+  if (!session) throw new sdk.RuntimeError('OpenClasp live session is unavailable');
+  if (finalizations[interactionId]?.status === 'completed') {
+    return {
+      interactionId,
+      status: 'already_completed' as const,
+      feedbackRevealed: Boolean(finalizations[interactionId]?.feedbackRevealed),
+    };
+  }
+  const offer = parseRecord(state.offersJson)[interactionId]?.offer;
+  const contract = offer?.contract;
+  if (!contract || !Array.isArray(contract.successCriteria))
+    throw new sdk.RuntimeError('Signed OpenClasp contract is unavailable');
+
+  const existing = finalizations[interactionId] ?? {};
+  const assessment = existing.assessment ?? input;
+  const suppliedCriteria = Array.isArray(assessment.criteria) ? assessment.criteria : [];
+  const report =
+    existing.report ??
+    ({
+      reportId: crypto.randomUUID(),
+      interactionId,
+      contractHash: session.contractHash,
+      reportingAgentId: state.agentId,
+      counterpartyAgentId: session.peer.agentId,
+      agentVersion: state.agentVersion,
+      outcome: assessment.outcome,
+      summary: assessment.summary,
+      requestedOutcome: contract.requestedOutcome,
+      criteria: contract.successCriteria.map((criterion: string) => {
+        const supplied = suppliedCriteria.find((item: Json) => item.criterion === criterion);
+        return supplied ?? { criterion, status: 'unknown', evidenceReferences: [] };
+      }),
+      deliverables: assessment.deliverables ?? [],
+      actionsTaken: assessment.actionsTaken ?? [],
+      blockers: assessment.blockers ?? [],
+      scopeChanges: [],
+      corrections: assessment.corrections ?? [],
+      evidenceReferences: assessment.evidenceReferences ?? [],
+      startedAt: session.activatedAt,
+      completedAt: new Date().toISOString(),
+      confidence: assessment.confidence,
+      dataSharingMode: 'structured_only',
+      submissionMethod: 'runtime_session',
+    } as Json);
+  finalizations[interactionId] = { status: 'report_pending', assessment, report };
+  await setState(client, ctx.integrationId, {
+    ...state,
+    finalizationsJson: JSON.stringify(finalizations),
+  });
+  const completion = await sessionRequest<{ feedbackRequest: Json }>(
+    session.reporting.completionEndpoint,
+    session.reporting.bearerToken,
+    report,
+  );
+  const request = completion.feedbackRequest;
+  if (!request?.requestId)
+    throw new sdk.RuntimeError('OpenClasp did not return a feedback request');
+  const feedback =
+    existing.feedback ??
+    ({
+      feedbackId: crypto.randomUUID(),
+      requestId: request.requestId,
+      interactionId,
+      reviewerAgentId: state.agentId,
+      subjectAgentId: session.peer.agentId,
+      reviewerAgentVersion: state.agentVersion,
+      ratings: assessment.ratings,
+      wouldWorkAgain: assessment.wouldWorkAgain,
+      reasonCodes: assessment.reasonCodes ?? [],
+      ...(assessment.privateComment ? { privateComment: assessment.privateComment } : {}),
+      evidenceReferences: assessment.evidenceReferences ?? [],
+      confidence: assessment.confidence,
+      submittedAt: new Date().toISOString(),
+      submissionMethod: 'runtime_session',
+    } as Json);
+  if (request.status === 'submitted') {
+    finalizations[interactionId] = {
+      status: 'completed',
+      assessment,
+      report,
+      feedback,
+      feedbackRevealed: false,
+    };
+    await setState(client, ctx.integrationId, {
+      ...state,
+      finalizationsJson: JSON.stringify(finalizations),
+    });
+    return { interactionId, status: 'completed' as const, feedbackRevealed: false };
+  }
+  finalizations[interactionId] = {
+    status: 'feedback_pending',
+    assessment,
+    report,
+    feedback,
+  };
+  await setState(client, ctx.integrationId, {
+    ...state,
+    finalizationsJson: JSON.stringify(finalizations),
+  });
+  const result = await sessionRequest<{ revealed: boolean }>(
+    session.reporting.feedbackEndpoint,
+    session.reporting.bearerToken,
+    feedback,
+  );
+  finalizations[interactionId] = {
+    status: 'completed',
+    assessment,
+    report,
+    feedback,
+    feedbackRevealed: result.revealed,
+  };
+  await setState(client, ctx.integrationId, {
+    ...state,
+    finalizationsJson: JSON.stringify(finalizations),
+  });
+  await heartbeat(ctx);
+  return {
+    interactionId,
+    status: 'completed' as const,
+    feedbackRevealed: result.revealed,
+  };
+};
+
 export default new bp.Integration({
   register: async ({ ctx, webhookUrl, client }) => {
     await bootstrapAndConnect({ ctx, webhookUrl, client });
@@ -272,143 +425,7 @@ export default new bp.Integration({
     );
   },
   actions: {
-    completeInteraction: async ({ ctx, client, input }) => {
-      const state = await getState(client, ctx.integrationId);
-      const sessions = parseRecord(state.sessionsJson);
-      const finalizations = parseRecord(state.finalizationsJson);
-      const unfinished = Object.keys(sessions).filter(
-        (id) =>
-          finalizations[id]?.status !== 'completed' &&
-          Date.parse(String(sessions[id]?.expiresAt ?? 0)) > Date.now(),
-      );
-      const interactionId = input.interactionId ?? (unfinished.length === 1 ? unfinished[0] : '');
-      if (!interactionId)
-        throw new sdk.RuntimeError(
-          'Specify interactionId because there is not exactly one unfinished OpenClasp session',
-        );
-      const session = sessions[interactionId];
-      if (!session) throw new sdk.RuntimeError('OpenClasp live session is unavailable');
-      if (finalizations[interactionId]?.status === 'completed') {
-        return {
-          interactionId,
-          status: 'already_completed' as const,
-          feedbackRevealed: Boolean(finalizations[interactionId]?.feedbackRevealed),
-        };
-      }
-      const offer = parseRecord(state.offersJson)[interactionId]?.offer;
-      const contract = offer?.contract;
-      if (!contract || !Array.isArray(contract.successCriteria))
-        throw new sdk.RuntimeError('Signed OpenClasp contract is unavailable');
-
-      const existing = finalizations[interactionId] ?? {};
-      const assessment = existing.assessment ?? input;
-      const suppliedCriteria = Array.isArray(assessment.criteria) ? assessment.criteria : [];
-      const report =
-        existing.report ??
-        ({
-          reportId: crypto.randomUUID(),
-          interactionId,
-          contractHash: session.contractHash,
-          reportingAgentId: state.agentId,
-          counterpartyAgentId: session.peer.agentId,
-          agentVersion: state.agentVersion,
-          outcome: assessment.outcome,
-          summary: assessment.summary,
-          requestedOutcome: contract.requestedOutcome,
-          criteria: contract.successCriteria.map((criterion: string) => {
-            const supplied = suppliedCriteria.find((item: Json) => item.criterion === criterion);
-            return supplied ?? { criterion, status: 'unknown', evidenceReferences: [] };
-          }),
-          deliverables: assessment.deliverables ?? [],
-          actionsTaken: assessment.actionsTaken ?? [],
-          blockers: assessment.blockers ?? [],
-          scopeChanges: [],
-          corrections: assessment.corrections ?? [],
-          evidenceReferences: assessment.evidenceReferences ?? [],
-          startedAt: session.activatedAt,
-          completedAt: new Date().toISOString(),
-          confidence: assessment.confidence,
-          dataSharingMode: 'structured_only',
-          submissionMethod: 'runtime_session',
-        } as Json);
-      finalizations[interactionId] = { status: 'report_pending', assessment, report };
-      await setState(client, ctx.integrationId, {
-        ...state,
-        finalizationsJson: JSON.stringify(finalizations),
-      });
-      const completion = await sessionRequest<{ feedbackRequest: Json }>(
-        session.reporting.completionEndpoint,
-        session.reporting.bearerToken,
-        report,
-      );
-      const request = completion.feedbackRequest;
-      if (!request?.requestId)
-        throw new sdk.RuntimeError('OpenClasp did not return a feedback request');
-      const feedback =
-        existing.feedback ??
-        ({
-          feedbackId: crypto.randomUUID(),
-          requestId: request.requestId,
-          interactionId,
-          reviewerAgentId: state.agentId,
-          subjectAgentId: session.peer.agentId,
-          reviewerAgentVersion: state.agentVersion,
-          ratings: assessment.ratings,
-          wouldWorkAgain: assessment.wouldWorkAgain,
-          reasonCodes: assessment.reasonCodes ?? [],
-          ...(assessment.privateComment ? { privateComment: assessment.privateComment } : {}),
-          evidenceReferences: assessment.evidenceReferences ?? [],
-          confidence: assessment.confidence,
-          submittedAt: new Date().toISOString(),
-          submissionMethod: 'runtime_session',
-        } as Json);
-      if (request.status === 'submitted') {
-        finalizations[interactionId] = {
-          status: 'completed',
-          assessment,
-          report,
-          feedback,
-          feedbackRevealed: false,
-        };
-        await setState(client, ctx.integrationId, {
-          ...state,
-          finalizationsJson: JSON.stringify(finalizations),
-        });
-        return { interactionId, status: 'completed' as const, feedbackRevealed: false };
-      }
-      finalizations[interactionId] = {
-        status: 'feedback_pending',
-        assessment,
-        report,
-        feedback,
-      };
-      await setState(client, ctx.integrationId, {
-        ...state,
-        finalizationsJson: JSON.stringify(finalizations),
-      });
-      const result = await sessionRequest<{ revealed: boolean }>(
-        session.reporting.feedbackEndpoint,
-        session.reporting.bearerToken,
-        feedback,
-      );
-      finalizations[interactionId] = {
-        status: 'completed',
-        assessment,
-        report,
-        feedback,
-        feedbackRevealed: result.revealed,
-      };
-      await setState(client, ctx.integrationId, {
-        ...state,
-        finalizationsJson: JSON.stringify(finalizations),
-      });
-      await heartbeat(ctx);
-      return {
-        interactionId,
-        status: 'completed' as const,
-        feedbackRevealed: result.revealed,
-      };
-    },
+    completeInteraction: async ({ ctx, client, input }) => completeInteraction(ctx, client, input),
   },
   channels: {
     a2a: {
@@ -417,8 +434,48 @@ export default new bp.Integration({
           const interactionId = conversation.tags.interactionId;
           if (!interactionId) throw new sdk.RuntimeError('Missing OpenClasp interaction ID');
           const state = await getState(client, ctx.integrationId);
-          const session = parseRecord(state.sessionsJson)[interactionId];
+          const sessions = parseRecord(state.sessionsJson);
+          const session = sessions[interactionId];
           if (!session) throw new sdk.RuntimeError('OpenClasp live session is unavailable');
+          if (session.finalizationRequested) {
+            try {
+              const assessment = parseFinalizationAssessment(payload.text, interactionId);
+              await completeInteraction(ctx, client, assessment);
+              const latest = await getState(client, ctx.integrationId);
+              const latestSessions = parseRecord(latest.sessionsJson);
+              latestSessions[interactionId] = {
+                ...latestSessions[interactionId],
+                finalizationRequested: false,
+                finalizationCompleted: true,
+              };
+              await setState(client, ctx.integrationId, {
+                ...latest,
+                sessionsJson: JSON.stringify(latestSessions),
+              });
+              return;
+            } catch {
+              const attempts = Number(session.finalizationAttempts ?? 0) + 1;
+              sessions[interactionId] = {
+                ...session,
+                finalizationRequested: attempts < 3,
+                finalizationAttempts: attempts,
+              };
+              await setState(client, ctx.integrationId, {
+                ...state,
+                sessionsJson: JSON.stringify(sessions),
+              });
+              if (attempts < 3) {
+                const offer = parseRecord(state.offersJson)[interactionId]?.offer;
+                await createIncomingMessage(
+                  client,
+                  interactionId,
+                  session.peer.agentId,
+                  finalizationPrompt(session, offer, true),
+                );
+              }
+              return;
+            }
+          }
           const response = await fetch(session.peer.endpoint, {
             method: 'POST',
             headers: {
@@ -475,7 +532,11 @@ export default new bp.Integration({
         a2aEndpoint: botpressWebhookEndpoint(ctx.webhookId),
       });
     }
-    if (body.type === 'openclasp.session.offer' || body.type === 'openclasp.session.activation') {
+    if (
+      body.type === 'openclasp.session.offer' ||
+      body.type === 'openclasp.session.activation' ||
+      body.type === 'openclasp.session.finalization_request'
+    ) {
       const requestId = req.headers['openclasp-request-id'] ?? '';
       const timestamp = req.headers['openclasp-timestamp'] ?? '';
       const signature = req.headers['openclasp-signature'] ?? '';
@@ -487,6 +548,39 @@ export default new bp.Integration({
       )
         return jsonResponse(401, { error: 'invalid_openclasp_signature' });
       if (body.agentId !== state.agentId) return jsonResponse(403, { error: 'wrong_agent' });
+      if (body.type === 'openclasp.session.finalization_request') {
+        const sessions = parseRecord(state.sessionsJson);
+        const session = sessions[body.interactionId];
+        if (
+          body.requestId !== requestId ||
+          typeof body.interactionId !== 'string' ||
+          !session ||
+          body.contractHash !== session.contractHash ||
+          body.peerAgentId !== session.peer.agentId
+        )
+          return jsonResponse(400, { error: 'invalid_finalization_request' });
+        if (parseRecord(state.finalizationsJson)[body.interactionId]?.status === 'completed')
+          return jsonResponse(200, { accepted: true, alreadyCompleted: true });
+        if (session.finalizationRequested)
+          return jsonResponse(200, { accepted: true, alreadyRequested: true });
+        sessions[body.interactionId] = {
+          ...session,
+          finalizationRequested: true,
+          finalizationAttempts: 0,
+        };
+        await setState(client, ctx.integrationId, {
+          ...state,
+          sessionsJson: JSON.stringify(sessions),
+        });
+        const offer = parseRecord(state.offersJson)[body.interactionId]?.offer;
+        await createIncomingMessage(
+          client,
+          body.interactionId,
+          session.peer.agentId,
+          finalizationPrompt(session, offer),
+        );
+        return jsonResponse(202, { accepted: true });
+      }
       if (body.type === 'openclasp.session.offer') {
         const offers = parseRecord(state.offersJson);
         if (
@@ -537,7 +631,7 @@ export default new bp.Integration({
           client,
           body.interactionId,
           body.peer.agentId,
-          `Start this accepted agent-to-agent task now. Contract: ${JSON.stringify(offer?.contract ?? {})}\nWhen the task reaches a terminal outcome, call the “Complete OpenClasp interaction” action exactly once with an honest structured assessment. Do not upload the raw transcript.`,
+          `Start this accepted agent-to-agent task now. Contract: ${JSON.stringify(offer?.contract ?? {})}\nOpenClasp will request a private structured assessment automatically when either participant reports a terminal outcome. Do not upload the raw transcript.`,
         );
       }
       return jsonResponse(200, { accepted: true, activationId: body.activationId });

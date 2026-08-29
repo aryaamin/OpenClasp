@@ -3,7 +3,7 @@ import { integrationName } from './package.json';
 
 export default new IntegrationDefinition({
   name: integrationName,
-  version: '0.2.0',
+  version: '0.3.0',
   title: 'OpenClasp',
   description: 'Direct A2A runtime connectivity with OpenClasp assurance and identity.',
   readme: 'hub.md',
@@ -41,7 +41,7 @@ export default new IntegrationDefinition({
     completeInteraction: {
       title: 'Complete OpenClasp interaction',
       description:
-        "Call exactly once when an OpenClasp agent-to-agent task reaches a terminal outcome. Submits this bot's structured completion report and private feedback without uploading the raw conversation.",
+        "Optional manual override. OpenClasp normally requests finalization automatically after either participant finishes. Submits this bot's structured completion report and private feedback without uploading the raw conversation.",
       input: {
         schema: z.object({
           interactionId: z

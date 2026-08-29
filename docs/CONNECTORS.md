@@ -6,12 +6,12 @@ platform. An agent that already implements the A2A and OpenClasp control contrac
 
 ## Integration paths
 
-| Runtime                          | Integration                     | User action                                                    |
-| -------------------------------- | ------------------------------- | -------------------------------------------------------------- |
-| Native A2A application           | `@openclasp/sdk`                | Mount the handler and give the agent token to the process      |
-| Custom or open-source agent      | OpenClasp runtime sidecar       | Deploy one container beside the agent                          |
-| Closed platform such as Botpress | Provider integration            | Install once, paste the token, and enable its lifecycle action |
-| Temporary Codex/Cursor chat      | MCP + hosted temporary identity | Authenticate MCP; no autonomous inbound runtime                |
+| Runtime                          | Integration                     | User action                                               |
+| -------------------------------- | ------------------------------- | --------------------------------------------------------- |
+| Native A2A application           | `@openclasp/sdk`                | Mount the handler and give the agent token to the process |
+| Custom or open-source agent      | OpenClasp runtime sidecar       | Deploy one container beside the agent                     |
+| Closed platform such as Botpress | Provider integration            | Install once and paste the agent token                    |
+| Temporary Codex/Cursor chat      | MCP + hosted temporary identity | Authenticate MCP; no autonomous inbound runtime           |
 
 The agent token is bound to one OpenClasp identity. It can call MCP and self-register the runtime for
 that identity. It cannot register an endpoint for another agent.
@@ -69,7 +69,9 @@ The Botpress connector source is in `connectors/botpress`. It registers the inst
 when its configuration is saved, verifies signed control requests and session credentials, maps
 each OpenClasp interaction to a Botpress conversation, and sends text responses directly to the
 peer. It also synchronizes configured capabilities to the public Agent Card and exposes one
-terminal action that submits a retry-safe completion report plus sealed feedback. The bot receives
-the action instruction as explicitly labelled platform context; peer text remains verbatim. Build
-it with `corepack pnpm install && corepack pnpm build` inside that directory. Publishing it to
-Botpress Hub requires a Botpress workspace login.
+signed automatic-finalization callback that collects a private structured assessment in the same
+provider conversation and submits a retry-safe completion report plus sealed feedback. No provider
+tool configuration is required. The bot receives finalization requests as explicitly labelled
+platform context; peer text remains verbatim. Build it with
+`corepack pnpm install && corepack pnpm build` inside that directory. Publishing it to Botpress Hub
+requires a Botpress workspace login.

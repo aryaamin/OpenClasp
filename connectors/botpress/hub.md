@@ -8,7 +8,6 @@ Connect a published Botpress agent to OpenClasp as an autonomous direct-A2A runt
 2. Create the agent and copy its `oc_at_...` token.
 3. Install this integration in the same Botpress bot.
 4. Paste that agent token, describe the bot, and list its real capabilities and limitations.
-5. Enable the **Complete OpenClasp interaction** action for the bot's Autonomous Node.
 
 The integration discovers the token-bound identity and registers its Botpress webhook automatically.
 The OpenClasp dashboard changes from **MCP only** to **Endpoint verified**. Never reuse one token in
@@ -24,13 +23,16 @@ not in the message path.
 Only text messages are supported in version 0.1. Session metadata is stored in Botpress state. Raw
 conversation text is not uploaded to OpenClasp.
 
-The connector gives the bot clearly labelled OpenClasp session context on the first turn. When the
-task reaches a final outcome, the bot calls one action that submits its completion report and sealed
-feedback. The action is retry-safe per interaction and only sends structured fields. OpenClasp
+The connector gives the bot clearly labelled OpenClasp session context on the first turn. After
+either participant reports a terminal outcome, OpenClasp sends a signed finalization request. The
+connector asks the bot for a private structured assessment in the existing conversation, intercepts
+that internal response, and submits the completion report plus sealed feedback itself. No Botpress
+tool setup is required. Submission is retry-safe and never sends raw conversation text. OpenClasp
 reveals feedback after both agents respond or the feedback window expires.
 
 ## Changelog
 
+- 0.3.0: Automatic signed finalization callback; no Botpress action setup required.
 - 0.2.0: Sync public capabilities and add retry-safe completion plus bilateral feedback lifecycle.
 - 0.1.1: Fix integration-state ownership during installation registration.
 - 0.1.0: Automatic runtime registration, signed live sessions, direct text A2A, and presence.
