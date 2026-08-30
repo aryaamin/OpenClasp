@@ -1,6 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bot } from 'lucide-react';
+import {
+  ArrowRight,
+  Bot,
+  Check,
+  FileSignature,
+  Fingerprint,
+  History as HistoryIcon,
+  Moon,
+  Network,
+  Radar,
+  ShieldCheck,
+  Sun,
+} from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -199,7 +211,7 @@ function App() {
     document.title = session
       ? `${pageMeta[page].label} · OpenClasp`
       : session === null
-        ? 'Sign in · OpenClasp'
+        ? 'OpenClasp · Trust for agent communication'
         : 'OpenClasp';
   }, [page, session]);
 
@@ -299,6 +311,8 @@ function App() {
   if (!session)
     return import.meta.env.DEV ? (
       <Login
+        theme={theme}
+        onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
         onPreview={() => {
           enablePreview();
           setPreview(true);
@@ -311,7 +325,10 @@ function App() {
         }}
       />
     ) : (
-      <Login />
+      <Login
+        theme={theme}
+        onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+      />
     );
 
   return (
@@ -356,7 +373,15 @@ function App() {
   );
 }
 
-function Login({ onPreview }: { onPreview?: () => void }) {
+function Login({
+  onPreview,
+  theme,
+  onToggleTheme,
+}: {
+  onPreview?: () => void;
+  theme: Theme;
+  onToggleTheme: () => void;
+}) {
   const [error, setError] = useState('');
   const continueWith = async (provider: 'google' | 'github') => {
     setError('');
@@ -366,52 +391,349 @@ function Login({ onPreview }: { onPreview?: () => void }) {
       setError(`${provider === 'google' ? 'Google' : 'GitHub'} sign-in is not configured yet.`);
     }
   };
+  const scrollToAnchor = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    const id = event.currentTarget.hash.slice(1);
+    const target = document.getElementById(id);
+    if (!target) return;
+    event.preventDefault();
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    history.pushState({}, '', `#${id}`);
+    target.classList.remove('is-arriving');
+    if (!reducedMotion && id !== 'top') {
+      void target.offsetWidth;
+      target.classList.add('is-arriving');
+      window.setTimeout(() => target.classList.remove('is-arriving'), 900);
+    }
+    target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+  };
   return (
-    <div className="loginPage">
-      <section className="loginPitch">
-        <div className="brand">
-          <div className="mark">OC</div>
+    <div className="landingPage">
+      <header className="landingNav">
+        <a
+          className="landingBrand"
+          href="#top"
+          aria-label="OpenClasp home"
+          onClick={scrollToAnchor}
+        >
+          <span className="landingMark" aria-hidden="true">
+            <span />
+            <span />
+          </span>
           <strong>OpenClasp</strong>
-        </div>
-        <div>
-          <p className="eyebrow">ASSURANCE</p>
-          <h1>Know who your agent is dealing with.</h1>
-          <p>Verified identities and signed outcomes. No message bodies for scoring.</p>
-        </div>
-        <div className="loginProof">
-          <span>01</span> User-owned history
-          <span>02</span> No universal trust score
-          <span>03</span> Explicit network consent
-        </div>
-      </section>
-      <section className="loginCard">
-        <div>
-          <p className="eyebrow">SECURE ACCESS</p>
-          <h2>Sign in</h2>
-          <p>Agents, signed history, and network controls.</p>
-        </div>
-        <div className="socialButtons">
-          <button type="button" onClick={() => void continueWith('google')}>
-            <GoogleMark /> Continue with Google
+        </a>
+        <nav aria-label="Main navigation">
+          <a href="#product" onClick={scrollToAnchor}>
+            Product
+          </a>
+          <a href="#principles" onClick={scrollToAnchor}>
+            Principles
+          </a>
+        </nav>
+        <div className="landingNavActions">
+          <button
+            className="themeButton"
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          >
+            {theme === 'dark' ? <Sun /> : <Moon />}
           </button>
-          <button type="button" onClick={() => void continueWith('github')}>
-            <GitHubMark /> Continue with GitHub
-          </button>
-          {onPreview && (
-            <button type="button" onClick={() => void onPreview()}>
-              Continue with local preview
-            </button>
-          )}
+          <a className="navCta" href="#access" onClick={scrollToAnchor}>
+            Sign in <ArrowRight />
+          </a>
         </div>
-        {error && (
-          <div className="loginError" role="alert">
-            {error}
+      </header>
+
+      <main id="top">
+        <section className="landingHero">
+          <div className="heroCopy">
+            <div className="landingKicker">
+              <span /> Trust infrastructure for A2A
+            </div>
+            <h1>
+              Let agents talk.
+              <br />
+              <em>Know who to trust.</em>
+            </h1>
+            <p>
+              OpenClasp adds verified identity, negotiated contracts, and evidence-backed history to
+              direct agent-to-agent communication.
+            </p>
+            <div className="heroActions">
+              <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
+                Get started <ArrowRight />
+              </a>
+              <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
+                Explore the layer
+              </a>
+            </div>
+            <div className="heroNotes" aria-label="Product principles">
+              <span>
+                <Check /> Built around A2A
+              </span>
+              <span>
+                <Check /> Evidence, not a universal score
+              </span>
+            </div>
           </div>
-        )}
+
+          <div className="assuranceVisual" aria-label="Illustration of an assured agent exchange">
+            <div className="visualGrid" aria-hidden="true" />
+            <div className="visualTopline">
+              <span>Assurance flow</span>
+              <span className="visualLive">
+                <i /> Live
+              </span>
+            </div>
+            <div className="agentExchange">
+              <article className="agentNode agentNodeLeft">
+                <div className="agentGlyph">
+                  <Bot />
+                </div>
+                <div>
+                  <strong>Atlas</strong>
+                  <small>Research agent</small>
+                </div>
+                <span className="verifiedTick">
+                  <Check />
+                </span>
+              </article>
+              <div className="contractRail">
+                <span className="railDot railDotOne" />
+                <span className="railDot railDotTwo" />
+                <div className="contractChip">
+                  <FileSignature />
+                  <span>
+                    <small>Terms accepted</small>
+                    <strong>Contract · 0x7F3C</strong>
+                  </span>
+                </div>
+              </div>
+              <article className="agentNode agentNodeRight">
+                <div className="agentGlyph">
+                  <Bot />
+                </div>
+                <div>
+                  <strong>Nova</strong>
+                  <small>Review agent</small>
+                </div>
+                <span className="verifiedTick">
+                  <Check />
+                </span>
+              </article>
+            </div>
+            <div className="assuranceEvents">
+              <div>
+                <Fingerprint />
+                <span>
+                  <small>Identity</small>
+                  <strong>Verified</strong>
+                </span>
+              </div>
+              <div>
+                <Radar />
+                <span>
+                  <small>Monitoring</small>
+                  <strong>In policy</strong>
+                </span>
+              </div>
+              <div>
+                <HistoryIcon />
+                <span>
+                  <small>Outcome</small>
+                  <strong>Evidence linked</strong>
+                </span>
+              </div>
+            </div>
+            <div className="visualCaption">
+              <span>Direct A2A channel</span>
+              <span>OpenClasp assurance layer</span>
+            </div>
+          </div>
+        </section>
+
+        <div className="capabilityRail" aria-label="OpenClasp capabilities">
+          <span>Identity</span>
+          <i />
+          <span>Discovery</span>
+          <i />
+          <span>Counterparty insight</span>
+          <i />
+          <span>Contracts</span>
+          <i />
+          <span>Monitoring</span>
+          <i />
+          <span>Outcomes</span>
+          <i />
+          <span>Feedback</span>
+        </div>
+
+        <section className="productSection" id="product">
+          <div className="sectionIntro">
+            <p className="landingKicker">
+              <span /> One layer. Before, during, and after.
+            </p>
+            <h2>
+              A trust layer.
+              <br />
+              <em>Not another transport.</em>
+            </h2>
+            <p>
+              Agents keep communicating over A2A. OpenClasp makes each counterparty and interaction
+              easier to inspect, constrain, and learn from.
+            </p>
+          </div>
+          <div className="featureGrid">
+            <article className="featureCard featureCardWide">
+              <div className="featureIcon">
+                <Network />
+              </div>
+              <span>01 / Before</span>
+              <h3>Find the right counterparty.</h3>
+              <p>Public discovery meets private, task-specific insight from your own history.</p>
+              <div className="discoveryMini" aria-hidden="true">
+                <div>
+                  <span className="miniAvatar">A</span>
+                  <strong>Atlas Research</strong>
+                  <small>Verified identity</small>
+                  <b>Research</b>
+                </div>
+                <div>
+                  <span className="miniAvatar">K</span>
+                  <strong>Keel Ops</strong>
+                  <small>3 relevant outcomes</small>
+                  <b>Operations</b>
+                </div>
+              </div>
+            </article>
+            <article className="featureCard">
+              <div className="featureIcon">
+                <FileSignature />
+              </div>
+              <span>02 / Agree</span>
+              <h3>Negotiate the work.</h3>
+              <p>Agents propose, revise, and sign explicit terms before an interaction begins.</p>
+              <div className="termMini" aria-hidden="true">
+                <small>SCOPE</small>
+                <strong>Source-backed brief</strong>
+                <small>SHARING</small>
+                <strong>Participants only</strong>
+                <span>
+                  <Check /> Both parties signed
+                </span>
+              </div>
+            </article>
+            <article className="featureCard">
+              <div className="featureIcon">
+                <ShieldCheck />
+              </div>
+              <span>03 / During + after</span>
+              <h3>Build usable history.</h3>
+              <p>
+                Connect monitoring, outcomes, feedback, and evidence without turning trust into one
+                score.
+              </p>
+              <div className="historyMini" aria-hidden="true">
+                <span>
+                  <i className="ok" /> Contract signed <b>09:41</b>
+                </span>
+                <span>
+                  <i className="ok" /> Outcome recorded <b>10:08</b>
+                </span>
+                <span>
+                  <i /> Feedback attached <b>10:12</b>
+                </span>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section className="principlesSection" id="principles">
+          <div>
+            <p className="landingKicker">
+              <span /> Deliberately bounded
+            </p>
+            <h2>
+              Trust should be
+              <br />
+              <em>specific and inspectable.</em>
+            </h2>
+          </div>
+          <div className="principleList">
+            <article>
+              <span>01</span>
+              <div>
+                <h3>No agent lock-in</h3>
+                <p>OpenClasp works alongside agents. It does not provide them.</p>
+              </div>
+            </article>
+            <article>
+              <span>02</span>
+              <div>
+                <h3>No proprietary transport</h3>
+                <p>Communication remains direct over A2A.</p>
+              </div>
+            </article>
+            <article>
+              <span>03</span>
+              <div>
+                <h3>No universal trust score</h3>
+                <p>Insight stays contextual, evidence-backed, and useful for the task at hand.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section className="accessSection" id="access">
+          <div className="accessCopy">
+            <p className="landingKicker">
+              <span /> Secure access
+            </p>
+            <h2>Make every agent interaction accountable.</h2>
+            <p>
+              Sign in to connect agents, control network participation, and inspect signed history.
+            </p>
+          </div>
+          <div className="accessCard">
+            <div className="socialButtons">
+              <button type="button" onClick={() => void continueWith('google')}>
+                <GoogleMark /> Continue with Google
+              </button>
+              <button type="button" onClick={() => void continueWith('github')}>
+                <GitHubMark /> Continue with GitHub
+              </button>
+              {onPreview && (
+                <button type="button" onClick={() => void onPreview()}>
+                  Open local preview <ArrowRight />
+                </button>
+              )}
+            </div>
+            {error && (
+              <div className="loginError" role="alert">
+                {error}
+              </div>
+            )}
+            <small>
+              Authentication is handled by Google or GitHub. OpenClasp never receives your password.
+            </small>
+          </div>
+        </section>
+      </main>
+
+      <footer className="landingFooter">
+        <a className="landingBrand" href="#top" onClick={scrollToAnchor}>
+          <span className="landingMark" aria-hidden="true">
+            <span />
+            <span />
+          </span>
+          <strong>OpenClasp</strong>
+        </a>
+        <p>Assurance for open agent communication.</p>
         <small>
-          Google and GitHub handle authentication. OpenClasp never receives your password.
+          Not an agent provider, proprietary transport, blockchain product, or universal trust
+          score.
         </small>
-      </section>
+      </footer>
     </div>
   );
 }
