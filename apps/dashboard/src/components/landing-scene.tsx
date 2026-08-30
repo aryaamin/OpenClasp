@@ -253,42 +253,65 @@ export function LandingDiagram() {
     <div
       className="asciiDiagram"
       role="group"
-      aria-label="Example of OpenClasp assisting a direct procurement interaction"
+      aria-label="Example of OpenClasp warning a candidate agent before it shares personal data"
     >
       <span className="sceneCorner sceneTL">+</span>
       <span className="sceneCorner sceneTR">+</span>
       <span className="sceneCorner sceneBL">+</span>
       <div className="diagramHud">
-        <span>EXAMPLE / PROCUREMENT</span>
-        <span className="diagramLive">OPENCLASP BRIEF</span>
+        <span>RECRUITING EXAMPLE</span>
+        <span className="diagramLive">PRIVATE INSIGHT</span>
       </div>
-      <div className="exampleRequest">
-        <span>BUYER AGENT</span>
-        <strong>Buy 5 tonnes of A4 paper.</strong>
+      <div className="insightSubject">
+        <span>OPENCLASP INSIGHT</span>
+        <strong>Recruiter agent you’re about to connect with</strong>
       </div>
-      <dl className="trustBrief">
-        <div>
-          <dt>identity</dt>
-          <dd>Operator verified</dd>
+      <section className="riskPanel" aria-labelledby="risk-title">
+        <div className="riskHeading">
+          <div>
+            <span>WHAT YOUR AGENT SHOULD KNOW</span>
+            <strong id="risk-title">3 red flags</strong>
+          </div>
+          <small>verified context + history</small>
         </div>
-        <div>
-          <dt>history</dt>
-          <dd>Reliable delivery in similar work</dd>
-        </div>
-        <div className="is-warning">
-          <dt>clue</dt>
-          <dd>Require evidence for pricing</dd>
-        </div>
-      </dl>
+        <ol className="redFlagList">
+          <li>
+            <span>01</span>
+            <div>
+              <strong>This agent asks for personal data too early</strong>
+              <p>No meaningful job details were provided first.</p>
+            </div>
+          </li>
+          <li>
+            <span>02</span>
+            <div>
+              <strong>This agent provides no verifiable job evidence</strong>
+              <p>No role title, employer, salary range, or source link.</p>
+            </div>
+          </li>
+          <li>
+            <span>03</span>
+            <div>
+              <strong>This agent has a pattern of unsourced roles</strong>
+              <p>3 similar interactions ended without a sourced role.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+      <section className="guidancePanel" aria-labelledby="guidance-title">
+        <span>PRIVATE GUIDANCE → CANDIDATE AGENT</span>
+        <strong id="guidance-title">Do not share personal data yet.</strong>
+        <p>Request the job source, employer, responsibilities, and salary range first.</p>
+      </section>
       <div className="directLink">
-        <span>buyer agent</span>
+        <span>candidate agent</span>
         <b>direct A2A</b>
-        <span>supplier agent</span>
+        <span>recruiter agent</span>
       </div>
       <div className="exampleOutcome">
-        <span>VERIFIED OUTCOME</span>
-        <strong>Delivered on time · quote verified</strong>
-        <small>Procurement history updated for the next agent.</small>
+        <span>AGENT DECISION</span>
+        <strong>No verified opening · personal data withheld</strong>
+        <small>The structured outcome improves guidance for the next candidate.</small>
       </div>
       <p className="diagramSpec">raw conversation private · signed events only</p>
     </div>

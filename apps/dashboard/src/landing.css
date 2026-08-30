@@ -422,7 +422,7 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   color: var(--live);
 }
 
-.exampleRequest {
+.insightSubject {
   display: grid;
   margin: 28px 0 0;
   padding: 16px;
@@ -431,46 +431,133 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   background: color-mix(in srgb, var(--surface) 56%, transparent);
 }
 
-.exampleRequest span,
+.insightSubject span,
 .exampleOutcome span {
   color: var(--accent);
   font-size: 10px;
   letter-spacing: 0.1em;
 }
 
-.exampleRequest strong {
+.insightSubject strong {
   font-family: var(--font);
   font-size: 18px;
   font-weight: 500;
   line-height: 1.35;
 }
 
-.trustBrief {
+.riskPanel {
   display: grid;
   margin: 18px 0 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 52%, var(--border));
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 
-.trustBrief div {
-  display: grid;
-  padding: 9px 0;
-  grid-template-columns: 78px 1fr;
+.riskHeading {
+  display: flex;
+  padding: 14px 16px;
+  align-items: end;
+  justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px dashed var(--border);
-  font-size: 11px;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
 }
 
-.trustBrief dt {
+.riskHeading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.riskHeading span {
+  color: var(--danger);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.riskHeading strong {
+  color: color-mix(in srgb, var(--danger) 76%, var(--text));
+  font-family: var(--font);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.riskHeading small {
   color: var(--text-faint);
-  text-transform: uppercase;
+  font-size: 9px;
 }
 
-.trustBrief dd {
+.redFlagList {
+  display: grid;
   margin: 0;
-  color: var(--text);
+  padding: 0 16px;
+  list-style: none;
 }
 
-.trustBrief .is-warning dd {
+.redFlagList li {
+  display: grid;
+  padding: 11px 0;
+  grid-template-columns: 24px 1fr;
+  gap: 10px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.redFlagList li:last-child {
+  border-bottom: 0;
+}
+
+.redFlagList li > span {
+  padding-top: 2px;
+  color: var(--danger);
+  font-size: 9px;
+}
+
+.redFlagList div {
+  display: grid;
+  gap: 3px;
+}
+
+.redFlagList strong {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.redFlagList p {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.guidancePanel {
+  display: grid;
+  margin-top: 14px;
+  padding: 15px 16px;
+  gap: 6px;
+  border: 1px solid var(--accent-line);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.guidancePanel > span {
   color: var(--accent);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.guidancePanel strong {
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.guidancePanel p {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .directLink {
@@ -653,76 +740,70 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   line-height: 1.65;
 }
 
-.recordAsk {
-  display: flex;
-  flex-wrap: wrap;
-  margin-bottom: 36px;
-  align-items: baseline;
-  gap: 10px 22px;
-  color: var(--text-muted);
-  font-size: 12px;
+.coreQuestions {
+  margin: 8px 0 48px;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg));
 }
 
-.recordAsk > span {
+.coreQuestions header {
+  display: flex;
+  padding: 16px 20px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.coreQuestions header > span {
   color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
   letter-spacing: 0.08em;
 }
 
-.recordAsk p {
+.coreQuestions h3 {
   margin: 0;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
 }
 
-.recordAsk p::before {
-  margin-right: 8px;
-  color: var(--text-faint);
-  content: '>';
-}
-
-.recordSteps {
+.coreQuestions ol {
   display: grid;
   margin: 0;
   padding: 0;
+  grid-template-columns: repeat(3, 1fr);
   list-style: none;
-  border-top: 1px solid var(--border);
 }
 
-.recordSteps li {
+.coreQuestions li {
   display: grid;
-  padding: 28px 0;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 28px;
-  border-bottom: 1px dashed var(--border);
+  min-height: 132px;
+  padding: 20px;
+  align-content: space-between;
+  gap: 24px;
+  border-right: 1px solid var(--border);
 }
 
-.recordSteps li > span {
-  color: var(--accent);
-  font-size: 11px;
-  letter-spacing: 0.1em;
+.coreQuestions li:last-child {
+  border-right: 0;
 }
 
-.recordSteps h3 {
-  max-width: 20ch;
-  margin: 0 0 8px;
-  font-size: clamp(20px, 2.2vw, 30px);
-  font-weight: 500;
-  letter-spacing: -0.04em;
-  line-height: 1.05;
+.coreQuestions li > span {
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
-.recordSteps p {
-  max-width: 42em;
-  margin: 0;
-  color: var(--text-muted);
+.coreQuestions strong {
+  max-width: 18ch;
   font-family: var(--font);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.asciiMini {
-  margin: 18px 0 0;
-  color: var(--text-muted);
-  font: 400 11px/1.55 var(--mono);
-  letter-spacing: 0.02em;
+  font-size: clamp(17px, 1.8vw, 22px);
+  font-weight: 550;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
 }
 
 .principlesSection {
@@ -981,21 +1062,12 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
 
 @supports (animation-timeline: view()) {
   .sectionIntro,
-  .recordSteps li,
   .intelligenceLoop li,
   .principlesSection > div,
   .accessSection {
     animation: scrollReveal linear both;
     animation-timeline: view();
     animation-range: entry 5% cover 27%;
-  }
-
-  .recordSteps li:nth-child(2) {
-    animation-range: entry 10% cover 30%;
-  }
-
-  .recordSteps li:nth-child(3) {
-    animation-range: entry 15% cover 33%;
   }
 }
 
@@ -1009,19 +1081,9 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   animation-timeline: auto;
 }
 
-.productSection.is-arriving .recordSteps li {
-  animation: sectionArrival 600ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-timeline: auto;
-}
-
-.productSection.is-arriving .recordSteps li:nth-child(2),
 .principlesSection.is-arriving > div:nth-child(2),
 .accessSection.is-arriving .accessCard {
   animation-delay: 130ms;
-}
-
-.productSection.is-arriving .recordSteps li:nth-child(3) {
-  animation-delay: 190ms;
 }
 
 .accessSection.is-arriving {
@@ -1153,12 +1215,6 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
     text-align: center;
   }
 
-  .recordSteps li {
-    grid-template-columns: 64px minmax(0, 1fr);
-    gap: 16px;
-    padding: 22px 0;
-  }
-
   .productSection,
   .intelligenceSection,
   .principlesSection {
@@ -1175,9 +1231,28 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
     font-size: clamp(30px, 9vw, 44px);
   }
 
-  .recordAsk {
+  .coreQuestions {
     margin: 24px 0 28px;
+  }
+
+  .coreQuestions header {
+    align-items: flex-start;
     flex-direction: column;
+    gap: 8px;
+  }
+
+  .coreQuestions ol {
+    grid-template-columns: 1fr;
+  }
+
+  .coreQuestions li {
+    min-height: 104px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .coreQuestions li:last-child {
+    border-bottom: 0;
   }
 
   .intelligenceLoop {
@@ -1229,7 +1304,6 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   .heroCopy h1 em::after,
   .accessBlink,
   .sectionIntro,
-  .recordSteps li,
   .intelligenceLoop li,
   .principlesSection > div,
   .accessSection {

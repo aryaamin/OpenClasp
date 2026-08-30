@@ -494,13 +494,9 @@ function PublicLanding({
               A2A.
             </p>
             <div className="heroActions">
-              {__PUBLIC_LOGIN_ENABLED__ ? (
+              {__PUBLIC_LOGIN_ENABLED__ && (
                 <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
                   sign in <ArrowRight />
-                </a>
-              ) : (
-                <a className="landingPrimary" href={demoUrl} target="_blank" rel="noreferrer">
-                  book a demo <ArrowRight />
                 </a>
               )}
               <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
@@ -525,7 +521,7 @@ function PublicLanding({
         <section className="productSection" id="product">
           <div className="sectionIntro">
             <p className="landingKicker">
-              <span>01</span> before, during, after
+              <span>01</span> questions that matter
             </p>
             <h2>
               Trust infrastructure
@@ -533,55 +529,30 @@ function PublicLanding({
               <em>for the agent economy.</em>
             </h2>
             <p>
-              OpenClasp works before, during, and after an interaction. The conversation remains
-              direct; the assurance becomes durable.
+              Ask about a counterparty in the context of the actual task—not through a generic trust
+              score.
             </p>
           </div>
-          <div className="recordAsk" aria-label="Questions OpenClasp makes inspectable">
-            <span>? query</span>
-            <p>who is this agent</p>
-            <p>what are they reliable at</p>
-            <p>what did both sides agree</p>
-          </div>
-          <ol className="recordSteps">
-            <li>
-              <span>before</span>
-              <div>
-                <h3>Know the counterparty.</h3>
-                <p>
-                  Verify identity and see task-specific strengths, risks, and evidence confidence.
-                </p>
-                <pre className="asciiMini">{`IDENTITY   operator verified
-CONTEXT    procurement · 12 outcomes
-CLUE       require pricing evidence`}</pre>
-              </div>
-            </li>
-            <li>
-              <span>agree</span>
-              <div>
-                <h3>Agree, then work directly.</h3>
-                <p>
-                  Agents can revise and sign shared terms, then keep communicating directly over
-                  A2A.
-                </p>
-                <pre className="asciiMini">{`SCOPE      5t · A4 · 80 GSM
-EVIDENCE   signed quote required
-CHANNEL    direct A2A`}</pre>
-              </div>
-            </li>
-            <li>
-              <span>after</span>
-              <div>
-                <h3>Turn outcomes into intelligence.</h3>
-                <p>
-                  Signed outcomes and bilateral feedback update a contextual behavioural profile.
-                </p>
-                <pre className="asciiMini">{`OUTCOME    delivered on time
-EVIDENCE   quote verified
-HISTORY    procurement profile updated`}</pre>
-              </div>
-            </li>
-          </ol>
+          <section className="coreQuestions" aria-labelledby="core-questions-title">
+            <header>
+              <span>CORE INTELLIGENCE</span>
+              <h3 id="core-questions-title">Before your agent acts, OpenClasp answers:</h3>
+            </header>
+            <ol>
+              <li>
+                <span>01 · IDENTITY</span>
+                <strong>Who operates this agent?</strong>
+              </li>
+              <li>
+                <span>02 · YOUR QUESTION</span>
+                <strong>Will this agent fulfil my order on time?</strong>
+              </li>
+              <li>
+                <span>03 · RELEVANT HISTORY</span>
+                <strong>Has this agent kept similar agreements?</strong>
+              </li>
+            </ol>
+          </section>
         </section>
 
         <section className="intelligenceSection" id="intelligence">
@@ -623,107 +594,45 @@ HISTORY    procurement profile updated`}</pre>
           </p>
         </section>
 
-        <section className="principlesSection" id="principles">
-          <div>
-            <p className="landingKicker">
-              <span>03</span> deliberately bounded
-            </p>
-            <h2>
-              Trust should be
-              <br />
-              <em>specific and inspectable.</em>
-            </h2>
-          </div>
-          <div className="principleList">
-            <article>
-              <span>DIRECT</span>
-              <div>
-                <h3>Agents stay independent</h3>
-                <p>Bring any programmable agent. OpenClasp does not provide or control it.</p>
-              </div>
-            </article>
-            <article>
-              <span>OPEN</span>
-              <div>
-                <h3>A2A remains the transport</h3>
-                <p>OpenClasp adds assurance without becoming a proprietary message relay.</p>
-              </div>
-            </article>
-            <article>
-              <span>CONTEXT</span>
-              <div>
-                <h3>No universal trust score</h3>
-                <p>Standard behavioural dimensions remain task-specific and evidence-backed.</p>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section className="accessSection" id="access">
-          <div className="accessCopy">
-            <p className="landingKicker">
-              <span>04</span> {__PUBLIC_LOGIN_ENABLED__ ? 'identity required' : 'design partners'}
-            </p>
-            <h2>
-              {__PUBLIC_LOGIN_ENABLED__
-                ? 'Access your agent network.'
-                : 'Build the trust layer into your agent network.'}
-            </h2>
-            <p>
-              {__PUBLIC_LOGIN_ENABLED__
-                ? 'Sign in to connect agents, control network participation, and inspect signed history.'
-                : 'We are working with agent platforms, enterprise teams, and marketplaces that need reliable cross-agent collaboration.'}
-            </p>
-          </div>
-          <div className="accessCard">
-            <div className="accessChrome">
-              <span>{__PUBLIC_LOGIN_ENABLED__ ? '$ authenticate' : '$ pilot openclasp'}</span>
-              <span className="accessBlink">_</span>
+        {__PUBLIC_LOGIN_ENABLED__ && (
+          <section className="accessSection" id="access">
+            <div className="accessCopy">
+              <p className="landingKicker">
+                <span>03</span> identity required
+              </p>
+              <h2>Access your agent network.</h2>
+              <p>
+                Sign in to connect agents, control network participation, and inspect signed
+                history.
+              </p>
             </div>
-            {__PUBLIC_LOGIN_ENABLED__ ? (
-              <>
-                <div className="socialButtons">
-                  <button type="button" onClick={() => void continueWith('google')}>
-                    <GoogleMark /> continue with google
+            <div className="accessCard">
+              <div className="accessChrome">
+                <span>$ authenticate</span>
+                <span className="accessBlink">_</span>
+              </div>
+              <div className="socialButtons">
+                <button type="button" onClick={() => void continueWith('google')}>
+                  <GoogleMark /> continue with google
+                </button>
+                <button type="button" onClick={() => void continueWith('github')}>
+                  <GitHubMark /> continue with github
+                </button>
+                {onPreview && (
+                  <button type="button" onClick={() => void onPreview()}>
+                    open local preview <ArrowRight />
                   </button>
-                  <button type="button" onClick={() => void continueWith('github')}>
-                    <GitHubMark /> continue with github
-                  </button>
-                  {onPreview && (
-                    <button type="button" onClick={() => void onPreview()}>
-                      open local preview <ArrowRight />
-                    </button>
-                  )}
-                </div>
-                {error && (
-                  <div className="loginError" role="alert">
-                    {error}
-                  </div>
                 )}
-                <small>google or github · openclasp never receives your password</small>
-              </>
-            ) : (
-              <>
-                <ul className="pilotList">
-                  <li>Agent identity and discovery</li>
-                  <li>Signed agreements and receipts</li>
-                  <li>Contextual reliability intelligence</li>
-                </ul>
-                <div className="demoActions">
-                  <a className="landingPrimary" href={demoUrl} target="_blank" rel="noreferrer">
-                    book a demo <ArrowRight />
-                  </a>
-                  {onPreview && (
-                    <button type="button" onClick={() => void onPreview()}>
-                      open local preview <ArrowRight />
-                    </button>
-                  )}
+              </div>
+              {error && (
+                <div className="loginError" role="alert">
+                  {error}
                 </div>
-                <small>30 minutes · product walkthrough · pilot fit</small>
-              </>
-            )}
-          </div>
-        </section>
+              )}
+              <small>google or github · openclasp never receives your password</small>
+            </div>
+          </section>
+        )}
       </main>
 
       <footer className="landingFooter">
