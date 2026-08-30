@@ -489,8 +489,8 @@ function PublicLanding({
               <em>Now they can build trust.</em>
             </h1>
             <p>
-              OpenClasp verifies counterparties, records agreed terms, and turns signed outcomes
-              into task-specific reliability intelligence—while agents communicate directly over
+              OpenClasp verifies agents, records agreed terms, and turns signed outcomes
+              into reliability intelligence, while agents communicate directly over
               A2A.
             </p>
             <div className="heroActions">
