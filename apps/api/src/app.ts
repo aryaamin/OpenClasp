@@ -39,6 +39,7 @@ type DashboardRepository = Pick<
   | 'publishAgent'
   | 'unpublishAgent'
   | 'getPublishedAgent'
+  | 'resolveAgentReference'
   | 'searchPublishedAgents'
 > &
   Partial<
@@ -48,6 +49,8 @@ type DashboardRepository = Pick<
       | 'listFederatedInteractions'
       | 'getFederatedInteraction'
       | 'respondToFederatedInteraction'
+      | 'proposeContractRevision'
+      | 'respondToContractRevision'
       | 'getLiveSession'
       | 'getCounterpartyBrief'
       | 'submitCompletionReport'
@@ -156,6 +159,17 @@ export function buildApi(
       const protocol = typeof forwardedProtocol === 'string' ? forwardedProtocol : 'https';
       return process.env.OPENCLASP_PUBLIC_URL ?? `${protocol}://${String(host ?? 'localhost')}`;
     };
+    const escapeHtml = (value: string) =>
+      value.replace(/[&<>"']/g, (character) => {
+        const entities: Record<string, string> = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        };
+        return entities[character]!;
+      });
     router.get('/health', async () => ({ status: 'ok' }));
     router.get('/ready', async () => ({ status: 'ready' }));
     router.get('/openapi.json', async () => app.swagger());
@@ -271,6 +285,56 @@ export function buildApi(
       if (!card) throw new Error('Published agent not found');
       if (!card.transports.length) throw new Error('Agent has not published an A2A endpoint');
       return toA2AAgentCard(card);
+    });
+    router.get('/directory/resolve', async (request) => {
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const { reference } = z
+        .object({ reference: z.string().min(1).max(2048) })
+        .parse(request.query);
+      const result = await repository.resolveAgentReference(reference);
+      if (!result) throw new Error('Published agent not found');
+      return result;
+    });
+    router.get('/directory/search', async (request) => {
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const input = z
+        .object({
+          query: z.string().trim().max(100).optional(),
+          capability: z.string().trim().max(100).optional(),
+          limit: z.coerce.number().int().min(1).max(50).optional(),
+        })
+        .parse(request.query);
+      return repository.searchPublishedAgents(input);
+    });
+    router.get('/a/:reference', async (request, reply) => {
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const result = await repository.resolveAgentReference(
+        (request.params as { reference: string }).reference,
+      );
+      if (!result) throw new Error('Published agent not found');
+      const { card } = result;
+      const capabilities = card.capabilities
+        .map((capability) => `<li>${escapeHtml(capability)}</li>`)
+        .join('');
+      const limitations = card.limitations
+        .map((limitation) => `<li>${escapeHtml(limitation)}</li>`)
+        .join('');
+      const structured = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: card.name,
+        description: card.description,
+        url: card.profileUrl,
+      }).replace(/</g, '\\u003c');
+      return reply.type('text/html; charset=utf-8').send(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(card.name)} · OpenClasp</title><meta name="description" content="${escapeHtml(card.description)}">
+<meta property="og:title" content="${escapeHtml(card.name)} · OpenClasp verified agent"><meta property="og:description" content="${escapeHtml(card.description)}">
+<style>color-scheme:dark;*{box-sizing:border-box}body{margin:0;background:#0c0a0a;color:#f6f1ee;font:15px/1.55 Inter,system-ui,sans-serif}main{max-width:760px;margin:0 auto;padding:64px 24px}.brand{color:#f04b2d;font-weight:700}.verified{display:inline-block;margin:24px 0 8px;padding:5px 9px;border:1px solid #2fbf71;color:#2fbf71;border-radius:999px;font-size:12px}h1{font-size:42px;line-height:1.05;margin:8px 0 12px}p{color:#a39a94}.grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:36px 0}h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#a39a94}a{color:#f04b2d;overflow-wrap:anywhere}.links{padding-top:24px;border-top:1px solid #2b2523}.status{color:${card.presence?.status === 'online' ? '#2fbf71' : '#a39a94'}}@media(max-width:600px){.grid{grid-template-columns:1fr}h1{font-size:34px}}</style>
+<script type="application/ld+json">${structured}</script></head><body><main><div class="brand">OpenClasp</div><div class="verified">✓ Account and agent ownership verified</div>
+<h1>${escapeHtml(card.name)}</h1><p>${escapeHtml(card.description || 'No description provided.')}</p><p class="status">${escapeHtml(card.presence?.status ?? 'offline')} · ${escapeHtml(card.agentMode.replace('_', ' '))}</p>
+<div class="grid"><section><h2>Capabilities</h2><ul>${capabilities || '<li>None published</li>'}</ul></section><section><h2>Limitations</h2><ul>${limitations || '<li>None published</li>'}</ul></section></div>
+<div class="links"><p><strong>Agent ID</strong><br>${escapeHtml(card.agentId)}</p><p><a href="${escapeHtml(card.cardUrl)}">OpenClasp card</a> · <a href="${escapeHtml(card.a2aAgentCardUrl)}">A2A Agent Card</a></p></div></main></body></html>`);
     });
     router.get('/v0.1/dashboard', async (request) => {
       const owner = operatorId(request);
@@ -776,6 +840,52 @@ export function buildApi(
         'oauth_account',
       );
     });
+    router.post('/v0.1/federated-interactions/:id/contract-proposals', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.proposeContractRevision || !owner)
+        throw new Error('Contract negotiation is not configured');
+      const value = z
+        .object({
+          agentId: z.string().min(1),
+          expectedTermsHash: z.string().min(1).optional(),
+          contract: InteractionContractSchema,
+        })
+        .parse(request.body);
+      enforceBoundAgent(request, value.agentId);
+      return repository.proposeContractRevision(
+        owner,
+        (request.params as { id: string }).id,
+        value.agentId,
+        value.contract,
+        value.expectedTermsHash,
+        request.headers['x-openclasp-credential-type'] === 'agent_access_token'
+          ? 'oauth_installation'
+          : 'oauth_account',
+      );
+    });
+    router.post(
+      '/v0.1/federated-interactions/:id/contract-proposals/:revisionId/respond',
+      async (request) => {
+        const owner = operatorId(request);
+        if (!repository?.respondToContractRevision || !owner)
+          throw new Error('Contract negotiation is not configured');
+        const value = z
+          .object({ agentId: z.string().min(1), decision: z.enum(['accept', 'reject']) })
+          .parse(request.body);
+        enforceBoundAgent(request, value.agentId);
+        const params = request.params as { id: string; revisionId: string };
+        return repository.respondToContractRevision(
+          owner,
+          params.id,
+          value.agentId,
+          params.revisionId,
+          value.decision,
+          request.headers['x-openclasp-credential-type'] === 'agent_access_token'
+            ? 'oauth_installation'
+            : 'oauth_account',
+        );
+      },
+    );
     router.post('/v0.1/delegations', async (request) => {
       const value = DelegationCredentialSchema.parse(request.body);
       const current = await scopedEngine(request);

@@ -28,6 +28,9 @@ export default async function handler(request: IncomingMessage, response: Server
       const agentSelfService =
         /^\/v0\.1\/runtime(?:\/bootstrap|\/heartbeat)?(?:\?|$)/.test(request.url ?? '') ||
         /^\/v0\.1\/feedback-requests(?:\?|$)/.test(request.url ?? '') ||
+        /^\/v0\.1\/federated-interactions\/[^/]+\/contract-proposals(?:\/[^/]+\/respond)?(?:\?|$)/.test(
+          request.url ?? '',
+        ) ||
         /^\/v0\.1\/federated-interactions\/[^/]+\/(?:brief|session|completion-reports|feedback)(?:\?|$)/.test(
           request.url ?? '',
         );

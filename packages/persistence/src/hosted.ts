@@ -9,9 +9,11 @@ import {
 } from '../../core/src/index.js';
 import {
   AgentIdentitySchema,
+  AgentResolutionSchema,
   BehaviouralProfileDeltaSchema,
   DEFAULT_EXTENSION_URI,
   CounterpartyBriefSchema,
+  ContractRevisionSchema,
   FederatedInteractionSchema,
   FeedbackDimensionSchema,
   FeedbackRequestSchema,
@@ -22,6 +24,7 @@ import {
   HostedMessageSchema,
   HostedThreadSchema,
   InteractionCompletionReportSchema,
+  InteractionContractSchema,
   InteractionConclusionSchema,
   InteractionFeedbackSchema,
   LearningEligibilityDecisionSchema,
@@ -31,14 +34,17 @@ import {
   verifyObject,
   type FederatedInteraction,
   type AgentPresence,
+  type AgentResolution,
   type BehaviouralProfileDelta,
   type CounterpartyBrief,
+  type ContractRevision,
   type LiveSessionActivation,
   type LiveSessionEvent,
   type LiveSessionInsight,
   type HostedMessage,
   type HostedThread,
   type InteractionCompletionReport,
+  type InteractionContract,
   type InteractionFeedback,
   type InteractionConclusion,
   type PublicAgentCard,
@@ -134,13 +140,27 @@ function deterministicUuid(value: string): string {
 
 function normalizePublicAgentCard(value: unknown): PublicAgentCard {
   const current = PublicAgentCardSchema.safeParse(value);
-  if (current.success) return current.data;
-  const legacy = value as Record<string, unknown>;
-  const agentId = String(legacy.agentId ?? '');
   const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
     /\/$/,
     '',
   );
+  if (current.success) {
+    const slug = current.data.slug ?? publicAgentSlug(current.data.name, current.data.agentId);
+    return PublicAgentCardSchema.parse({
+      ...current.data,
+      slug,
+      profileUrl: current.data.profileUrl ?? `${baseUrl}/a/${encodeURIComponent(slug)}`,
+      verification: current.data.verification ?? {
+        status: 'verified',
+        method: 'openclasp_oauth_account',
+        verifiedAt: current.data.publishedAt,
+        verificationKeyUrl: `${baseUrl}/.well-known/openclasp-session-key`,
+      },
+    });
+  }
+  const legacy = value as Record<string, unknown>;
+  const agentId = String(legacy.agentId ?? '');
+  const slug = publicAgentSlug(String(legacy.name ?? agentId), agentId);
   return PublicAgentCardSchema.parse({
     protocolVersion: '0.1',
     agentId,
@@ -162,12 +182,32 @@ function normalizePublicAgentCard(value: unknown): PublicAgentCard {
             },
           ]
         : [],
+    slug,
+    profileUrl: `${baseUrl}/a/${encodeURIComponent(slug)}`,
     cardUrl: `${baseUrl}/agents/${encodeURIComponent(agentId)}/card.json`,
     a2aAgentCardUrl: `${baseUrl}/agents/${encodeURIComponent(agentId)}/a2a-agent-card.json`,
     extensionUri: DEFAULT_EXTENSION_URI,
+    verification: {
+      status: 'verified',
+      method: 'openclasp_oauth_account',
+      verifiedAt: legacy.publishedAt,
+      verificationKeyUrl: `${baseUrl}/.well-known/openclasp-session-key`,
+    },
     publishedAt: legacy.publishedAt,
     updatedAt: legacy.updatedAt,
   });
+}
+
+function publicAgentSlug(name: string, agentId: string) {
+  const prefix =
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48) || 'agent';
+  const suffix = createHash('sha256').update(agentId).digest('hex').slice(0, 8);
+  return `${prefix}-${suffix}`;
 }
 
 export function buildPublicAgentCard(
@@ -177,6 +217,7 @@ export function buildPublicAgentCard(
 ): PublicAgentCard {
   const now = new Date().toISOString();
   const root = baseUrl.replace(/\/$/, '');
+  const slug = previous?.slug ?? publicAgentSlug(agent.name, agent.agentId);
   return PublicAgentCardSchema.parse({
     protocolVersion: '0.1',
     agentId: agent.agentId,
@@ -209,9 +250,17 @@ export function buildPublicAgentCard(
               },
             ]
           : [],
+    slug,
+    profileUrl: `${root}/a/${encodeURIComponent(slug)}`,
     cardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/card.json`,
     a2aAgentCardUrl: `${root}/agents/${encodeURIComponent(agent.agentId)}/a2a-agent-card.json`,
     extensionUri: DEFAULT_EXTENSION_URI,
+    verification: {
+      status: 'verified',
+      method: 'openclasp_oauth_account',
+      verifiedAt: previous?.verification?.verifiedAt ?? previous?.publishedAt ?? now,
+      verificationKeyUrl: `${root}/.well-known/openclasp-session-key`,
+    },
     publishedAt: previous?.publishedAt ?? now,
     updatedAt: now,
   });
@@ -265,6 +314,34 @@ export function canAutoAcceptInteraction(
   return true;
 }
 
+function withContractRevisionHistory(value: FederatedInteraction): FederatedInteraction {
+  if (value.contractRevisions.length) return value;
+  const status =
+    value.status === 'pending'
+      ? 'proposed'
+      : ['active', 'completed'].includes(value.status)
+        ? 'accepted'
+        : 'rejected';
+  const revision = ContractRevisionSchema.parse({
+    revisionId: deterministicUuid(`${value.interactionId}:contract:1:${value.termsHash}`),
+    interactionId: value.interactionId,
+    revision: value.contractRevision,
+    termsHash: value.termsHash,
+    contract: value.contract,
+    proposedByAgentId: value.initiatorAgentId,
+    status,
+    acceptances: value.acceptances,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    expiresAt: value.expiresAt,
+  });
+  return FederatedInteractionSchema.parse({ ...value, contractRevisions: [revision] });
+}
+
+function openContractRevision(value: FederatedInteraction): ContractRevision | undefined {
+  return [...value.contractRevisions].reverse().find((revision) => revision.status === 'proposed');
+}
+
 export type AccountSettings = {
   displayName: string;
   contributionEnabled: boolean;
@@ -293,6 +370,15 @@ export class HostedRepository {
     const value = process.env.OPENCLASP_RELAY_ENCRYPTION_KEY;
     if (!value || value.length < 32) throw new Error('Gateway encryption is not configured');
     return value;
+  }
+
+  private attestPublicAgentCard(value: PublicAgentCard): PublicAgentCard {
+    const unsigned = { ...value };
+    delete unsigned.platformAttestation;
+    return PublicAgentCardSchema.parse({
+      ...unsigned,
+      platformAttestation: attestSessionRecord(this.gatewaySecret(), unsigned),
+    });
   }
 
   ensureSchema(): Promise<void> {
@@ -785,6 +871,7 @@ export class HostedRepository {
         ],
       });
     }
+    card = this.attestPublicAgentCard(card);
     const encoded = JSON.stringify(card);
     const rows = await this.sql`
       INSERT INTO openclasp_public_agents(agent_id, operator_id, card, published_at, updated_at)
@@ -797,7 +884,7 @@ export class HostedRepository {
     `;
     const published = rows[0]?.card as PublicAgentCard | undefined;
     if (!published) throw new Error('Agent ID is already owned by another operator');
-    return published;
+    return PublicAgentCardSchema.parse(published);
   }
 
   async unpublishAgent(operatorId: string, agentId: string): Promise<boolean> {
@@ -858,7 +945,60 @@ export class HostedRepository {
           },
         ],
       });
-    return { ...card, presence: await this.getAgentPresence(agentId) };
+    return this.attestPublicAgentCard({ ...card, presence: await this.getAgentPresence(agentId) });
+  }
+
+  async resolveAgentReference(reference: string): Promise<AgentResolution | undefined> {
+    await this.ensureSchema();
+    const normalizedReference = reference.trim().replace(/\/$/, '');
+    if (!normalizedReference || normalizedReference.length > 2048)
+      throw new Error('Agent reference is invalid');
+    const rows = await this.sql`
+      SELECT agent_id, card
+      FROM openclasp_public_agents
+      WHERE agent_id = ${normalizedReference}
+        OR card->>'slug' = ${normalizedReference}
+        OR RTRIM(card->>'profileUrl', '/') = ${normalizedReference}
+        OR RTRIM(card->>'cardUrl', '/') = ${normalizedReference}
+        OR RTRIM(card->>'a2aAgentCardUrl', '/') = ${normalizedReference}
+      LIMIT 1
+    `;
+    let row = rows[0];
+    if (!row) {
+      const legacyRows = await this.sql`
+        SELECT agent_id, card
+        FROM openclasp_public_agents
+        ORDER BY updated_at DESC
+        LIMIT 1000
+      `;
+      row = legacyRows.find((candidate) => {
+        const card = normalizePublicAgentCard(candidate.card);
+        return [card.slug, card.profileUrl, card.cardUrl, card.a2aAgentCardUrl]
+          .filter((value): value is string => typeof value === 'string')
+          .some((value) => value.replace(/\/$/, '') === normalizedReference);
+      });
+    }
+    if (!row) return undefined;
+    const stored = normalizePublicAgentCard(row.card);
+    const matchedBy =
+      String(row.agent_id) === normalizedReference
+        ? 'agent_id'
+        : stored.slug === normalizedReference
+          ? 'slug'
+          : stored.profileUrl?.replace(/\/$/, '') === normalizedReference
+            ? 'profile_url'
+            : stored.cardUrl.replace(/\/$/, '') === normalizedReference
+              ? 'card_url'
+              : 'a2a_card_url';
+    const card = await this.getPublishedAgent(String(row.agent_id));
+    if (!card) return undefined;
+    return AgentResolutionSchema.parse({
+      reference,
+      matchedBy,
+      verified: true,
+      card,
+      resolvedAt: new Date().toISOString(),
+    });
   }
 
   async searchPublishedAgents(input: {
@@ -925,13 +1065,21 @@ export class HostedRepository {
               },
             ],
           });
-        return { ...card, presence: resolveAgentPresence(presence.get(card.agentId)) };
+        return this.attestPublicAgentCard({
+          ...card,
+          presence: resolveAgentPresence(presence.get(card.agentId)),
+        });
       })
       .filter(
         (card) =>
           (!query ||
+            card.agentId.toLowerCase().includes(query) ||
+            card.slug?.includes(query) ||
             card.name.toLowerCase().includes(query) ||
-            card.framework.toLowerCase().includes(query)) &&
+            card.description.toLowerCase().includes(query) ||
+            card.framework.toLowerCase().includes(query) ||
+            card.capabilities.some((value) => value.toLowerCase().includes(query)) ||
+            card.limitations.some((value) => value.toLowerCase().includes(query))) &&
           (!capability ||
             card.capabilities.some((value) => value.toLowerCase().includes(capability))),
       )
@@ -2902,8 +3050,10 @@ export class HostedRepository {
     value: FederatedInteraction,
   ): Promise<FederatedInteraction> {
     await this.ensureSchema();
-    const interaction = FederatedInteractionSchema.parse(value);
+    let interaction = FederatedInteractionSchema.parse(value);
     if (interaction.status !== 'pending') throw new Error('New interactions must be pending');
+    if (interaction.contractRevision !== 1 || interaction.contractRevisions.length)
+      throw new Error('New interactions cannot supply contract revision history');
     if (interaction.contract.interactionId !== interaction.interactionId)
       throw new Error('Contract interaction ID does not match');
     if (canonicalHash(interaction.contract) !== interaction.termsHash)
@@ -2925,6 +3075,7 @@ export class HostedRepository {
       throw new Error('A pending interaction requires only the initiator acceptance');
     if (Date.parse(interaction.expiresAt) <= Date.now())
       throw new Error('Interaction expiry must be in the future');
+    interaction = withContractRevisionHistory(interaction);
     const owners = await this.sql`
       SELECT agent_id, operator_id, card FROM openclasp_public_agents
       WHERE agent_id IN (${interaction.initiatorAgentId}, ${interaction.responderAgentId})
@@ -2989,7 +3140,9 @@ export class HostedRepository {
       WHERE initiator_operator_id = ${operatorId} OR responder_operator_id = ${operatorId}
       ORDER BY updated_at DESC
     `;
-    return rows.map((row) => FederatedInteractionSchema.parse(row.payload));
+    return rows.map((row) =>
+      withContractRevisionHistory(FederatedInteractionSchema.parse(row.payload)),
+    );
   }
 
   async getFederatedInteraction(
@@ -3016,31 +3169,53 @@ export class HostedRepository {
     if (!row) throw new Error('Interaction invitation not found');
     if (row.responder_operator_id !== operatorId || row.responder_agent_id !== agentId)
       throw new Error('Only the invited agent may respond');
-    const current = FederatedInteractionSchema.parse(row.payload);
+    const current = withContractRevisionHistory(FederatedInteractionSchema.parse(row.payload));
     if (current.status !== 'pending') throw new Error('Invitation is no longer pending');
     const now = new Date().toISOString();
     if (Date.parse(current.expiresAt) <= Date.now()) {
       const expired = { ...current, status: 'expired' as const, updatedAt: now };
-      await this.updateFederatedInteraction(interactionId, current.status, expired);
+      await this.updateFederatedInteraction(
+        interactionId,
+        current.status,
+        expired,
+        current.updatedAt,
+      );
       throw new Error('Invitation has expired');
     }
-    const next: FederatedInteraction =
-      decision === 'reject'
-        ? { ...current, status: 'rejected', updatedAt: now }
-        : {
-            ...current,
-            status: 'active',
-            updatedAt: now,
-            acceptances: {
-              ...current.acceptances,
-              [agentId]: {
-                agentId,
-                method,
-                termsHash: current.termsHash,
-                acceptedAt: now,
-              },
-            },
-          };
+    const proposed = openContractRevision(current);
+    if (!proposed || proposed.termsHash !== current.termsHash)
+      throw new Error('No current contract proposal is available');
+    const acceptance = {
+      agentId,
+      method,
+      termsHash: current.termsHash,
+      acceptedAt: now,
+    };
+    const proposalBase: ContractRevision = {
+      ...proposed,
+      status: decision === 'accept' ? 'accepted' : 'rejected',
+      acceptances:
+        decision === 'accept'
+          ? { ...proposed.acceptances, [agentId]: acceptance }
+          : proposed.acceptances,
+      updatedAt: now,
+    };
+    const resolvedProposal =
+      decision === 'accept'
+        ? ContractRevisionSchema.parse({
+            ...proposalBase,
+            platformAttestation: attestSessionRecord(this.gatewaySecret(), proposalBase),
+          })
+        : proposalBase;
+    const next = FederatedInteractionSchema.parse({
+      ...current,
+      status: decision === 'accept' ? 'active' : 'rejected',
+      updatedAt: now,
+      acceptances: decision === 'accept' ? resolvedProposal.acceptances : current.acceptances,
+      contractRevisions: current.contractRevisions.map((revision) =>
+        revision.revisionId === resolvedProposal.revisionId ? resolvedProposal : revision,
+      ),
+    });
     if (decision === 'accept') {
       try {
         await this.brokerLiveSession(next);
@@ -3053,8 +3228,193 @@ export class HostedRepository {
         throw error;
       }
     }
-    const updated = await this.updateFederatedInteraction(interactionId, current.status, next);
+    const updated = await this.updateFederatedInteraction(
+      interactionId,
+      current.status,
+      next,
+      current.updatedAt,
+    );
     if (!updated) throw new Error('Invitation was already handled');
+    return next;
+  }
+
+  async proposeContractRevision(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+    contract: InteractionContract,
+    expectedTermsHash?: string,
+    method: 'oauth_installation' | 'oauth_account' = 'oauth_account',
+  ): Promise<FederatedInteraction> {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT payload, initiator_operator_id, responder_operator_id,
+        initiator_agent_id, responder_agent_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${interactionId}
+    `;
+    const row = rows[0];
+    if (!row) throw new Error('Interaction not found');
+    const ownsParticipant =
+      (row.initiator_operator_id === operatorId && row.initiator_agent_id === agentId) ||
+      (row.responder_operator_id === operatorId && row.responder_agent_id === agentId);
+    if (!ownsParticipant) throw new Error('Only a participating agent may propose contract terms');
+    const current = withContractRevisionHistory(FederatedInteractionSchema.parse(row.payload));
+    if (!['pending', 'active'].includes(current.status))
+      throw new Error('This interaction no longer accepts contract proposals');
+    const parsedContract = InteractionContractSchema.parse(contract);
+    if (parsedContract.interactionId !== interactionId)
+      throw new Error('Contract interaction ID does not match');
+    if (
+      parsedContract.parties.length !== 2 ||
+      parsedContract.parties[0] !== current.initiatorAgentId ||
+      parsedContract.parties[1] !== current.responderAgentId
+    )
+      throw new Error('Contract parties cannot change during negotiation');
+    const open = openContractRevision(current);
+    const expected = open?.termsHash ?? current.termsHash;
+    if (expectedTermsHash && expectedTermsHash !== expected)
+      throw new Error('Contract terms changed; fetch the interaction before countering');
+    const termsHash = canonicalHash(parsedContract);
+    if (termsHash === expected) throw new Error('Proposed terms are unchanged');
+    const now = new Date().toISOString();
+    const revisionNumber =
+      Math.max(
+        current.contractRevision,
+        ...current.contractRevisions.map((item) => item.revision),
+      ) + 1;
+    const acceptance = {
+      agentId,
+      method,
+      termsHash,
+      acceptedAt: now,
+    } as const;
+    const revision = ContractRevisionSchema.parse({
+      revisionId: crypto.randomUUID(),
+      interactionId,
+      revision: revisionNumber,
+      previousTermsHash: expected,
+      termsHash,
+      contract: parsedContract,
+      proposedByAgentId: agentId,
+      status: 'proposed',
+      acceptances: { [agentId]: acceptance },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const revisions = [
+      ...current.contractRevisions.map((item) =>
+        item.status === 'proposed'
+          ? ContractRevisionSchema.parse({ ...item, status: 'superseded', updatedAt: now })
+          : item,
+      ),
+      revision,
+    ];
+    const next = FederatedInteractionSchema.parse({
+      ...current,
+      ...(current.status === 'pending'
+        ? {
+            contract: parsedContract,
+            termsHash,
+            acceptances: revision.acceptances,
+            contractRevision: revisionNumber,
+          }
+        : {}),
+      contractRevisions: revisions,
+      updatedAt: now,
+    });
+    const updated = await this.updateFederatedInteraction(
+      interactionId,
+      current.status,
+      next,
+      current.updatedAt,
+    );
+    if (!updated) throw new Error('Contract changed concurrently; fetch it and retry');
+    return next;
+  }
+
+  async respondToContractRevision(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+    revisionId: string,
+    decision: 'accept' | 'reject',
+    method: 'oauth_installation' | 'oauth_account' = 'oauth_account',
+  ): Promise<FederatedInteraction> {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT payload, initiator_operator_id, responder_operator_id,
+        initiator_agent_id, responder_agent_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${interactionId}
+    `;
+    const row = rows[0];
+    if (!row) throw new Error('Interaction not found');
+    const ownsParticipant =
+      (row.initiator_operator_id === operatorId && row.initiator_agent_id === agentId) ||
+      (row.responder_operator_id === operatorId && row.responder_agent_id === agentId);
+    if (!ownsParticipant) throw new Error('Only a participating agent may respond to terms');
+    const current = withContractRevisionHistory(FederatedInteractionSchema.parse(row.payload));
+    if (!['pending', 'active'].includes(current.status))
+      throw new Error('This interaction no longer accepts contract responses');
+    const proposal = openContractRevision(current);
+    if (!proposal || proposal.revisionId !== revisionId)
+      throw new Error('Contract proposal is no longer current');
+    if (proposal.acceptances[agentId]) throw new Error('Agent already accepted this proposal');
+    const now = new Date().toISOString();
+    const acceptances =
+      decision === 'accept'
+        ? {
+            ...proposal.acceptances,
+            [agentId]: { agentId, method, termsHash: proposal.termsHash, acceptedAt: now },
+          }
+        : proposal.acceptances;
+    const fullyAccepted = current.contract.parties.every((party) => party in acceptances);
+    const revisionBase = ContractRevisionSchema.parse({
+      ...proposal,
+      status: decision === 'reject' ? 'rejected' : fullyAccepted ? 'accepted' : 'proposed',
+      acceptances,
+      updatedAt: now,
+    });
+    const revision =
+      fullyAccepted && decision === 'accept'
+        ? ContractRevisionSchema.parse({
+            ...revisionBase,
+            platformAttestation: attestSessionRecord(this.gatewaySecret(), revisionBase),
+          })
+        : revisionBase;
+    const next = FederatedInteractionSchema.parse({
+      ...current,
+      status:
+        current.status === 'pending'
+          ? decision === 'reject'
+            ? 'rejected'
+            : fullyAccepted
+              ? 'active'
+              : 'pending'
+          : 'active',
+      ...(fullyAccepted
+        ? {
+            contract: revision.contract,
+            termsHash: revision.termsHash,
+            acceptances: revision.acceptances,
+            contractRevision: revision.revision,
+          }
+        : {}),
+      contractRevisions: current.contractRevisions.map((item) =>
+        item.revisionId === revision.revisionId ? revision : item,
+      ),
+      updatedAt: now,
+    });
+    if (current.status === 'pending' && decision === 'accept' && fullyAccepted)
+      await this.brokerLiveSession(next);
+    const updated = await this.updateFederatedInteraction(
+      interactionId,
+      current.status,
+      next,
+      current.updatedAt,
+    );
+    if (!updated) throw new Error('Contract changed concurrently; fetch it and retry');
     return next;
   }
 
@@ -3062,12 +3422,14 @@ export class HostedRepository {
     interactionId: string,
     expectedStatus: string,
     value: FederatedInteraction,
+    expectedUpdatedAt?: string,
   ): Promise<boolean> {
     const encoded = JSON.stringify(FederatedInteractionSchema.parse(value));
     const rows = await this.sql`
       UPDATE openclasp_federated_interactions
       SET status = ${value.status}, payload = ${encoded}::jsonb, updated_at = NOW()
       WHERE interaction_id = ${interactionId} AND status = ${expectedStatus}
+        AND (${expectedUpdatedAt ?? null}::text IS NULL OR payload->>'updatedAt' = ${expectedUpdatedAt ?? null})
       RETURNING interaction_id
     `;
     return rows.length > 0;

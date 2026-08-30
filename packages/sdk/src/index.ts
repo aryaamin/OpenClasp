@@ -2,10 +2,13 @@ import {
   DEFAULT_EXTENSION_URI,
   canonicalHash,
   signObject,
+  verifyRecordAttestation,
   type InteractionEvent,
   type KeyPair,
   type TrustEnvelope,
   type FederatedInteraction,
+  type AgentResolution,
+  type InteractionContract,
   LiveSessionActivationSchema,
   LiveSessionEventSchema,
   LiveSessionOfferSchema,
@@ -89,6 +92,44 @@ export class OpenClaspClient {
       },
     );
   }
+  resolveAgent(reference: string): Promise<AgentResolution> {
+    const root = this.baseUrl.replace(/\/v0\.1\/?$/, '');
+    return fetch(`${root}/directory/resolve?reference=${encodeURIComponent(reference)}`).then(
+      async (response) => {
+        const body = (await response.json()) as any;
+        if (!response.ok)
+          throw new Error(body.error ?? `OpenClasp request failed: ${response.status}`);
+        return body as AgentResolution;
+      },
+    );
+  }
+  searchAgents(input: { query?: string; capability?: string; limit?: number } = {}) {
+    const root = this.baseUrl.replace(/\/v0\.1\/?$/, '');
+    const search = new URLSearchParams();
+    if (input.query) search.set('query', input.query);
+    if (input.capability) search.set('capability', input.capability);
+    if (input.limit) search.set('limit', String(input.limit));
+    return fetch(`${root}/directory/search?${search}`).then(async (response) => {
+      const body = (await response.json()) as any;
+      if (!response.ok)
+        throw new Error(body.error ?? `OpenClasp request failed: ${response.status}`);
+      return body as PublicAgentCard[];
+    });
+  }
+  async verifyPlatformRecord(value: Record<string, unknown>): Promise<boolean> {
+    const root = this.baseUrl.replace(/\/v0\.1\/?$/, '');
+    const keyUrl =
+      typeof value.verification === 'object' &&
+      value.verification !== null &&
+      'verificationKeyUrl' in value.verification &&
+      typeof value.verification.verificationKeyUrl === 'string'
+        ? value.verification.verificationKeyUrl
+        : `${root}/.well-known/openclasp-session-key`;
+    const response = await fetch(keyUrl);
+    if (!response.ok) return false;
+    const key = (await response.json()) as { publicKey?: string };
+    return typeof key.publicKey === 'string' && verifyRecordAttestation(value, key.publicKey);
+  }
   createFederatedInteraction(value: FederatedInteraction) {
     return this.request<FederatedInteraction>('/federated-interactions', {
       method: 'POST',
@@ -115,6 +156,31 @@ export class OpenClaspClient {
   ) {
     return this.request<FederatedInteraction>(
       `/federated-interactions/${encodeURIComponent(interactionId)}/respond`,
+      { method: 'POST', body: JSON.stringify({ agentId, decision }) },
+    );
+  }
+  proposeContractRevision(
+    interactionId: string,
+    agentId: string,
+    contract: InteractionContract,
+    expectedTermsHash?: string,
+  ) {
+    return this.request<FederatedInteraction>(
+      `/federated-interactions/${encodeURIComponent(interactionId)}/contract-proposals`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ agentId, contract, expectedTermsHash }),
+      },
+    );
+  }
+  respondToContractRevision(
+    interactionId: string,
+    revisionId: string,
+    agentId: string,
+    decision: 'accept' | 'reject',
+  ) {
+    return this.request<FederatedInteraction>(
+      `/federated-interactions/${encodeURIComponent(interactionId)}/contract-proposals/${encodeURIComponent(revisionId)}/respond`,
       { method: 'POST', body: JSON.stringify({ agentId, decision }) },
     );
   }

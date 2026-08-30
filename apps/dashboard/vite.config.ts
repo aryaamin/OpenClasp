@@ -1,3 +1,5 @@
+import path from 'node:path';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -5,7 +7,12 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
     root: 'apps/dashboard',
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': path.resolve(process.cwd(), 'apps/dashboard/src'),
+      },
+    },
     define: {
       __AUTH0_DOMAIN__: JSON.stringify(
         process.env.NEXT_PUBLIC_AUTH0_DOMAIN ??

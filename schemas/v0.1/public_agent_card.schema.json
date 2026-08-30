@@ -74,6 +74,14 @@
         "additionalProperties": false
       }
     },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "profileUrl": {
+      "type": "string",
+      "format": "uri"
+    },
     "cardUrl": {
       "type": "string",
       "format": "uri"
@@ -107,6 +115,30 @@
       "required": ["status", "checkedAt"],
       "additionalProperties": false
     },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "verified"
+        },
+        "method": {
+          "type": "string",
+          "const": "openclasp_oauth_account"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "verificationKeyUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "required": ["status", "method", "verifiedAt"],
+      "additionalProperties": false
+    },
     "publishedAt": {
       "type": "string",
       "format": "date-time",
@@ -116,6 +148,29 @@
       "type": "string",
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "platformAttestation": {
+      "type": "object",
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{43}$"
+        }
+      },
+      "required": ["algorithm", "keyId", "value", "digest"],
+      "additionalProperties": false
     }
   },
   "required": [

@@ -148,11 +148,23 @@ export function createPreviewData(): DashboardData {
         responderAgentId: 'agent_atlas',
         status: 'pending',
         termsHash: '7f3c91a0b2e84d11c6aa09f1d3e8b470',
+        contractRevision: 1,
         createdAt: ago(26),
         contract: {
           purpose: 'Review a research brief for scope and sources',
           taskCategory: 'research',
+          parties: ['agent_peer_nova', 'agent_atlas'],
         },
+        contractRevisions: [
+          {
+            revisionId: '17c3a10b-2e84-4d11-86aa-09f1d3e8b470',
+            revision: 1,
+            termsHash: '7f3c91a0b2e84d11c6aa09f1d3e8b470',
+            proposedByAgentId: 'agent_peer_nova',
+            status: 'proposed',
+            acceptances: { agent_peer_nova: { method: 'oauth_installation' } },
+          },
+        ],
       },
       {
         interactionId: 'ix_shared_ops',
@@ -160,14 +172,29 @@ export function createPreviewData(): DashboardData {
         responderAgentId: 'agent_peer_keel',
         status: 'active',
         termsHash: '12ab44c0e91f77d0aa3310bc44ee9012',
+        contractRevision: 1,
         createdAt: ago(90),
         contract: {
           purpose: 'Share a sanitized incident timeline',
           taskCategory: 'coordination',
+          parties: ['agent_atlas', 'agent_peer_keel'],
         },
         acceptances: {
           agent_peer_keel: { method: 'policy_auto_accept' },
         },
+        contractRevisions: [
+          {
+            revisionId: '22ab44c0-e91f-47d0-aa33-10bc44ee9012',
+            revision: 1,
+            termsHash: '12ab44c0e91f77d0aa3310bc44ee9012',
+            proposedByAgentId: 'agent_atlas',
+            status: 'accepted',
+            acceptances: {
+              agent_atlas: { method: 'oauth_installation' },
+              agent_peer_keel: { method: 'policy_auto_accept' },
+            },
+          },
+        ],
       },
     ],
     liveSessions: [

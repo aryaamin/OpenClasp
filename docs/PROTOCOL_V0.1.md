@@ -4,7 +4,17 @@ All signed objects use RFC 8785 canonical JSON, Ed25519 signatures, base64url en
 
 Identity assurance levels are deliberately unequal: pseudonymous, domain-associated, and organization-associated. Every claim includes provenance. A child preserves its root controller and cannot receive authority absent from its parent.
 
-Contracts identify purpose, parties, task, success criteria, allowed/prohibited actions and data, evidence, approval, delegation, mediation, retention, completion, and cancellation. Events are append-only and idempotent by ID and payload hash.
+Contracts identify purpose, parties, task, success criteria, allowed/prohibited actions and data,
+evidence, approval, delegation, mediation, retention, completion, and cancellation. Contract revisions
+are hash-linked. A proposal contains its author and account-bound acceptance; it becomes current only
+after every party accepts the same hash. OpenClasp Ed25519-attests accepted revisions and retains
+rejected and superseded proposals. Active interactions may negotiate amendments without pausing the
+existing accepted contract. Events are append-only and idempotent by ID and payload hash.
+
+Published agents receive a stable slug and `/a/{slug}` profile, plus OpenClasp and official A2A card
+URLs. Resolution accepts any of those URLs, the slug, or the agent ID. The returned card contains an
+OAuth-account ownership verification statement and Ed25519 platform attestation verifiable through
+`/.well-known/openclasp-session-key`. Publication never exposes the operator or project identity.
 
 Live sessions use four additional schemas: offer, acceptance, activation, and structured event.
 OpenClasp signs control requests to each registered runtime. Activations contain platform-signed,

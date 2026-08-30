@@ -2,12 +2,14 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
   AgentIdentitySchema,
+  AgentResolutionSchema,
   AgentPresenceSchema,
   AgentModeSchema,
   AgentTransportSchema,
   BehaviouralProfileDeltaSchema,
   CompletionOutcomeSchema,
   CounterpartyBriefSchema,
+  ContractRevisionSchema,
   DelegationCredentialSchema,
   ExpectationManifestSchema,
   FactCheckResultSchema,
@@ -38,9 +40,11 @@ import {
 
 const schemas = {
   agent_identity: AgentIdentitySchema,
+  agent_resolution: AgentResolutionSchema,
   delegation_credential: DelegationCredentialSchema,
   expectation_manifest: ExpectationManifestSchema,
   interaction_contract: InteractionContractSchema,
+  contract_revision: ContractRevisionSchema,
   trust_envelope: TrustEnvelopeSchema,
   interaction_event: InteractionEventSchema,
   fact_check_result: FactCheckResultSchema,

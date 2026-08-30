@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Bot } from 'lucide-react';
+import { AppShell } from '@/components/app-shell';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { pageMeta, pages, type Page } from '@/lib/navigation';
 import {
   applyPreviewRequest,
   createPreviewData,
@@ -91,60 +96,6 @@ const defaultSettings: Settings = {
 function normalizeDashboard(value: unknown): DashboardData {
   return { ...emptyData, ...(value as Partial<DashboardData>) };
 }
-const pages = [
-  'dashboard',
-  'conversations',
-  'history',
-  'agents',
-  'insights',
-  'connect',
-  'settings',
-] as const;
-type Page = (typeof pages)[number];
-const pageMeta: Record<Page, { label: string; title: string; lede: string; eyebrow: string }> = {
-  dashboard: {
-    label: 'Overview',
-    title: 'Overview',
-    lede: 'Agent readiness, signed outcomes, and anything waiting on you.',
-    eyebrow: 'Network',
-  },
-  history: {
-    label: 'History',
-    title: 'History',
-    lede: 'Structured events, receipts, and shared contracts — never raw messages.',
-    eyebrow: 'Audit',
-  },
-  conversations: {
-    label: 'Conversations',
-    title: 'Temporary conversations',
-    lede: 'Hosted history for temporary chat identities. Direct runtime messages never appear here.',
-    eyebrow: 'Inbox',
-  },
-  agents: {
-    label: 'Agents',
-    title: 'Agents',
-    lede: 'Identities, runtimes, and the automation each agent is allowed to do.',
-    eyebrow: 'Registry',
-  },
-  insights: {
-    label: 'Insights',
-    title: 'Insights',
-    lede: 'Task-specific reliability from signed outcomes. No universal score.',
-    eyebrow: 'Context',
-  },
-  connect: {
-    label: 'Connect',
-    title: 'Connect',
-    lede: 'Add an agent once. Approve its identity, then OpenClasp handles the routine work.',
-    eyebrow: 'Setup',
-  },
-  settings: {
-    label: 'Settings',
-    title: 'Settings',
-    lede: 'Privacy, retention, and what this account may contribute to the network.',
-    eyebrow: 'Account',
-  },
-};
 
 function base64Url(bytes: Uint8Array) {
   let binary = '';
@@ -158,7 +109,10 @@ function randomValue(size = 32) {
 
 async function beginAuth(provider: 'google' | 'github') {
   const verifier = randomValue(48);
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(verifier) as BufferSource,
+  );
   const transaction: AuthTransaction = { state: randomValue(), nonce: randomValue(), verifier };
   sessionStorage.setItem(authTransactionKey, JSON.stringify(transaction));
   const parameters = new URLSearchParams({
@@ -282,9 +236,10 @@ function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem(themeKey, theme);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'light' ? '#f4f6f1' : '#0b0d0b');
+    if (meta) meta.setAttribute('content', theme === 'light' ? '#f7f4f2' : '#0c0a0a');
   }, [theme]);
 
   useEffect(() => {
@@ -360,131 +315,44 @@ function App() {
     );
 
   return (
-    <div className="appShell">
-      <a className="skipLink" href="#main">
-        Skip to content
-      </a>
-      <aside>
-        <div className="brand">
-          <div className="mark">OC</div>
-          <div>
-            <strong>OpenClasp</strong>
-            <small>ASSURANCE NETWORK</small>
-          </div>
+    <AppShell
+      page={page}
+      navigate={navigate}
+      user={session.user}
+      theme={theme}
+      onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+      onSignOut={() => void signOut(preview)}
+      badges={{
+        dashboard: pendingInvites || pendingSetup ? pendingInvites + pendingSetup : 0,
+        conversations: unreadThreads,
+        connect: pendingSetup,
+      }}
+      agents={data.agents.map((agent) => ({
+        agentId: String(agent.agentId ?? ''),
+        name: typeof agent.name === 'string' ? agent.name : undefined,
+      }))}
+      attention={{ setup: pendingSetup, invites: pendingInvites, inbox: unreadThreads }}
+    >
+      {preview && <div className="previewBanner">Local preview. Changes stay here.</div>}
+      {error && (
+        <div className="errorBar" role="alert">
+          {error}
         </div>
-        <nav aria-label="Dashboard">
-          <Nav
-            page="dashboard"
-            active={page}
-            onClick={navigate}
-            label="Overview"
-            icon="home"
-            badge={pendingInvites || pendingSetup ? pendingInvites + pendingSetup : 0}
-          />
-          <Nav page="history" active={page} onClick={navigate} label="History" icon="history" />
-          <Nav
-            page="conversations"
-            active={page}
-            onClick={navigate}
-            label="Conversations"
-            icon="connect"
-            badge={unreadThreads}
-          />
-          <Nav page="agents" active={page} onClick={navigate} label="Agents" icon="agents" />
-          <Nav page="insights" active={page} onClick={navigate} label="Insights" icon="insights" />
-          <Nav
-            page="connect"
-            active={page}
-            onClick={navigate}
-            label="Connect"
-            icon="connect"
-            badge={pendingSetup}
-          />
-          <Nav page="settings" active={page} onClick={navigate} label="Settings" icon="settings" />
-        </nav>
-        <button
-          className="themeSwitch"
-          type="button"
-          onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-          {theme === 'dark' ? 'Light theme' : 'Dark theme'}
-        </button>
-        <div className="privacyStamp">
-          <span className="liveDot" />
-          <div>
-            <strong>Privacy separated</strong>
-            <small>Direct messages never stored</small>
-          </div>
-        </div>
-        <button
-          className="account"
-          type="button"
-          onClick={() => void signOut(preview)}
-          title="Sign out"
-        >
-          <span>{initials(session.user.name || session.user.email || 'OC')}</span>
-          <div>
-            <strong>{session.user.name || 'OpenClasp user'}</strong>
-            <small>{session.user.email || 'Signed in'}</small>
-          </div>
-          <b>Sign out</b>
-        </button>
-      </aside>
-      <div>
-        <div className="mobileBar">
-          <div className="brand">
-            <div className="mark">OC</div>
-            <div>
-              <strong>OpenClasp</strong>
-              <small>ASSURANCE</small>
-            </div>
-          </div>
-          <div className="mobileActions">
-            <button
-              className="iconButton"
-              type="button"
-              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-            >
-              <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
-            </button>
-            <button
-              className="iconButton"
-              type="button"
-              aria-label="Sign out"
-              onClick={() => void signOut(preview)}
-            >
-              <span>{initials(session.user.name || session.user.email || 'OC')}</span>
-            </button>
-          </div>
-        </div>
-        <main id="main">
-          {preview && (
-            <div className="previewBanner">Local preview with sample data. Changes stay here.</div>
-          )}
-          {error && (
-            <div className="errorBar" role="alert">
-              {error}
-            </div>
-          )}
-          {loading ? (
-            <Loading compact />
-          ) : (
-            <PageContent
-              page={page}
-              data={data}
-              settings={settings}
-              setSettings={setSettings}
-              navigate={navigate}
-              refreshDashboard={refreshDashboard}
-              api={api}
-            />
-          )}
-        </main>
-      </div>
-    </div>
+      )}
+      {loading ? (
+        <Loading compact />
+      ) : (
+        <PageContent
+          page={page}
+          data={data}
+          settings={settings}
+          setSettings={setSettings}
+          navigate={navigate}
+          refreshDashboard={refreshDashboard}
+          api={api}
+        />
+      )}
+    </AppShell>
   );
 }
 
@@ -506,12 +374,9 @@ function Login({ onPreview }: { onPreview?: () => void }) {
           <strong>OpenClasp</strong>
         </div>
         <div>
-          <p className="eyebrow">AGENT-TO-AGENT ASSURANCE</p>
+          <p className="eyebrow">ASSURANCE</p>
           <h1>Know who your agent is dealing with.</h1>
-          <p>
-            Verified identities, signed outcomes, private warnings, and contextual
-            reliability—without using message bodies for scoring.
-          </p>
+          <p>Verified identities and signed outcomes. No message bodies for scoring.</p>
         </div>
         <div className="loginProof">
           <span>01</span> User-owned history
@@ -522,11 +387,8 @@ function Login({ onPreview }: { onPreview?: () => void }) {
       <section className="loginCard">
         <div>
           <p className="eyebrow">SECURE ACCESS</p>
-          <h2>Sign in to OpenClasp</h2>
-          <p>
-            Manage connected agents, review signed history, and control what contributes to the
-            network.
-          </p>
+          <h2>Sign in</h2>
+          <p>Agents, signed history, and network controls.</p>
         </div>
         <div className="socialButtons">
           <button type="button" onClick={() => void continueWith('google')}>
@@ -698,31 +560,25 @@ function Overview({
               <strong>
                 {pendingSetup} setup request{pendingSetup === 1 ? '' : 's'} waiting
               </strong>
-              <small>Approve the proposed identity before the agent can be bound.</small>
             </div>
           </div>
         </button>
       )}
-      <section
-        className={`readiness ${readyAgents === data.agents.length && readyAgents ? 'ready' : ''}`}
-      >
-        <div>
-          <span className="statusOrb">{readyAgents ? '✓' : '!'}</span>
+      {!(readyAgents === data.agents.length && readyAgents) && (
+        <section className="readiness">
           <div>
-            <strong>
-              {readyAgents === data.agents.length && readyAgents
-                ? 'Your agent network is ready'
-                : `${readyAgents} of ${data.agents.length} agents can receive A2A work`}
-            </strong>
-            <small>
-              Safe matching requests activate automatically. Everything else waits for approval.
-            </small>
+            <span className="statusOrb">!</span>
+            <div>
+              <strong>
+                {readyAgents} of {data.agents.length} agents can receive A2A work
+              </strong>
+            </div>
           </div>
-        </div>
-        <button className="secondary" type="button" onClick={() => navigate('agents')}>
-          Manage automation
-        </button>
-      </section>
+          <button className="secondary" type="button" onClick={() => navigate('agents')}>
+            Manage
+          </button>
+        </section>
+      )}
       <section className="metrics">
         <Metric
           label="Active temporary chats"
@@ -744,14 +600,11 @@ function Overview({
       </section>
       <Invitations data={data} refreshDashboard={refreshDashboard} api={api} />
       <section className="contentGrid">
-        <Panel title="Recent activity" subtitle="Structured events and signed outcomes">
+        <Panel title="Recent activity" subtitle="">
           <Timeline events={data.events.slice(-6).reverse()} />
-          <TextButton onClick={() => navigate('history')}>View complete history</TextButton>
+          <TextButton onClick={() => navigate('history')}>All history</TextButton>
         </Panel>
-        <Panel
-          title="Reliability context"
-          subtitle="Task-specific profiles, never a universal score"
-        >
+        <Panel title="Reliability" subtitle="">
           {data.profiles.length ? (
             data.profiles.slice(0, 4).map((profile) => {
               const deltas = data.profileDeltas.filter(
@@ -848,9 +701,7 @@ function Conversations({
     <>
       <PageHead page="conversations" />
       <div className="notice">
-        <strong>Hosted temporary mode.</strong> OpenClasp processes these messages and encrypts them
-        at rest for 30 days. Messages between persistent runtimes remain direct and are never shown
-        here.
+        <strong>Temporary only.</strong> Encrypted 30 days. Persistent runtime messages stay direct.
       </div>
       {error ? (
         <div className="errorBar" role="alert">
@@ -974,29 +825,32 @@ function History({ data }: { data: DashboardData }) {
     <>
       <PageHead page="history" />
       <div className="historyToolbar">
-        <input
-          className="searchField"
+        <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search purpose, category, or agent"
           aria-label="Search interaction history"
+          className="h-9 min-w-[220px] flex-1 rounded-none border-0 border-b bg-transparent px-0 shadow-none dark:bg-transparent"
         />
-        <div className="filterRow" aria-label="Interaction status filters">
-          {(['all', 'pending', 'active', 'provisional', 'completed'] as const).map((value) => (
-            <button
-              key={value}
-              className={status === value ? 'filterChip active' : 'filterChip'}
-              type="button"
-              aria-pressed={status === value}
-              onClick={() => setStatus(value)}
-            >
-              {value}{' '}
-              {value === 'all'
-                ? journeys.length
-                : journeys.filter((item) => item.status === value).length}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          value={status === 'finalizing' ? 'all' : status}
+          onValueChange={(value) =>
+            setStatus(value as 'all' | 'pending' | 'active' | 'provisional' | 'completed')
+          }
+        >
+          <TabsList variant="line" aria-label="Interaction status filters">
+            {(['all', 'pending', 'active', 'provisional', 'completed'] as const).map((value) => (
+              <TabsTrigger key={value} value={value} className="capitalize">
+                {value}
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {value === 'all'
+                    ? journeys.length
+                    : journeys.filter((item) => item.status === value).length}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       {filtered.length ? (
         <section className="journeyLayout">
@@ -1157,6 +1011,7 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
           new Date(0).toISOString(),
         stepCount:
           1 +
+          Math.max(0, Number(interaction.contractRevisions?.length ?? 0) - 1) +
           events.length +
           briefs.length +
           reports.length +
@@ -1366,27 +1221,46 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
 }
 
 function interactionTimeline(journey: InteractionJourneyModel) {
+  const revisions = journey.interaction.contractRevisions ?? [];
+  const contractSteps = revisions.length
+    ? revisions.map((revision: Record<string, any>) => ({
+        at: String(revision.updatedAt ?? revision.createdAt ?? journey.interaction.createdAt),
+        title: `Contract v${revision.revision} ${humanize(revision.status)}`,
+        detail: `${revision.proposedByAgentId} · ${Object.keys(revision.acceptances ?? {}).length}/${journey.participants.length || 2} accepted · ${String(revision.termsHash).slice(0, 12)}…`,
+        status: String(revision.status),
+        tone:
+          revision.status === 'accepted'
+            ? 'good'
+            : revision.status === 'rejected'
+              ? 'danger'
+              : revision.status === 'proposed'
+                ? 'warn'
+                : 'neutral',
+      }))
+    : [
+        {
+          at: String(journey.interaction.createdAt ?? journey.updatedAt),
+          title: 'Contract proposed',
+          detail: `${journey.participants.length || 2} participants · ${journey.taskCategory}`,
+          status: String(journey.interaction.status ?? 'recorded'),
+          tone: 'neutral',
+        },
+        ...Object.values(journey.interaction.acceptances ?? {}).map((acceptance: any) => ({
+          at: String(acceptance.acceptedAt ?? journey.interaction.updatedAt ?? journey.updatedAt),
+          title: `Contract accepted by ${acceptance.agentId}`,
+          detail: `Acceptance method: ${humanize(acceptance.method ?? 'recorded')}`,
+          status: 'accepted',
+          tone: 'good',
+        })),
+      ];
   const steps: { at: string; title: string; detail: string; status: string; tone: string }[] = [
-    {
-      at: String(journey.interaction.createdAt ?? journey.updatedAt),
-      title: 'Contract proposed',
-      detail: `${journey.participants.length || 2} participants · ${journey.taskCategory}`,
-      status: String(journey.interaction.status ?? 'recorded'),
-      tone: 'neutral',
-    },
+    ...contractSteps,
     ...journey.briefs.map((brief) => ({
       at: String(brief.generatedAt ?? journey.updatedAt),
       title: `Private counterparty brief for ${brief.recipientAgentId}`,
       detail: `${brief.relevantSampleSize ?? 0} relevant samples · ${Math.round(Number(brief.historyConfidence ?? 0) * 100)}% history confidence`,
       status: String(brief.decision ?? 'ready'),
       tone: brief.decision === 'DENY' ? 'danger' : brief.decision === 'CHALLENGE' ? 'warn' : 'good',
-    })),
-    ...Object.values(journey.interaction.acceptances ?? {}).map((acceptance: any) => ({
-      at: String(acceptance.acceptedAt ?? journey.interaction.updatedAt ?? journey.updatedAt),
-      title: `Contract accepted by ${acceptance.agentId}`,
-      detail: `Acceptance method: ${humanize(acceptance.method ?? 'recorded')}`,
-      status: 'accepted',
-      tone: 'good',
     })),
     ...(journey.session?.activatedAt
       ? [
@@ -1679,18 +1553,35 @@ function Invitations({
     () => new Set(data.agents.map((agent) => String(agent.agentId))),
     [data.agents],
   );
+  const currentProposal = (interaction: Record<string, any>) =>
+    [...(interaction.contractRevisions ?? [])]
+      .reverse()
+      .find((revision) => revision.status === 'proposed');
+  const respondingAgent = (interaction: Record<string, any>) => {
+    const proposal = currentProposal(interaction);
+    return (interaction.contract?.parties ?? []).find(
+      (agentId: string) => ownedAgentIds.has(String(agentId)) && !proposal?.acceptances?.[agentId],
+    );
+  };
   const incoming = data.federatedInteractions.filter(
-    (interaction) =>
-      interaction.status === 'pending' && ownedAgentIds.has(String(interaction.responderAgentId)),
+    (interaction) => currentProposal(interaction) && respondingAgent(interaction),
   );
-  const respond = async (interactionId: string, agentId: string, decision: 'accept' | 'reject') => {
+  const respond = async (
+    interactionId: string,
+    revisionId: string,
+    agentId: string,
+    decision: 'accept' | 'reject',
+  ) => {
     setWorking(interactionId);
     setError('');
     try {
-      await api(`/v0.1/federated-interactions/${encodeURIComponent(interactionId)}/respond`, {
-        method: 'POST',
-        body: JSON.stringify({ agentId, decision }),
-      });
+      await api(
+        `/v0.1/federated-interactions/${encodeURIComponent(interactionId)}/contract-proposals/${encodeURIComponent(revisionId)}/respond`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ agentId, decision }),
+        },
+      );
       await refreshDashboard();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not respond to invitation');
@@ -1701,8 +1592,8 @@ function Invitations({
   if (!incoming.length && !data.federatedInteractions.length) return null;
   return (
     <Panel
-      title={incoming.length ? `Agent invitations (${incoming.length})` : 'Shared interactions'}
-      subtitle="Both accounts see the same immutable contract and acceptance state"
+      title={incoming.length ? `Contract decisions (${incoming.length})` : 'Shared interactions'}
+      subtitle=""
     >
       {error ? (
         <div className="errorBar" role="alert">
@@ -1716,7 +1607,20 @@ function Invitations({
             <small>
               {interaction.initiatorAgentId} → {interaction.responderAgentId} · {interaction.status}
             </small>
-            <small>Contract: {String(interaction.termsHash).slice(0, 16)}…</small>
+            <small>
+              Contract v{interaction.contractRevision ?? 1}:{' '}
+              {String(currentProposal(interaction)?.termsHash ?? interaction.termsHash).slice(
+                0,
+                16,
+              )}
+              …
+              {currentProposal(interaction)
+                ? ` · proposed by ${currentProposal(interaction).proposedByAgentId}`
+                : ' · agreed'}
+            </small>
+            {interaction.contractRevisions?.length > 1 ? (
+              <small>{interaction.contractRevisions.length} recorded contract revisions</small>
+            ) : null}
             {data.liveSessions.find(
               (session) => session.interactionId === interaction.interactionId,
             ) ? (
@@ -1735,15 +1639,19 @@ function Invitations({
               <small className="autoAccepted">✓ Auto-approved by the responder's safe policy</small>
             ) : null}
           </div>
-          {interaction.status === 'pending' &&
-          ownedAgentIds.has(String(interaction.responderAgentId)) ? (
+          {currentProposal(interaction) && respondingAgent(interaction) ? (
             <div className="decisionButtons">
               <button
                 className="secondary"
                 type="button"
                 disabled={working === interaction.interactionId}
                 onClick={() =>
-                  void respond(interaction.interactionId, interaction.responderAgentId, 'reject')
+                  void respond(
+                    interaction.interactionId,
+                    currentProposal(interaction).revisionId,
+                    respondingAgent(interaction),
+                    'reject',
+                  )
                 }
               >
                 Reject
@@ -1753,10 +1661,19 @@ function Invitations({
                 type="button"
                 disabled={working === interaction.interactionId}
                 onClick={() =>
-                  void respond(interaction.interactionId, interaction.responderAgentId, 'accept')
+                  void respond(
+                    interaction.interactionId,
+                    currentProposal(interaction).revisionId,
+                    respondingAgent(interaction),
+                    'accept',
+                  )
                 }
               >
-                {working === interaction.interactionId ? 'Working…' : 'Accept contract'}
+                {working === interaction.interactionId
+                  ? 'Working…'
+                  : interaction.status === 'active'
+                    ? 'Accept amendment'
+                    : 'Accept contract'}
               </button>
             </div>
           ) : null}
@@ -2450,44 +2367,16 @@ function PageHead({
   return (
     <header className="pageHead">
       <div>
-        <p className="eyebrow">{meta.eyebrow}</p>
         <h1>{meta.title}</h1>
         <p className="lede">{meta.lede}</p>
       </div>
       {action && (
         <button className="primary" type="button" onClick={onAction}>
           {action}
+          <span aria-hidden="true">→</span>
         </button>
       )}
     </header>
-  );
-}
-function Nav({
-  page,
-  active,
-  onClick,
-  label,
-  icon,
-  badge = 0,
-}: {
-  page: Page;
-  active: Page;
-  onClick: (page: Page) => void;
-  label: string;
-  icon: IconName;
-  badge?: number;
-}) {
-  return (
-    <button
-      className={active === page ? 'active' : ''}
-      type="button"
-      aria-current={active === page ? 'page' : undefined}
-      onClick={() => onClick(page)}
-    >
-      <Icon name={icon} />
-      {label}
-      {badge > 0 ? <span className="navBadge">{badge}</span> : null}
-    </button>
   );
 }
 function Metric({
@@ -2502,7 +2391,7 @@ function Metric({
   warn?: boolean;
 }) {
   return (
-    <article className={warn ? 'metric warn' : 'metric'}>
+    <article className={warn ? 'metric warn' : 'metric'} title={note}>
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{note}</small>
@@ -2519,7 +2408,7 @@ function Panel({
       <div className="panelHead">
         <div>
           <h2>{title}</h2>
-          <p>{subtitle}</p>
+          {subtitle ? <p>{subtitle}</p> : null}
         </div>
       </div>
       {children}
@@ -2624,7 +2513,7 @@ function AgentCard({
     <article className="agentCard">
       <div className="agentTop">
         <span className="agentGlyph">
-          <Icon name="agents" />
+          <Bot />
         </span>
         <div className="agentBadges">
           <b className={online && temporary ? 'onlineBadge' : 'offlineBadge'}>
@@ -2664,13 +2553,18 @@ function AgentCard({
           : 'No agent activity recorded yet'}
       </small>
       {published ? (
-        <a
-          href={`/agents/${encodeURIComponent(agent.agentId)}/card.json`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Public Agent Card
-        </a>
+        <div className="agentPublicLinks">
+          <a href={`/a/${encodeURIComponent(agent.agentId)}`} target="_blank" rel="noreferrer">
+            Verified public profile
+          </a>
+          <a
+            href={`/agents/${encodeURIComponent(agent.agentId)}/a2a-agent-card.json`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            A2A Agent Card
+          </a>
+        </div>
       ) : null}
       <div className="automationSummary">
         <span>{published ? 'Public discovery' : 'Private'}</span>
@@ -2959,7 +2853,7 @@ function Empty({
 }) {
   return (
     <div className="empty">
-      <Icon name="agents" />
+      <Bot />
       <strong>{title}</strong>
       <p>{text}</p>
       {action && (
@@ -3020,67 +2914,6 @@ function Loading({ compact }: { compact?: boolean }) {
       <span className="spinner" aria-hidden="true" />
       <p>Verifying session…</p>
     </div>
-  );
-}
-
-type IconName =
-  'home' | 'history' | 'agents' | 'insights' | 'connect' | 'settings' | 'sun' | 'moon';
-
-function Icon({ name }: { name: IconName }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {name === 'home' && <path d="M4 11 12 4l8 7v9a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z" />}
-      {name === 'history' && (
-        <>
-          <path d="M4 12a8 8 0 1 0 2.2-5.5" />
-          <path d="M4 4v5h5" />
-          <path d="M12 8v5l3 2" />
-        </>
-      )}
-      {name === 'agents' && (
-        <>
-          <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6" />
-          <path d="M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6" />
-          <path d="M4 20v-1a4 4 0 0 1 4-4h1" />
-          <path d="M20 20v-1a4 4 0 0 0-4-4h-1" />
-        </>
-      )}
-      {name === 'insights' && (
-        <>
-          <path d="M4 19h16" />
-          <path d="M7 16V9" />
-          <path d="M12 16V5" />
-          <path d="M17 16v-6" />
-        </>
-      )}
-      {name === 'connect' && (
-        <>
-          <path d="M12 5v14" />
-          <path d="M5 12h14" />
-        </>
-      )}
-      {name === 'settings' && (
-        <>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M16.9 16.9l1.5 1.5M5.6 18.4l1.4-1.4M16.9 7.1l1.5-1.5" />
-        </>
-      )}
-      {name === 'sun' && (
-        <>
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
-        </>
-      )}
-      {name === 'moon' && <path d="M16 13a6 6 0 0 1-7.8-7.8A7 7 0 1 0 16 13" />}
-    </svg>
   );
 }
 
@@ -3178,16 +3011,14 @@ function StatusPill({ value }: { value: string }) {
           )
         ? 'warn'
         : 'neutral';
-  return <span className={`statusPill ${tone}`}>{humanize(value)}</span>;
+  return (
+    <span className={`statusPill ${tone}`}>
+      <i />
+      {humanize(value)}
+    </span>
+  );
 }
 
-function initials(value: string) {
-  return value
-    .split(/\s+|@/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('');
-}
 function timestamp(item: Record<string, any>) {
   return String(
     item.timestamp ??

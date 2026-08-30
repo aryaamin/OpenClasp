@@ -232,6 +232,308 @@
         "additionalProperties": false
       }
     },
+    "contractRevision": {
+      "default": 1,
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "contractRevisions": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "revisionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "previousTermsHash": {
+            "type": "string",
+            "minLength": 1
+          },
+          "termsHash": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contract": {
+            "type": "object",
+            "properties": {
+              "protocolVersion": {
+                "type": "string",
+                "const": "0.1"
+              },
+              "interactionId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "parties": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "taskCategory": {
+                "type": "string"
+              },
+              "requestedOutcome": {
+                "type": "string"
+              },
+              "successCriteria": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "allowedActions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "prohibitedActions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "allowedData": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "prohibitedData": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "deadline": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "evidenceRequirements": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "delegationRules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "humanApprovalRequirements": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "factCheckingPolicy": {
+                "type": "string"
+              },
+              "mediationPolicy": {
+                "type": "string",
+                "enum": ["none", "mutual_consent"]
+              },
+              "retentionDays": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "completionConditions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cancellationConditions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "signatures": {
+                "default": {},
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "algorithm": {
+                      "type": "string",
+                      "const": "Ed25519"
+                    },
+                    "keyId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": ["algorithm", "keyId", "value"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "interactionId",
+              "purpose",
+              "parties",
+              "taskCategory",
+              "requestedOutcome",
+              "successCriteria",
+              "allowedActions",
+              "prohibitedActions",
+              "allowedData",
+              "prohibitedData",
+              "evidenceRequirements",
+              "delegationRules",
+              "humanApprovalRequirements",
+              "factCheckingPolicy",
+              "mediationPolicy",
+              "retentionDays",
+              "completionConditions",
+              "cancellationConditions",
+              "signatures"
+            ],
+            "additionalProperties": false
+          },
+          "proposedByAgentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["proposed", "accepted", "rejected", "superseded"]
+          },
+          "acceptances": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "method": {
+                  "type": "string",
+                  "enum": ["oauth_installation", "oauth_account", "policy_auto_accept", "ed25519"]
+                },
+                "termsHash": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "acceptedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "signature": {
+                  "type": "object",
+                  "properties": {
+                    "algorithm": {
+                      "type": "string",
+                      "const": "Ed25519"
+                    },
+                    "keyId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": ["algorithm", "keyId", "value"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["agentId", "method", "termsHash", "acceptedAt"],
+              "additionalProperties": false
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "platformAttestation": {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "type": "string",
+                "const": "Ed25519"
+              },
+              "keyId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]{43}$"
+              }
+            },
+            "required": ["algorithm", "keyId", "value", "digest"],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "revisionId",
+          "interactionId",
+          "revision",
+          "termsHash",
+          "contract",
+          "proposedByAgentId",
+          "status",
+          "acceptances",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      }
+    },
     "initiatorTransport": {
       "type": "object",
       "properties": {
@@ -307,6 +609,8 @@
     "contract",
     "termsHash",
     "acceptances",
+    "contractRevision",
+    "contractRevisions",
     "responderTransport",
     "createdAt",
     "updatedAt",

@@ -67,6 +67,8 @@ function fixture(): { agent: AgentProfile; interaction: FederatedInteraction } {
           acceptedAt: now,
         },
       },
+      contractRevision: 1,
+      contractRevisions: [],
       responderTransport: {
         protocol: 'A2A/1.0',
         protocolBinding: 'JSONRPC',
@@ -119,6 +121,11 @@ describe('safe connection automation', () => {
     expect(temporary.transports[0]).toMatchObject({
       endpoint: 'https://openclasp.example/a2a/temporary/agent%3Ab',
       managedBy: 'openclasp',
+    });
+    expect(temporary).toMatchObject({
+      slug: expect.stringMatching(/^research-agent-/),
+      profileUrl: expect.stringContaining('/a/research-agent-'),
+      verification: { status: 'verified', method: 'openclasp_oauth_account' },
     });
     expect(persistent.transports[0]).toMatchObject({
       endpoint: 'https://agent-b.example/a2a',

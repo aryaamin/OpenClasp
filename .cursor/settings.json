@@ -1,0 +1,10 @@
+{
+  "plugins": {
+    "superdesign": {
+      "enabled": true
+    },
+    "mobbin": {
+      "enabled": true
+    }
+  }
+}

@@ -35,6 +35,9 @@
       "source": "/agents/:id/.well-known/openclasp-agent.json",
       "destination": "/api/index?path=/agents/:id/.well-known/openclasp-agent.json"
     },
+    { "source": "/directory/resolve", "destination": "/api/index?path=/directory/resolve" },
+    { "source": "/directory/search", "destination": "/api/index?path=/directory/search" },
+    { "source": "/a/:reference", "destination": "/api/index?path=/a/:reference" },
     { "source": "/v0.1/:path*", "destination": "/api/index?path=/v0.1/:path*" },
     { "source": "/mcp", "destination": "/api/mcp" },
     {

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
-    <meta name="theme-color" content="#0b0d0b" />
+    <meta name="theme-color" content="#0c0a0a" />
     <title>OpenClasp</title>
     <script>
       try {
@@ -16,6 +16,10 @@
               ? 'light'
               : 'dark';
         document.documentElement.dataset.theme = theme;
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute('content', theme === 'light' ? '#f7f4f2' : '#0c0a0a');
       } catch {}
     </script>
   </head>

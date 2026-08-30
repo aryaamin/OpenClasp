@@ -95,6 +95,7 @@ describe('HTTP API', () => {
       publishAgent: async (_operatorId: string, card: any) => card,
       unpublishAgent: async () => true,
       getPublishedAgent: async () => undefined,
+      resolveAgentReference: async () => undefined,
       searchPublishedAgents: async () => [],
       registerAgentRuntime: async (operatorId: string, agentId: string, endpoint: string) => {
         calls.push(`runtime:${operatorId}:${agentId}:${endpoint}`);
@@ -611,6 +612,16 @@ describe('HTTP API', () => {
       },
       unpublishAgent: async () => true,
       getPublishedAgent: async () => published[0],
+      resolveAgentReference: async (reference: string) =>
+        published[0]
+          ? {
+              reference,
+              matchedBy: 'slug' as const,
+              verified: true as const,
+              card: published[0],
+              resolvedAt: '2026-08-30T00:00:00.000Z',
+            }
+          : undefined,
       searchPublishedAgents: async () => published,
     };
     const app = buildApi(undefined, undefined, repository);
@@ -644,6 +655,16 @@ describe('HTTP API', () => {
       url: 'https://agent.example/a2a',
       protocolVersion: '1.0',
     });
+    const resolution = await app.inject({
+      method: 'GET',
+      url: `/directory/resolve?reference=${encodeURIComponent(published[0].profileUrl)}`,
+    });
+    expect(resolution.statusCode).toBe(200);
+    expect(resolution.json()).toMatchObject({ verified: true, card: { agentId: 'agent-one' } });
+    const profile = await app.inject({ method: 'GET', url: `/a/${published[0].slug}` });
+    expect(profile.statusCode).toBe(200);
+    expect(profile.headers['content-type']).toContain('text/html');
+    expect(profile.body).toContain('Account and agent ownership verified');
     const automation = await app.inject({
       method: 'PUT',
       url: '/v0.1/agents/agent-one/automation',
@@ -674,6 +695,7 @@ describe('HTTP API', () => {
       publishAgent: async (_operatorId: string, card: any) => card,
       unpublishAgent: async () => true,
       getPublishedAgent: async () => undefined,
+      resolveAgentReference: async () => undefined,
       searchPublishedAgents: async () => [],
       recordLiveSessionEvent: async (token: string, value: any) => {
         events.push({ token, value });
@@ -733,6 +755,101 @@ describe('HTTP API', () => {
     });
     expect(rawMessageAttempt.statusCode).toBe(400);
     expect(events).toHaveLength(1);
+    await app.close();
+  });
+
+  it('binds contract proposals and responses to the authenticated participating agent', async () => {
+    const calls: any[] = [];
+    const interactionId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const revisionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const contract = {
+      protocolVersion: '0.1',
+      interactionId,
+      purpose: 'Buy paper',
+      parties: ['agent-a', 'agent-b'],
+      taskCategory: 'procurement',
+      requestedOutcome: 'Five tonnes delivered',
+      successCriteria: ['80 GSM verified', 'Delivered on time'],
+      allowedActions: ['negotiate'],
+      prohibitedActions: ['exceed_budget'],
+      allowedData: [],
+      prohibitedData: ['credentials'],
+      evidenceRequirements: ['invoice'],
+      delegationRules: ['explicit_contract_scope'],
+      humanApprovalRequirements: [],
+      factCheckingPolicy: 'important_claims',
+      mediationPolicy: 'mutual_consent',
+      retentionDays: 30,
+      completionConditions: ['delivery accepted'],
+      cancellationConditions: ['either party before acceptance'],
+      signatures: {},
+    };
+    const repository: any = {
+      dashboard: async () => ({}),
+      getSettings: async () => ({}),
+      saveSettings: async () => ({}),
+      upsert: async () => undefined,
+      list: async () => [],
+      publishAgent: async (_operatorId: string, card: any) => card,
+      unpublishAgent: async () => true,
+      getPublishedAgent: async () => undefined,
+      resolveAgentReference: async () => undefined,
+      searchPublishedAgents: async () => [],
+      proposeContractRevision: async (...args: any[]) => {
+        calls.push(['propose', ...args]);
+        return { interactionId, status: 'pending' };
+      },
+      respondToContractRevision: async (...args: any[]) => {
+        calls.push(['respond', ...args]);
+        return { interactionId, status: 'active' };
+      },
+    };
+    const app = buildApi(undefined, undefined, repository);
+    await app.ready();
+    const headers = {
+      'x-openclasp-operator': 'owner-a',
+      'x-openclasp-bound-agent': 'agent-a',
+      'x-openclasp-credential-type': 'agent_access_token',
+    };
+    const proposed = await app.inject({
+      method: 'POST',
+      url: `/v0.1/federated-interactions/${interactionId}/contract-proposals`,
+      headers,
+      payload: { agentId: 'agent-a', expectedTermsHash: 'old-hash', contract },
+    });
+    expect(proposed.statusCode).toBe(200);
+    expect(calls[0]).toMatchObject([
+      'propose',
+      'owner-a',
+      interactionId,
+      'agent-a',
+      contract,
+      'old-hash',
+      'oauth_installation',
+    ]);
+    const accepted = await app.inject({
+      method: 'POST',
+      url: `/v0.1/federated-interactions/${interactionId}/contract-proposals/${revisionId}/respond`,
+      headers,
+      payload: { agentId: 'agent-a', decision: 'accept' },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(calls[1]).toEqual([
+      'respond',
+      'owner-a',
+      interactionId,
+      'agent-a',
+      revisionId,
+      'accept',
+      'oauth_installation',
+    ]);
+    const impersonation = await app.inject({
+      method: 'POST',
+      url: `/v0.1/federated-interactions/${interactionId}/contract-proposals`,
+      headers,
+      payload: { agentId: 'agent-b', contract },
+    });
+    expect(impersonation.statusCode).toBe(403);
     await app.close();
   });
 });

@@ -69,6 +69,9 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_list_feedback_requests',
   'openclasp_submit_interaction_feedback',
   'openclasp_checkpoint',
+  'openclasp_resolve_agent',
+  'openclasp_propose_contract_revision',
+  'openclasp_respond_contract_revision',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -119,7 +122,7 @@ const LiveSessionEventInputSchema = z
   });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Start with openclasp_connection_status and heartbeat while active. Persistent runtimes use direct A2A; temporary agents use hosted thread tools. For longer tasks, call openclasp_checkpoint about every five meaningful exchanges or when blocked, drifting, or nearly done. At a terminal outcome call openclasp_complete_live_session with an honest assessment and feedback; it triggers peer finalization. Submit structured evidence only; never upload transcripts or invent feedback.';
+  'Start with openclasp_connection_status; heartbeat while active. Resolve agent references with openclasp_resolve_agent. Persistent runtimes use direct A2A; temporary agents use hosted threads. Use contract revision tools for high-stakes terms or amendments. For long tasks call openclasp_checkpoint every five exchanges or when blocked, drifting, or nearly done. At a terminal outcome call openclasp_complete_live_session with honest structured feedback. Never upload transcripts or invent evidence or feedback.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -156,6 +159,7 @@ type EngineSource = TrustEngine | ((context: ToolContext) => Promise<TrustEngine
 type AgentDirectory = {
   publishAgent?(operatorId: string, card: PublicAgentCard): Promise<PublicAgentCard>;
   getPublishedAgent(agentId: string): Promise<PublicAgentCard | undefined>;
+  resolveAgentReference?(reference: string): Promise<any | undefined>;
   searchPublishedAgents(input: {
     query?: string | undefined;
     capability?: string | undefined;
@@ -176,6 +180,22 @@ type AgentDirectory = {
     agentId: string,
     decision: 'accept' | 'reject',
     method?: 'oauth_installation' | 'oauth_account' | 'policy_auto_accept',
+  ): Promise<FederatedInteraction>;
+  proposeContractRevision?(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+    contract: z.infer<typeof InteractionContractSchema>,
+    expectedTermsHash?: string,
+    method?: 'oauth_installation' | 'oauth_account',
+  ): Promise<FederatedInteraction>;
+  respondToContractRevision?(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+    revisionId: string,
+    decision: 'accept' | 'reject',
+    method?: 'oauth_installation' | 'oauth_account',
   ): Promise<FederatedInteraction>;
   getLiveSession(operatorId: string, interactionId: string, agentId: string): Promise<any>;
   recordLiveSessionEvent(
@@ -827,6 +847,7 @@ export function registerOpenClaspTools(
       inputSchema: z
         .object({
           targetAgentId: z.string().min(1).optional(),
+          targetAgentReference: z.string().trim().min(1).max(2048).optional(),
           targetAgentCardUrl: z.string().url().optional(),
           task: z.string().trim().min(1).max(2000).optional(),
           purpose: z.string().trim().min(1).max(500).optional(),
@@ -842,10 +863,10 @@ export function registerOpenClaspTools(
           expiresInMinutes: z.number().int().min(5).max(10080).default(60),
         })
         .superRefine((value, context) => {
-          if (!value.targetAgentId && !value.targetAgentCardUrl)
+          if (!value.targetAgentId && !value.targetAgentReference && !value.targetAgentCardUrl)
             context.addIssue({
               code: 'custom',
-              message: 'targetAgentId or targetAgentCardUrl is required',
+              message: 'targetAgentId, targetAgentReference, or targetAgentCardUrl is required',
             });
           if (!value.task && !value.purpose)
             context.addIssue({ code: 'custom', message: 'task or purpose is required' });
@@ -873,6 +894,14 @@ export function registerOpenClaspTools(
           'This agent is private. Enable automatic publishing once in its dashboard settings.',
         );
       let targetAgentId = input.targetAgentId;
+      let resolvedResponderCard: PublicAgentCard | undefined;
+      if (!targetAgentId && input.targetAgentReference) {
+        if (!agentDirectory.resolveAgentReference)
+          throw new Error('Agent reference resolution is not configured');
+        const resolution = await agentDirectory.resolveAgentReference(input.targetAgentReference);
+        resolvedResponderCard = resolution?.card as PublicAgentCard | undefined;
+        targetAgentId = resolvedResponderCard?.agentId;
+      }
       if (!targetAgentId && input.targetAgentCardUrl) {
         const cardUrl = new URL(input.targetAgentCardUrl);
         const trustedOrigin = new URL(
@@ -884,7 +913,8 @@ export function registerOpenClaspTools(
         targetAgentId = decodeURIComponent(match[1]);
       }
       if (!targetAgentId) throw new Error('Target agent is required');
-      const responderCard = await agentDirectory.getPublishedAgent(targetAgentId);
+      const responderCard =
+        resolvedResponderCard ?? (await agentDirectory.getPublishedAgent(targetAgentId));
       if (!responderCard) throw new Error('Target agent is not published on OpenClasp');
       if (
         initiatorCard.agentMode === 'temporary_chat' &&
@@ -963,6 +993,8 @@ export function registerOpenClaspTools(
             acceptedAt: createdAt,
           },
         },
+        contractRevision: 1,
+        contractRevisions: [],
         ...(initiatorCard.transports[0] ? { initiatorTransport: initiatorCard.transports[0] } : {}),
         responderTransport,
         createdAt,
@@ -1697,6 +1729,89 @@ export function registerOpenClaspTools(
           connection.operatorId,
           binding.agent.agentId,
           input.threadId,
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[42],
+    {
+      title: 'Resolve agent reference',
+      description:
+        'Resolve an OpenClasp profile URL, card URL, A2A card URL, public slug, or agent ID to one verified published agent.',
+      inputSchema: z.object({ reference: z.string().trim().min(1).max(2048) }),
+      annotations: { ...READ_ONLY_TOOL, openWorldHint: true },
+    },
+    async (input, context) => {
+      await requireBoundAgent(context);
+      if (!agentDirectory) throw new Error('The shared agent directory is not configured');
+      const resolved = agentDirectory.resolveAgentReference
+        ? await agentDirectory.resolveAgentReference(input.reference)
+        : await agentDirectory.getPublishedAgent(input.reference);
+      if (!resolved) throw new Error('Published agent reference was not found');
+      return text(resolved);
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[43],
+    {
+      title: 'Propose contract revision',
+      description:
+        'Propose or counter complete structured terms for a pending interaction, or propose an amendment to an active interaction. The proposal is bound to the authenticated agent.',
+      inputSchema: z.object({
+        interactionId: z.string().uuid(),
+        expectedTermsHash: z.string().min(1).optional(),
+        contract: InteractionContractSchema,
+      }),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.proposeContractRevision)
+        throw new Error('Contract negotiation is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      if (input.contract.interactionId !== input.interactionId)
+        throw new Error('Contract interaction ID does not match');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.proposeContractRevision(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+          input.contract,
+          input.expectedTermsHash,
+          'oauth_installation',
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[44],
+    {
+      title: 'Respond to contract revision',
+      description:
+        'Accept or reject the current contract proposal or amendment as the authenticated agent. Bilateral acceptance creates a platform-attested revision.',
+      inputSchema: z.object({
+        interactionId: z.string().uuid(),
+        revisionId: z.string().uuid(),
+        decision: z.enum(['accept', 'reject']),
+      }),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.respondToContractRevision)
+        throw new Error('Contract negotiation is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.respondToContractRevision(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+          input.revisionId,
+          input.decision,
+          'oauth_installation',
         ),
       );
     },

@@ -125,6 +125,13 @@ export const AgentPresenceSchema = z.object({
   checkedAt: z.string().datetime(),
 });
 
+export const PublicAgentVerificationSchema = z.object({
+  status: z.literal('verified'),
+  method: z.literal('openclasp_oauth_account'),
+  verifiedAt: z.string().datetime(),
+  verificationKeyUrl: z.string().url().optional(),
+});
+
 export const PublicAgentCardSchema = z.object({
   protocolVersion: z.literal(PROTOCOL_VERSION),
   agentId: z.string().min(1),
@@ -137,12 +144,27 @@ export const PublicAgentCardSchema = z.object({
   assurance: z.enum(['oauth_authenticated', 'cryptographically_verified']),
   agentMode: AgentModeSchema.default('persistent_runtime'),
   transports: z.array(AgentTransportSchema),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .optional(),
+  profileUrl: z.string().url().optional(),
   cardUrl: z.string().url(),
   a2aAgentCardUrl: z.string().url(),
   extensionUri: z.string().url(),
   presence: AgentPresenceSchema.optional(),
+  verification: PublicAgentVerificationSchema.optional(),
   publishedAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  platformAttestation: RecordAttestationSchema.optional(),
+});
+
+export const AgentResolutionSchema = z.object({
+  reference: z.string().min(1),
+  matchedBy: z.enum(['agent_id', 'slug', 'profile_url', 'card_url', 'a2a_card_url']),
+  verified: z.literal(true),
+  card: PublicAgentCardSchema,
+  resolvedAt: z.string().datetime(),
 });
 
 export const HostedThreadStatusSchema = z.enum(['open', 'closed']);
@@ -181,6 +203,22 @@ export const ContractAcceptanceSchema = z.object({
   signature: SignatureSchema.optional(),
 });
 
+export const ContractRevisionSchema = z.object({
+  revisionId: z.string().uuid(),
+  interactionId: z.string().uuid(),
+  revision: z.number().int().positive(),
+  previousTermsHash: z.string().min(1).optional(),
+  termsHash: z.string().min(1),
+  contract: InteractionContractSchema,
+  proposedByAgentId: z.string().min(1),
+  status: z.enum(['proposed', 'accepted', 'rejected', 'superseded']),
+  acceptances: z.record(z.string(), ContractAcceptanceSchema),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  expiresAt: z.string().datetime().optional(),
+  platformAttestation: RecordAttestationSchema.optional(),
+});
+
 export const FederatedInteractionStatusSchema = z.enum([
   'pending',
   'active',
@@ -199,6 +237,8 @@ export const FederatedInteractionSchema = z.object({
   contract: InteractionContractSchema,
   termsHash: z.string().min(1),
   acceptances: z.record(z.string(), ContractAcceptanceSchema),
+  contractRevision: z.number().int().positive().default(1),
+  contractRevisions: z.array(ContractRevisionSchema).default([]),
   initiatorTransport: AgentTransportSchema.optional(),
   responderTransport: AgentTransportSchema,
   createdAt: z.string().datetime(),
@@ -717,10 +757,13 @@ export type ExpectationManifest = z.infer<typeof ExpectationManifestSchema>;
 export type AgentTransport = z.infer<typeof AgentTransportSchema>;
 export type AgentMode = z.infer<typeof AgentModeSchema>;
 export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
+export type PublicAgentVerification = z.infer<typeof PublicAgentVerificationSchema>;
 export type PublicAgentCard = z.infer<typeof PublicAgentCardSchema>;
+export type AgentResolution = z.infer<typeof AgentResolutionSchema>;
 export type HostedMessage = z.infer<typeof HostedMessageSchema>;
 export type HostedThread = z.infer<typeof HostedThreadSchema>;
 export type ContractAcceptance = z.infer<typeof ContractAcceptanceSchema>;
+export type ContractRevision = z.infer<typeof ContractRevisionSchema>;
 export type FederatedInteraction = z.infer<typeof FederatedInteractionSchema>;
 export type LiveSessionInsight = z.infer<typeof LiveSessionInsightSchema>;
 export type LiveSessionOffer = z.infer<typeof LiveSessionOfferSchema>;
@@ -757,6 +800,28 @@ export function createKeyPair(keyId: string = randomUUID()): KeyPair {
 
 export function canonicalHash(value: unknown): string {
   return createHash('sha256').update(canonicalize(value)).digest('base64url');
+}
+
+export function verifyRecordAttestation(
+  value: Record<string, unknown>,
+  publicKey: string,
+): boolean {
+  const attestation = RecordAttestationSchema.safeParse(value.platformAttestation);
+  if (!attestation.success) return false;
+  const unsignedValue = structuredClone(value);
+  delete unsignedValue.platformAttestation;
+  const digest = canonicalHash(unsignedValue);
+  if (digest !== attestation.data.digest) return false;
+  return verify(
+    null,
+    Buffer.from(digest),
+    {
+      key: Buffer.from(publicKey, 'base64url'),
+      type: 'spki',
+      format: 'der',
+    },
+    Buffer.from(attestation.data.value, 'base64url'),
+  );
 }
 
 function unsigned(value: Record<string, unknown>): Record<string, unknown> {

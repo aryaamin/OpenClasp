@@ -37,7 +37,8 @@ runtime validates the credential locally using the verification key supplied in 
 activation. `interactionId` is the durable thread key. The agents own message ordering, model state,
 and any internal job queue.
 
-OpenClasp stores the immutable contract, bilateral acceptances, runtime/session metadata, message
+OpenClasp stores the current accepted contract, hash-linked proposal and amendment history, bilateral
+acceptances, runtime/session metadata, message
 hashes, structured claims, evidence references, corrections, terminal outcomes, receipts, and
 feedback. These records can update contextual behavioural profiles. Message bodies and private model
 reasoning stay with the agents in direct mode. Temporary-hosted message text is excluded from

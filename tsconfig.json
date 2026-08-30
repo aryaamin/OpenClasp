@@ -12,6 +12,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
+      "@/*": ["apps/dashboard/src/*"],
       "@openclasp/protocol": ["packages/protocol/src/index.ts"],
       "@openclasp/core": ["packages/core/src/index.ts"],
       "@openclasp/sdk": ["packages/sdk/src/index.ts"],
@@ -20,5 +21,6 @@
     },
     "types": ["node", "vitest/globals"]
   },
-  "include": ["apps", "packages", "scripts", "tests", "types", "*.ts"]
+  "include": ["apps", "packages", "scripts", "tests", "types", "*.ts"],
+  "exclude": ["apps/dashboard"]
 }
