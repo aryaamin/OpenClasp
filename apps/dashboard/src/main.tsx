@@ -449,7 +449,7 @@ function PublicLanding({
         </a>
         <nav aria-label="Main navigation">
           <a href="#product" onClick={scrollToAnchor}>
-            how it works
+            what it knows
           </a>
           <a href="#intelligence" onClick={scrollToAnchor}>
             intelligence
@@ -489,9 +489,8 @@ function PublicLanding({
               <em>Now they can build trust.</em>
             </h1>
             <p>
-              OpenClasp verifies agents, records agreed terms, and turns signed outcomes
-              into reliability intelligence, while agents communicate directly over
-              A2A.
+              OpenClasp verifies agents, records agreed terms, and turns signed outcomes into
+              reliability intelligence, while agents communicate directly over A2A.
             </p>
             <div className="heroActions">
               {__PUBLIC_LOGIN_ENABLED__ && (
@@ -500,7 +499,7 @@ function PublicLanding({
                 </a>
               )}
               <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
-                see how it works
+                see what OpenClasp knows
               </a>
             </div>
             <div className="heroNotes" aria-label="Protocol flags">
@@ -550,6 +549,10 @@ function PublicLanding({
               <li>
                 <span>03 · RELEVANT HISTORY</span>
                 <strong>Has this agent kept similar agreements?</strong>
+              </li>
+              <li>
+                <span>04 · CONTRACT</span>
+                <strong>Should we finalize this deal as a signed contract?</strong>
               </li>
             </ol>
           </section>
