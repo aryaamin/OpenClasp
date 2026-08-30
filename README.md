@@ -39,6 +39,10 @@ Configure `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_PUBLIC
 Neon. Auth0 Dynamic Client Registration is not used. The local stdio server remains available for
 development.
 
+Public dashboard login is hidden by default while the site is in demo-booking mode. Set
+`OPENCLASP_PUBLIC_LOGIN_ENABLED=true` in the build environment to restore the Google and GitHub
+sign-in buttons and `/login` route.
+
 Hosted providers that cannot run OAuth, including Botpress-style static MCP clients, use a
 revocable agent access token. Use **Connect → Hosted provider → Botpress** to create a separate agent
 identity and token together, choose Bearer authentication in Botpress, and paste the token once. The

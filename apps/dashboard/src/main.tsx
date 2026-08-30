@@ -41,6 +41,7 @@ declare const __AUTH0_DOMAIN__: string;
 declare const __AUTH0_CLIENT_ID__: string;
 declare const __AUTH0_AUDIENCE__: string;
 declare const __OPENCLASP_PUBLIC_URL__: string;
+declare const __PUBLIC_LOGIN_ENABLED__: boolean;
 
 type Auth0User = { sub: string; name?: string; email?: string; picture?: string };
 type AuthSession = { user: Auth0User };
@@ -49,14 +50,14 @@ type Theme = 'dark' | 'light';
 
 const authTransactionKey = 'openclasp.auth0.transaction';
 const themeKey = 'openclasp.theme.v1';
+const demoUrl = 'https://cal.com/arya-amin-rjkw8c';
 const landingCapabilities = [
-  'identity',
-  'discovery',
-  'counterparty',
-  'contracts',
-  'monitoring',
-  'outcomes',
-  'feedback',
+  'verified identity',
+  'contextual intelligence',
+  'signed agreements',
+  'direct A2A',
+  'verified outcomes',
+  'behavioural profiles',
 ];
 
 type DashboardData = {
@@ -284,9 +285,13 @@ function App() {
 
   useEffect(() => {
     if (session === undefined) return;
-    if (!session && location.pathname !== '/login') history.replaceState({}, '', '/login');
-    if (!session) return;
-    if (location.pathname === '/login') history.replaceState({}, '', '/dashboard');
+    if (!session) {
+      const publicPath = __PUBLIC_LOGIN_ENABLED__ ? '/login' : '/';
+      if (location.pathname !== publicPath) history.replaceState({}, '', publicPath);
+      return;
+    }
+    if (location.pathname === '/' || location.pathname === '/login')
+      history.replaceState({}, '', '/dashboard');
     setPage(route());
     if (preview) {
       setLoading(false);
@@ -333,7 +338,7 @@ function App() {
   if (session === undefined) return <Loading />;
   if (!session)
     return import.meta.env.DEV ? (
-      <Login
+      <PublicLanding
         theme={theme}
         onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
         onPreview={() => {
@@ -348,7 +353,7 @@ function App() {
         }}
       />
     ) : (
-      <Login
+      <PublicLanding
         theme={theme}
         onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
       />
@@ -396,7 +401,7 @@ function App() {
   );
 }
 
-function Login({
+function PublicLanding({
   onPreview,
   theme,
   onToggleTheme,
@@ -444,10 +449,10 @@ function Login({
         </a>
         <nav aria-label="Main navigation">
           <a href="#product" onClick={scrollToAnchor}>
-            layer
+            how it works
           </a>
-          <a href="#principles" onClick={scrollToAnchor}>
-            bounds
+          <a href="#intelligence" onClick={scrollToAnchor}>
+            intelligence
           </a>
         </nav>
         <div className="landingNavActions">
@@ -460,9 +465,15 @@ function Login({
           >
             {theme === 'dark' ? <Sun /> : <Moon />}
           </button>
-          <a className="navCta" href="#access" onClick={scrollToAnchor}>
-            connect <ArrowRight />
-          </a>
+          {__PUBLIC_LOGIN_ENABLED__ ? (
+            <a className="navCta" href="#access" onClick={scrollToAnchor}>
+              sign in <ArrowRight />
+            </a>
+          ) : (
+            <a className="navCta" href={demoUrl} target="_blank" rel="noreferrer">
+              book a demo <ArrowRight />
+            </a>
+          )}
         </div>
       </header>
 
@@ -470,29 +481,36 @@ function Login({
         <section className="landingHero">
           <div className="heroCopy">
             <p className="landingKicker">
-              <span>//</span> protocol for agent-to-agent trust
+              <span>//</span> assurance and behavioural intelligence for AI agents
             </p>
             <h1>
-              Let agents talk.
+              Agents can talk.
               <br />
-              <em>Know who to trust.</em>
+              <em>Now they can build trust.</em>
             </h1>
             <p>
-              OpenClasp adds verified identity, negotiated contracts, and evidence-backed history to
-              direct agent-to-agent communication.
+              OpenClasp verifies counterparties, records agreed terms, and turns signed outcomes
+              into task-specific reliability intelligence—while agents communicate directly over
+              A2A.
             </p>
             <div className="heroActions">
-              <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
-                connect <ArrowRight />
-              </a>
+              {__PUBLIC_LOGIN_ENABLED__ ? (
+                <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
+                  sign in <ArrowRight />
+                </a>
+              ) : (
+                <a className="landingPrimary" href={demoUrl} target="_blank" rel="noreferrer">
+                  book a demo <ArrowRight />
+                </a>
+              )}
               <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
-                read the layer
+                see how it works
               </a>
             </div>
             <div className="heroNotes" aria-label="Protocol flags">
               <span>--direct-a2a</span>
-              <span>--evidence-only</span>
-              <span>--no-score</span>
+              <span>--signed-outcomes</span>
+              <span>--no-universal-score</span>
             </div>
           </div>
           <LandingDiagram />
@@ -510,60 +528,105 @@ function Login({
               <span>01</span> before, during, after
             </p>
             <h2>
-              A trust layer.
+              Trust infrastructure
               <br />
-              <em>Not another transport.</em>
+              <em>for the agent economy.</em>
             </h2>
             <p>
-              Agents keep communicating over A2A. OpenClasp makes each counterparty and interaction
-              easier to inspect, constrain, and learn from.
+              OpenClasp works before, during, and after an interaction. The conversation remains
+              direct; the assurance becomes durable.
             </p>
           </div>
           <div className="recordAsk" aria-label="Questions OpenClasp makes inspectable">
             <span>? query</span>
-            <p>who is the counterparty</p>
-            <p>what did both sides sign</p>
-            <p>what does the evidence show</p>
+            <p>who is this agent</p>
+            <p>what are they reliable at</p>
+            <p>what did both sides agree</p>
           </div>
           <ol className="recordSteps">
             <li>
               <span>before</span>
               <div>
-                <h3>Find the right counterparty.</h3>
-                <p>Public discovery meets private, task-specific insight from your own history.</p>
-                <pre className="asciiMini">{`[A] atlas     verified · research
-[K] keel      3 outcomes · ops`}</pre>
+                <h3>Know the counterparty.</h3>
+                <p>
+                  Verify identity and see task-specific strengths, risks, and evidence confidence.
+                </p>
+                <pre className="asciiMini">{`IDENTITY   operator verified
+CONTEXT    procurement · 12 outcomes
+CLUE       require pricing evidence`}</pre>
               </div>
             </li>
             <li>
               <span>agree</span>
               <div>
-                <h3>Negotiate the work.</h3>
-                <p>Agents propose, revise, and sign the same hash before anything starts.</p>
-                <pre className="asciiMini">{`SCOPE     source-backed brief
-SHARING   participants only
-HASH      0x7F3C · bilateral`}</pre>
+                <h3>Agree, then work directly.</h3>
+                <p>
+                  Agents can revise and sign shared terms, then keep communicating directly over
+                  A2A.
+                </p>
+                <pre className="asciiMini">{`SCOPE      5t · A4 · 80 GSM
+EVIDENCE   signed quote required
+CHANNEL    direct A2A`}</pre>
               </div>
             </li>
             <li>
               <span>after</span>
               <div>
-                <h3>Keep usable history.</h3>
+                <h3>Turn outcomes into intelligence.</h3>
                 <p>
-                  Monitoring, outcomes, and feedback stay attached. Trust never becomes one score.
+                  Signed outcomes and bilateral feedback update a contextual behavioural profile.
                 </p>
-                <pre className="asciiMini">{`09:41  + contract signed
-10:08  + outcome recorded
-10:12  · feedback attached`}</pre>
+                <pre className="asciiMini">{`OUTCOME    delivered on time
+EVIDENCE   quote verified
+HISTORY    procurement profile updated`}</pre>
               </div>
             </li>
           </ol>
         </section>
 
+        <section className="intelligenceSection" id="intelligence">
+          <div className="sectionIntro">
+            <p className="landingKicker">
+              <span>02</span> the compounding layer
+            </p>
+            <h2>
+              Every verified outcome
+              <br />
+              <em>makes the network smarter.</em>
+            </h2>
+            <p>
+              OpenClasp learns from signed structured events—not harvested conversations—and returns
+              private, task-specific intelligence before the next interaction.
+            </p>
+          </div>
+          <ol className="intelligenceLoop" aria-label="OpenClasp intelligence flywheel">
+            <li>
+              <span>01</span>
+              <strong>Verified interactions</strong>
+            </li>
+            <li>
+              <span>02</span>
+              <strong>Structured outcomes</strong>
+            </li>
+            <li>
+              <span>03</span>
+              <strong>Behavioural profiles</strong>
+            </li>
+            <li>
+              <span>04</span>
+              <strong>Better agent decisions</strong>
+            </li>
+          </ol>
+          <p className="intelligenceBoundary">
+            Raw conversations remain private. Intelligence stays contextual. Network contribution is
+            opt-in.
+          </p>
+        </section>
+
         <section className="principlesSection" id="principles">
           <div>
             <p className="landingKicker">
-              <span>02</span> deliberately bounded
+              <span>03</span> deliberately bounded
             </p>
             <h2>
               Trust should be
@@ -573,24 +636,24 @@ HASH      0x7F3C · bilateral`}</pre>
           </div>
           <div className="principleList">
             <article>
-              <span>MUST NOT</span>
+              <span>DIRECT</span>
               <div>
-                <h3>provide the agent</h3>
-                <p>OpenClasp works alongside agents. It does not provide them.</p>
+                <h3>Agents stay independent</h3>
+                <p>Bring any programmable agent. OpenClasp does not provide or control it.</p>
               </div>
             </article>
             <article>
-              <span>MUST NOT</span>
+              <span>OPEN</span>
               <div>
-                <h3>own the transport</h3>
-                <p>Communication remains direct over A2A.</p>
+                <h3>A2A remains the transport</h3>
+                <p>OpenClasp adds assurance without becoming a proprietary message relay.</p>
               </div>
             </article>
             <article>
-              <span>MUST NOT</span>
+              <span>CONTEXT</span>
               <div>
-                <h3>collapse trust to a score</h3>
-                <p>Insight stays contextual, evidence-backed, and useful for the task at hand.</p>
+                <h3>No universal trust score</h3>
+                <p>Standard behavioural dimensions remain task-specific and evidence-backed.</p>
               </div>
             </article>
           </div>
@@ -599,37 +662,66 @@ HASH      0x7F3C · bilateral`}</pre>
         <section className="accessSection" id="access">
           <div className="accessCopy">
             <p className="landingKicker">
-              <span>03</span> identity required
+              <span>04</span> {__PUBLIC_LOGIN_ENABLED__ ? 'identity required' : 'design partners'}
             </p>
-            <h2>Make every agent interaction accountable.</h2>
+            <h2>
+              {__PUBLIC_LOGIN_ENABLED__
+                ? 'Access your agent network.'
+                : 'Build the trust layer into your agent network.'}
+            </h2>
             <p>
-              Sign in to connect agents, control network participation, and inspect signed history.
+              {__PUBLIC_LOGIN_ENABLED__
+                ? 'Sign in to connect agents, control network participation, and inspect signed history.'
+                : 'We are working with agent platforms, enterprise teams, and marketplaces that need reliable cross-agent collaboration.'}
             </p>
           </div>
           <div className="accessCard">
             <div className="accessChrome">
-              <span>$ authenticate</span>
+              <span>{__PUBLIC_LOGIN_ENABLED__ ? '$ authenticate' : '$ pilot openclasp'}</span>
               <span className="accessBlink">_</span>
             </div>
-            <div className="socialButtons">
-              <button type="button" onClick={() => void continueWith('google')}>
-                <GoogleMark /> continue with google
-              </button>
-              <button type="button" onClick={() => void continueWith('github')}>
-                <GitHubMark /> continue with github
-              </button>
-              {onPreview && (
-                <button type="button" onClick={() => void onPreview()}>
-                  open local preview <ArrowRight />
-                </button>
-              )}
-            </div>
-            {error && (
-              <div className="loginError" role="alert">
-                {error}
-              </div>
+            {__PUBLIC_LOGIN_ENABLED__ ? (
+              <>
+                <div className="socialButtons">
+                  <button type="button" onClick={() => void continueWith('google')}>
+                    <GoogleMark /> continue with google
+                  </button>
+                  <button type="button" onClick={() => void continueWith('github')}>
+                    <GitHubMark /> continue with github
+                  </button>
+                  {onPreview && (
+                    <button type="button" onClick={() => void onPreview()}>
+                      open local preview <ArrowRight />
+                    </button>
+                  )}
+                </div>
+                {error && (
+                  <div className="loginError" role="alert">
+                    {error}
+                  </div>
+                )}
+                <small>google or github · openclasp never receives your password</small>
+              </>
+            ) : (
+              <>
+                <ul className="pilotList">
+                  <li>Agent identity and discovery</li>
+                  <li>Signed agreements and receipts</li>
+                  <li>Contextual reliability intelligence</li>
+                </ul>
+                <div className="demoActions">
+                  <a className="landingPrimary" href={demoUrl} target="_blank" rel="noreferrer">
+                    book a demo <ArrowRight />
+                  </a>
+                  {onPreview && (
+                    <button type="button" onClick={() => void onPreview()}>
+                      open local preview <ArrowRight />
+                    </button>
+                  )}
+                </div>
+                <small>30 minutes · product walkthrough · pilot fit</small>
+              </>
             )}
-            <small>google or github · openclasp never receives your password</small>
           </div>
         </section>
       </main>
@@ -639,11 +731,8 @@ HASH      0x7F3C · bilateral`}</pre>
           <ClaspMark className="landingMark" size={22} />
           <strong>openclasp</strong>
         </a>
-        <p>assurance for open agent communication.</p>
-        <small>
-          Not an agent provider, proprietary transport, blockchain product, or universal trust
-          score.
-        </small>
+        <p>assurance and behavioural intelligence for AI agents.</p>
+        <small>Signed outcomes, contextual intelligence, and direct agent communication.</small>
       </footer>
     </div>
   );
@@ -684,10 +773,7 @@ function AuthCallback() {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          code,
-          codeVerifier: transaction.verifier,
-        }),
+        body: JSON.stringify({ code, codeVerifier: transaction.verifier }),
       });
       if (!response.ok) throw new Error('Auth0 token exchange failed');
       location.replace('/dashboard');
@@ -701,7 +787,7 @@ function AuthCallback() {
       <div className="loading">
         <span className="mark">OC</span>
         <p>{error}</p>
-        <a href="/login">Return to login</a>
+        <a href="/">Return home</a>
       </div>
     );
   return <Loading />;

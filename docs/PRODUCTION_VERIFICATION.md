@@ -73,6 +73,8 @@ Docker daemon; source compilation and connector bundling remain part of the auto
   `/sso-callback` URL on the existing SPA application; Auth0 DCR is not used;
 - Vercel: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_PUBLIC_URL`,
   `OPENCLASP_MCP_URL`, `DATABASE_URL`, `OPENCLASP_RELAY_ENCRYPTION_KEY`, and sensitive `CRON_SECRET`;
+- optional public dashboard login: set `OPENCLASP_PUBLIC_LOGIN_ENABLED=true`; it is hidden when the
+  variable is absent or false;
 - Vercel Cron: `0 0 * * *` for `/api/cron-feedback`;
 - generic sidecar deployments: stable `OPENCLASP_SESSION_SECRET` and the connector variables in
   [`CONNECTORS.md`](CONNECTORS.md);

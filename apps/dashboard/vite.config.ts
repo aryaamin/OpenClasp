@@ -42,6 +42,11 @@ export default defineConfig(({ mode }) => {
           env.OPENCLASP_PUBLIC_URL ??
           'https://openclasp.vercel.app',
       ),
+      __PUBLIC_LOGIN_ENABLED__: JSON.stringify(
+        (process.env.OPENCLASP_PUBLIC_LOGIN_ENABLED ??
+          env.OPENCLASP_PUBLIC_LOGIN_ENABLED ??
+          'false') === 'true',
+      ),
     },
     server: {
       port: 5173,

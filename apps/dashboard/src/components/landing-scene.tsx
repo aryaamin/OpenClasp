@@ -3,8 +3,6 @@ import { useEffect, useRef } from 'react';
 const LUM = ' .:-=+*#%@';
 const COLS = 88;
 const ROWS = 40;
-const LIVE_BEATS = ['link open', 'in policy', 'heartbeat ok', 'awaiting peer'];
-
 const reduceMotion =
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -28,14 +26,7 @@ function shade(nx: number, ny: number, nz: number) {
   return nx * 0.16 + ny * 0.38 + nz * 0.86;
 }
 
-function plot(
-  pixels: string[][],
-  depth: number[],
-  x: number,
-  y: number,
-  z: number,
-  light: number,
-) {
+function plot(pixels: string[][], depth: number[], x: number, y: number, z: number, light: number) {
   const depthOffset = 4.2;
   const scale = COLS * 1.04;
   const zz = z + depthOffset;
@@ -62,10 +53,10 @@ function project(
   yaw: number,
   pitch: number,
 ) {
-  ;[x, y, z] = rotateY(x, y, z, yaw);
-  ;[x, y, z] = rotateX(x, y, z, pitch);
-  ;[nx, ny, nz] = rotateY(nx, ny, nz, yaw);
-  ;[nx, ny, nz] = rotateX(nx, ny, nz, pitch);
+  [x, y, z] = rotateY(x, y, z, yaw);
+  [x, y, z] = rotateX(x, y, z, pitch);
+  [nx, ny, nz] = rotateY(nx, ny, nz, yaw);
+  [nx, ny, nz] = rotateX(nx, ny, nz, pitch);
   const light = shade(nx, ny, nz);
   if (light < 0.08) return;
   plot(pixels, depth, x, y, z, light);
@@ -169,12 +160,7 @@ function plotTorusArc(
   }
 }
 
-function renderMark(
-  yaw: number,
-  pitch: number,
-  pixels: string[][],
-  depth: number[],
-): string {
+function renderMark(yaw: number, pitch: number, pixels: string[][], depth: number[]): string {
   for (let y = 0; y < ROWS; y += 1) {
     pixels[y].fill(' ');
     for (let x = 0; x < COLS; x += 1) depth[y * COLS + x] = 0;
@@ -263,60 +249,48 @@ export function LandingBackdrop() {
 }
 
 export function LandingDiagram() {
-  const liveRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const node = liveRef.current;
-    if (!node || reduceMotion) return;
-    let index = 0;
-    const timer = window.setInterval(() => {
-      index = (index + 1) % LIVE_BEATS.length;
-      node.textContent = LIVE_BEATS[index] ?? 'link open';
-    }, 3200);
-    return () => window.clearInterval(timer);
-  }, []);
-
   return (
-    <div className="asciiDiagram" role="img" aria-label="Live session log of a signed agent exchange">
+    <div
+      className="asciiDiagram"
+      role="group"
+      aria-label="Example of OpenClasp assisting a direct procurement interaction"
+    >
       <span className="sceneCorner sceneTL">+</span>
       <span className="sceneCorner sceneTR">+</span>
       <span className="sceneCorner sceneBL">+</span>
       <div className="diagramHud">
-        <span>SESSION  ix_7f3c</span>
-        <span className="diagramLive">LIVE</span>
+        <span>EXAMPLE / PROCUREMENT</span>
+        <span className="diagramLive">OPENCLASP BRIEF</span>
       </div>
-      <ol className="sessionLog">
-        <li>
-          <time dateTime="12:41:02">12:41:02</time>
-          <b>atlas</b>
-          <span>propose  source-backed brief</span>
-        </li>
-        <li>
-          <time dateTime="12:41:03">12:41:03</time>
-          <b>nova</b>
-          <span>revise   participants only</span>
-        </li>
-        <li>
-          <time dateTime="12:41:04">12:41:04</time>
-          <b>both</b>
-          <span>accept   0x7F3C</span>
-        </li>
-        <li>
-          <time dateTime="12:41:05">12:41:05</time>
-          <b>clasp</b>
-          <span>attest   bilateral</span>
-        </li>
-        <li className="is-live">
-          <time dateTime="12:41:08">12:41:08</time>
-          <b>link</b>
-          <span ref={liveRef}>link open</span>
-        </li>
-      </ol>
-      <p className="diagramSpec">
-        sha  7f3c91a0b2e84d11
-        <br />
-        identity verified · score none
-      </p>
+      <div className="exampleRequest">
+        <span>BUYER AGENT</span>
+        <strong>Buy 5 tonnes of A4 paper.</strong>
+      </div>
+      <dl className="trustBrief">
+        <div>
+          <dt>identity</dt>
+          <dd>Operator verified</dd>
+        </div>
+        <div>
+          <dt>history</dt>
+          <dd>Reliable delivery in similar work</dd>
+        </div>
+        <div className="is-warning">
+          <dt>clue</dt>
+          <dd>Require evidence for pricing</dd>
+        </div>
+      </dl>
+      <div className="directLink">
+        <span>buyer agent</span>
+        <b>direct A2A</b>
+        <span>supplier agent</span>
+      </div>
+      <div className="exampleOutcome">
+        <span>VERIFIED OUTCOME</span>
+        <strong>Delivered on time · quote verified</strong>
+        <small>Procurement history updated for the next agent.</small>
+      </div>
+      <p className="diagramSpec">raw conversation private · signed events only</p>
     </div>
   );
 }
