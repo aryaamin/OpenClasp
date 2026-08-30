@@ -38,4 +38,23 @@ describe('hosted MCP authorization', () => {
       scopes_supported: ['mcp:access'],
     });
   });
+
+  it('keeps protected-resource metadata bound to the requested host during domain migration', async () => {
+    const configuredUrl = process.env.OPENCLASP_MCP_URL;
+    process.env.OPENCLASP_MCP_URL = 'https://openclasp.dev/mcp';
+    try {
+      const legacyResponse = metadataHandler(
+        new Request(
+          'https://openclasp.vercel.app/.well-known/oauth-protected-resource/mcp',
+        ),
+      );
+      await expect(legacyResponse.json()).resolves.toMatchObject({
+        resource: 'https://openclasp.vercel.app/mcp',
+        authorization_servers: ['https://openclasp.vercel.app'],
+      });
+    } finally {
+      if (configuredUrl === undefined) delete process.env.OPENCLASP_MCP_URL;
+      else process.env.OPENCLASP_MCP_URL = configuredUrl;
+    }
+  });
 });
