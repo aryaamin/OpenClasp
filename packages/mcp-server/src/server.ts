@@ -80,6 +80,13 @@ export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
   (name) => name !== 'openclasp_create_identity',
 );
 
+const openClaspDashboardUrl = () =>
+  (
+    process.env.OPENCLASP_PUBLIC_URL ??
+    process.env.OPENCLASP_DASHBOARD_URL ??
+    'https://openclasp.vercel.app'
+  ).replace(/\/$/, '');
+
 const READ_ONLY_TOOL = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -606,7 +613,7 @@ export function registerOpenClaspTools(
         status: 'pending_confirmation',
         confirmationRequired: true,
         request,
-        confirmationUrl: `${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/connect`,
+        confirmationUrl: `${openClaspDashboardUrl()}/connect`,
         next: 'Ask the owner to confirm this setup request in the OpenClasp dashboard, then call openclasp_get_identity.',
       });
     },
@@ -651,7 +658,7 @@ export function registerOpenClaspTools(
         status: 'pending_confirmation',
         confirmationRequired: true,
         request,
-        confirmationUrl: `${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/connect`,
+        confirmationUrl: `${openClaspDashboardUrl()}/connect`,
       });
     },
   );
@@ -687,13 +694,7 @@ export function registerOpenClaspTools(
       if (published && agentDirectory?.publishAgent)
         await agentDirectory.publishAgent(
           connection.operatorId,
-          buildPublicAgentCard(
-            agent,
-            process.env.OPENCLASP_PUBLIC_URL ??
-              process.env.OPENCLASP_DASHBOARD_URL ??
-              'https://openclasp.vercel.app',
-            published,
-          ),
+          buildPublicAgentCard(agent, openClaspDashboardUrl(), published),
         );
       return text(agent);
     },
@@ -725,7 +726,7 @@ export function registerOpenClaspTools(
         pending
           ? {
               status: 'pending_confirmation',
-              confirmationUrl: `${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/connect`,
+              confirmationUrl: `${openClaspDashboardUrl()}/connect`,
             }
           : binding,
       );
@@ -892,12 +893,7 @@ export function registerOpenClaspTools(
       if (!initiatorCard && binding.agent.autoPublish && agentDirectory.publishAgent)
         initiatorCard = await agentDirectory.publishAgent(
           connection.operatorId,
-          buildPublicAgentCard(
-            binding.agent,
-            process.env.OPENCLASP_PUBLIC_URL ??
-              process.env.OPENCLASP_DASHBOARD_URL ??
-              'https://openclasp.vercel.app',
-          ),
+          buildPublicAgentCard(binding.agent, openClaspDashboardUrl()),
         );
       if (!initiatorCard)
         throw new Error(
@@ -914,9 +910,7 @@ export function registerOpenClaspTools(
       }
       if (!targetAgentId && input.targetAgentCardUrl) {
         const cardUrl = new URL(input.targetAgentCardUrl);
-        const trustedOrigin = new URL(
-          process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app',
-        ).origin;
+        const trustedOrigin = new URL(openClaspDashboardUrl()).origin;
         const match = cardUrl.pathname.match(/^\/agents\/([^/]+)\/card\.json$/);
         if (cardUrl.origin !== trustedOrigin || !match?.[1])
           throw new Error('Only OpenClasp-hosted Agent Card URLs are accepted');
@@ -1065,7 +1059,7 @@ export function registerOpenClaspTools(
         next:
           stored.status === 'active'
             ? 'Both live runtimes accepted. Send the A2A request directly to session.peer.endpoint; OpenClasp is not in the message path.'
-            : `The task needs responder approval. OpenClasp will expose it at ${process.env.OPENCLASP_DASHBOARD_URL ?? 'https://openclasp.vercel.app'}/dashboard; retry this interaction after approval.`,
+            : `The task needs responder approval. OpenClasp will expose it at ${openClaspDashboardUrl()}/dashboard; retry this interaction after approval.`,
       });
     },
   );

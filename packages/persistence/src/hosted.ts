@@ -173,11 +173,16 @@ function normalizePublicAgentCard(value: unknown): PublicAgentCard {
     return PublicAgentCardSchema.parse({
       ...current.data,
       slug,
-      profileUrl: current.data.profileUrl ?? `${baseUrl}/a/${encodeURIComponent(slug)}`,
-      verification: current.data.verification ?? {
-        status: 'verified',
-        method: 'openclasp_oauth_account',
-        verifiedAt: current.data.publishedAt,
+      profileUrl: `${baseUrl}/a/${encodeURIComponent(slug)}`,
+      cardUrl: `${baseUrl}/agents/${encodeURIComponent(current.data.agentId)}/card.json`,
+      a2aAgentCardUrl: `${baseUrl}/agents/${encodeURIComponent(current.data.agentId)}/a2a-agent-card.json`,
+      extensionUri: current.data.extensionUri ?? DEFAULT_EXTENSION_URI,
+      verification: {
+        ...(current.data.verification ?? {
+          status: 'verified',
+          method: 'openclasp_oauth_account',
+          verifiedAt: current.data.publishedAt,
+        }),
         verificationKeyUrl: `${baseUrl}/.well-known/openclasp-session-key`,
       },
     });

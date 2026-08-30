@@ -3033,7 +3033,7 @@ function Connect({
   refreshDashboard: () => Promise<void>;
   api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
-  const endpoint = 'https://openclasp.vercel.app/mcp';
+  const endpoint = `${new URL(__OPENCLASP_PUBLIC_URL__).origin}/mcp`;
   const [connectionType, setConnectionType] = useState<'interactive' | 'hosted'>('hosted');
   const [copied, setCopied] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
