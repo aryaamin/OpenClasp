@@ -92,8 +92,8 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 16px;
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: lowercase;
@@ -105,16 +105,9 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
 
 .landingBrand .landingMark {
   display: block;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   flex: none;
-}
-
-.landingClock {
-  color: var(--text-faint);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  font-variant-numeric: tabular-nums;
 }
 
 .landingMark {
@@ -1187,8 +1180,7 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
     width: 100%;
   }
 
-  .navCta,
-  .landingClock {
+  .navCta {
     display: none;
   }
 

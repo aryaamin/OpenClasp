@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { ClaspMark } from '@/components/clasp-mark';
-import { LandingBackdrop, LandingClock, LandingDiagram } from '@/components/landing-scene';
+import { LandingBackdrop, LandingDiagram } from '@/components/landing-scene';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -444,7 +444,7 @@ function PublicLanding({
           aria-label="OpenClasp home"
           onClick={scrollToAnchor}
         >
-          <ClaspMark className="landingMark" size={22} />
+          <ClaspMark className="landingMark" size={28} />
           <strong>openclasp</strong>
         </a>
         <nav aria-label="Main navigation">
@@ -456,7 +456,6 @@ function PublicLanding({
           </a>
         </nav>
         <div className="landingNavActions">
-          <LandingClock />
           <button
             className="themeButton"
             type="button"
@@ -640,7 +639,7 @@ function PublicLanding({
 
       <footer className="landingFooter">
         <a className="landingBrand" href="#top" onClick={scrollToAnchor}>
-          <ClaspMark className="landingMark" size={22} />
+          <ClaspMark className="landingMark" size={28} />
           <strong>openclasp</strong>
         </a>
         <p>assurance and behavioural intelligence for AI agents.</p>
