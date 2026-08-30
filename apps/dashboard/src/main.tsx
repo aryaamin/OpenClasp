@@ -1,19 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import {
-  ArrowRight,
-  Bot,
-  Check,
-  FileSignature,
-  Fingerprint,
-  History as HistoryIcon,
-  Moon,
-  Network,
-  Radar,
-  ShieldCheck,
-  Sun,
-} from 'lucide-react';
+import { ArrowRight, Bot, Moon, Sun } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
+import { ClaspMark } from '@/components/clasp-mark';
+import { LandingBackdrop, LandingClock, LandingDiagram } from '@/components/landing-scene';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { pageMeta, pages, type Page } from '@/lib/navigation';
@@ -39,6 +29,15 @@ type Theme = 'dark' | 'light';
 
 const authTransactionKey = 'openclasp.auth0.transaction';
 const themeKey = 'openclasp.theme.v1';
+const landingCapabilities = [
+  'identity',
+  'discovery',
+  'counterparty',
+  'contracts',
+  'monitoring',
+  'outcomes',
+  'feedback',
+];
 
 type DashboardData = {
   agents: Record<string, any>[];
@@ -209,7 +208,7 @@ function App() {
 
   useEffect(() => {
     document.title = session
-      ? `${pageMeta[page].label} · OpenClasp`
+      ? `${pageMeta[page].title} · OpenClasp`
       : session === null
         ? 'OpenClasp · Trust for agent communication'
         : 'OpenClasp';
@@ -350,7 +349,7 @@ function App() {
       }))}
       attention={{ setup: pendingSetup, invites: pendingInvites, inbox: unreadThreads }}
     >
-      {preview && <div className="previewBanner">Local preview. Changes stay here.</div>}
+      {preview && <div className="previewBanner">local preview · changes stay here</div>}
       {error && (
         <div className="errorBar" role="alert">
           {error}
@@ -408,6 +407,7 @@ function Login({
   };
   return (
     <div className="landingPage">
+      <LandingBackdrop />
       <header className="landingNav">
         <a
           className="landingBrand"
@@ -415,21 +415,19 @@ function Login({
           aria-label="OpenClasp home"
           onClick={scrollToAnchor}
         >
-          <span className="landingMark" aria-hidden="true">
-            <span />
-            <span />
-          </span>
-          <strong>OpenClasp</strong>
+          <ClaspMark className="landingMark" size={22} />
+          <strong>openclasp</strong>
         </a>
         <nav aria-label="Main navigation">
           <a href="#product" onClick={scrollToAnchor}>
-            Product
+            layer
           </a>
           <a href="#principles" onClick={scrollToAnchor}>
-            Principles
+            bounds
           </a>
         </nav>
         <div className="landingNavActions">
+          <LandingClock />
           <button
             className="themeButton"
             type="button"
@@ -439,7 +437,7 @@ function Login({
             {theme === 'dark' ? <Sun /> : <Moon />}
           </button>
           <a className="navCta" href="#access" onClick={scrollToAnchor}>
-            Sign in <ArrowRight />
+            connect <ArrowRight />
           </a>
         </div>
       </header>
@@ -447,9 +445,9 @@ function Login({
       <main id="top">
         <section className="landingHero">
           <div className="heroCopy">
-            <div className="landingKicker">
-              <span /> Trust infrastructure for A2A
-            </div>
+            <p className="landingKicker">
+              <span>//</span> protocol for agent-to-agent trust
+            </p>
             <h1>
               Let agents talk.
               <br />
@@ -461,117 +459,31 @@ function Login({
             </p>
             <div className="heroActions">
               <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
-                Get started <ArrowRight />
+                connect <ArrowRight />
               </a>
               <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
-                Explore the layer
+                read the layer
               </a>
             </div>
-            <div className="heroNotes" aria-label="Product principles">
-              <span>
-                <Check /> Built around A2A
-              </span>
-              <span>
-                <Check /> Evidence, not a universal score
-              </span>
+            <div className="heroNotes" aria-label="Protocol flags">
+              <span>--direct-a2a</span>
+              <span>--evidence-only</span>
+              <span>--no-score</span>
             </div>
           </div>
-
-          <div className="assuranceVisual" aria-label="Illustration of an assured agent exchange">
-            <div className="visualGrid" aria-hidden="true" />
-            <div className="visualTopline">
-              <span>Assurance flow</span>
-              <span className="visualLive">
-                <i /> Live
-              </span>
-            </div>
-            <div className="agentExchange">
-              <article className="agentNode agentNodeLeft">
-                <div className="agentGlyph">
-                  <Bot />
-                </div>
-                <div>
-                  <strong>Atlas</strong>
-                  <small>Research agent</small>
-                </div>
-                <span className="verifiedTick">
-                  <Check />
-                </span>
-              </article>
-              <div className="contractRail">
-                <span className="railDot railDotOne" />
-                <span className="railDot railDotTwo" />
-                <div className="contractChip">
-                  <FileSignature />
-                  <span>
-                    <small>Terms accepted</small>
-                    <strong>Contract · 0x7F3C</strong>
-                  </span>
-                </div>
-              </div>
-              <article className="agentNode agentNodeRight">
-                <div className="agentGlyph">
-                  <Bot />
-                </div>
-                <div>
-                  <strong>Nova</strong>
-                  <small>Review agent</small>
-                </div>
-                <span className="verifiedTick">
-                  <Check />
-                </span>
-              </article>
-            </div>
-            <div className="assuranceEvents">
-              <div>
-                <Fingerprint />
-                <span>
-                  <small>Identity</small>
-                  <strong>Verified</strong>
-                </span>
-              </div>
-              <div>
-                <Radar />
-                <span>
-                  <small>Monitoring</small>
-                  <strong>In policy</strong>
-                </span>
-              </div>
-              <div>
-                <HistoryIcon />
-                <span>
-                  <small>Outcome</small>
-                  <strong>Evidence linked</strong>
-                </span>
-              </div>
-            </div>
-            <div className="visualCaption">
-              <span>Direct A2A channel</span>
-              <span>OpenClasp assurance layer</span>
-            </div>
-          </div>
+          <LandingDiagram />
         </section>
 
         <div className="capabilityRail" aria-label="OpenClasp capabilities">
-          <span>Identity</span>
-          <i />
-          <span>Discovery</span>
-          <i />
-          <span>Counterparty insight</span>
-          <i />
-          <span>Contracts</span>
-          <i />
-          <span>Monitoring</span>
-          <i />
-          <span>Outcomes</span>
-          <i />
-          <span>Feedback</span>
+          {landingCapabilities.map((item) => (
+            <span key={item}>{item}</span>
+          ))}
         </div>
 
         <section className="productSection" id="product">
           <div className="sectionIntro">
             <p className="landingKicker">
-              <span /> One layer. Before, during, and after.
+              <span>01</span> before, during, after
             </p>
             <h2>
               A trust layer.
@@ -583,75 +495,49 @@ function Login({
               easier to inspect, constrain, and learn from.
             </p>
           </div>
-          <div className="featureGrid">
-            <article className="featureCard featureCardWide">
-              <div className="featureIcon">
-                <Network />
-              </div>
-              <span>01 / Before</span>
-              <h3>Find the right counterparty.</h3>
-              <p>Public discovery meets private, task-specific insight from your own history.</p>
-              <div className="discoveryMini" aria-hidden="true">
-                <div>
-                  <span className="miniAvatar">A</span>
-                  <strong>Atlas Research</strong>
-                  <small>Verified identity</small>
-                  <b>Research</b>
-                </div>
-                <div>
-                  <span className="miniAvatar">K</span>
-                  <strong>Keel Ops</strong>
-                  <small>3 relevant outcomes</small>
-                  <b>Operations</b>
-                </div>
-              </div>
-            </article>
-            <article className="featureCard">
-              <div className="featureIcon">
-                <FileSignature />
-              </div>
-              <span>02 / Agree</span>
-              <h3>Negotiate the work.</h3>
-              <p>Agents propose, revise, and sign explicit terms before an interaction begins.</p>
-              <div className="termMini" aria-hidden="true">
-                <small>SCOPE</small>
-                <strong>Source-backed brief</strong>
-                <small>SHARING</small>
-                <strong>Participants only</strong>
-                <span>
-                  <Check /> Both parties signed
-                </span>
-              </div>
-            </article>
-            <article className="featureCard">
-              <div className="featureIcon">
-                <ShieldCheck />
-              </div>
-              <span>03 / During + after</span>
-              <h3>Build usable history.</h3>
-              <p>
-                Connect monitoring, outcomes, feedback, and evidence without turning trust into one
-                score.
-              </p>
-              <div className="historyMini" aria-hidden="true">
-                <span>
-                  <i className="ok" /> Contract signed <b>09:41</b>
-                </span>
-                <span>
-                  <i className="ok" /> Outcome recorded <b>10:08</b>
-                </span>
-                <span>
-                  <i /> Feedback attached <b>10:12</b>
-                </span>
-              </div>
-            </article>
+          <div className="recordAsk" aria-label="Questions OpenClasp makes inspectable">
+            <span>? query</span>
+            <p>who is the counterparty</p>
+            <p>what did both sides sign</p>
+            <p>what does the evidence show</p>
           </div>
+          <ol className="recordSteps">
+            <li>
+              <span>before</span>
+              <div>
+                <h3>Find the right counterparty.</h3>
+                <p>Public discovery meets private, task-specific insight from your own history.</p>
+                <pre className="asciiMini">{`[A] atlas     verified · research
+[K] keel      3 outcomes · ops`}</pre>
+              </div>
+            </li>
+            <li>
+              <span>agree</span>
+              <div>
+                <h3>Negotiate the work.</h3>
+                <p>Agents propose, revise, and sign the same hash before anything starts.</p>
+                <pre className="asciiMini">{`SCOPE     source-backed brief
+SHARING   participants only
+HASH      0x7F3C · bilateral`}</pre>
+              </div>
+            </li>
+            <li>
+              <span>after</span>
+              <div>
+                <h3>Keep usable history.</h3>
+                <p>Monitoring, outcomes, and feedback stay attached. Trust never becomes one score.</p>
+                <pre className="asciiMini">{`09:41  + contract signed
+10:08  + outcome recorded
+10:12  · feedback attached`}</pre>
+              </div>
+            </li>
+          </ol>
         </section>
 
         <section className="principlesSection" id="principles">
           <div>
             <p className="landingKicker">
-              <span /> Deliberately bounded
+              <span>02</span> deliberately bounded
             </p>
             <h2>
               Trust should be
@@ -661,23 +547,23 @@ function Login({
           </div>
           <div className="principleList">
             <article>
-              <span>01</span>
+              <span>MUST NOT</span>
               <div>
-                <h3>No agent lock-in</h3>
+                <h3>provide the agent</h3>
                 <p>OpenClasp works alongside agents. It does not provide them.</p>
               </div>
             </article>
             <article>
-              <span>02</span>
+              <span>MUST NOT</span>
               <div>
-                <h3>No proprietary transport</h3>
+                <h3>own the transport</h3>
                 <p>Communication remains direct over A2A.</p>
               </div>
             </article>
             <article>
-              <span>03</span>
+              <span>MUST NOT</span>
               <div>
-                <h3>No universal trust score</h3>
+                <h3>collapse trust to a score</h3>
                 <p>Insight stays contextual, evidence-backed, and useful for the task at hand.</p>
               </div>
             </article>
@@ -687,7 +573,7 @@ function Login({
         <section className="accessSection" id="access">
           <div className="accessCopy">
             <p className="landingKicker">
-              <span /> Secure access
+              <span>03</span> identity required
             </p>
             <h2>Make every agent interaction accountable.</h2>
             <p>
@@ -695,16 +581,20 @@ function Login({
             </p>
           </div>
           <div className="accessCard">
+            <div className="accessChrome">
+              <span>$ authenticate</span>
+              <span className="accessBlink">_</span>
+            </div>
             <div className="socialButtons">
               <button type="button" onClick={() => void continueWith('google')}>
-                <GoogleMark /> Continue with Google
+                <GoogleMark /> continue with google
               </button>
               <button type="button" onClick={() => void continueWith('github')}>
-                <GitHubMark /> Continue with GitHub
+                <GitHubMark /> continue with github
               </button>
               {onPreview && (
                 <button type="button" onClick={() => void onPreview()}>
-                  Open local preview <ArrowRight />
+                  open local preview <ArrowRight />
                 </button>
               )}
             </div>
@@ -713,22 +603,17 @@ function Login({
                 {error}
               </div>
             )}
-            <small>
-              Authentication is handled by Google or GitHub. OpenClasp never receives your password.
-            </small>
+            <small>google or github · openclasp never receives your password</small>
           </div>
         </section>
       </main>
 
       <footer className="landingFooter">
         <a className="landingBrand" href="#top" onClick={scrollToAnchor}>
-          <span className="landingMark" aria-hidden="true">
-            <span />
-            <span />
-          </span>
-          <strong>OpenClasp</strong>
+          <ClaspMark className="landingMark" size={22} />
+          <strong>openclasp</strong>
         </a>
-        <p>Assurance for open agent communication.</p>
+        <p>assurance for open agent communication.</p>
         <small>
           Not an agent provider, proprietary transport, blockchain product, or universal trust
           score.
@@ -877,7 +762,7 @@ function Overview({
       {pendingSetup > 0 && (
         <button className="attentionBanner" type="button" onClick={() => navigate('connect')}>
           <div>
-            <span className="statusOrb">{pendingSetup}</span>
+            <span className="statusIndex">//</span>
             <div>
               <strong>
                 {pendingSetup} setup request{pendingSetup === 1 ? '' : 's'} waiting
@@ -889,7 +774,7 @@ function Overview({
       {!(readyAgents === data.agents.length && readyAgents) && (
         <section className="readiness">
           <div>
-            <span className="statusOrb">!</span>
+            <span className="statusIndex">!</span>
             <div>
               <strong>
                 {readyAgents} of {data.agents.length} agents can receive A2A work
@@ -2016,7 +1901,9 @@ function Insights({ data }: { data: DashboardData }) {
       <PageHead page="insights" />
       <section className="insightPrinciple">
         <div>
-          <span className="eyebrow">HOW TO READ THIS</span>
+          <p className="pageKicker">
+            <span>//</span> how to read this
+          </p>
           <h2>Reliability is contextual, not a leaderboard.</h2>
           <p>
             Every profile is tied to an agent version and task category. Scores reflect eligible
@@ -2219,7 +2106,9 @@ function Connect({
       {pending.length > 0 && (
         <section className="setupRequests">
           <div>
-            <p className="eyebrow">CONFIRMATION REQUIRED</p>
+            <p className="pageKicker">
+              <span>//</span> confirmation required
+            </p>
             <h2>Approve agent setup</h2>
             <p>
               An agent proposed this identity. Confirm it before OpenClasp binds the installation.
@@ -2689,13 +2578,15 @@ function PageHead({
   return (
     <header className="pageHead">
       <div>
+        <p className="pageKicker">
+          <span>//</span> {meta.eyebrow.toLowerCase()}
+        </p>
         <h1>{meta.title}</h1>
         <p className="lede">{meta.lede}</p>
       </div>
       {action && (
         <button className="primary" type="button" onClick={onAction}>
-          {action}
-          <span aria-hidden="true">→</span>
+          {action.toLowerCase()} <span aria-hidden="true">→</span>
         </button>
       )}
     </header>
@@ -2728,10 +2619,10 @@ function Panel({
   return (
     <section className="panel">
       <div className="panelHead">
-        <div>
-          <h2>{title}</h2>
-          {subtitle ? <p>{subtitle}</p> : null}
-        </div>
+        <h2 className="panelKicker">
+          <span>//</span> {title.toLowerCase()}
+        </h2>
+        {subtitle ? <p>{subtitle}</p> : null}
       </div>
       {children}
     </section>

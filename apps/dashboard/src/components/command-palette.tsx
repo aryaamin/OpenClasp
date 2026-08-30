@@ -160,7 +160,7 @@ export function CommandTrigger({ onOpen }: { onOpen: () => void }) {
       className="commandTrigger text-muted-foreground h-8 max-w-xs flex-1 justify-start border-border bg-transparent px-2 shadow-none hover:bg-sidebar-accent sm:min-w-[220px]"
     >
       <Search />
-      <span className="flex-1 text-left">Search</span>
+      <span className="flex-1 text-left">search</span>
       <kbd className="commandKbd">
         {mod}
         {mod === '⌘' ? '' : '+'}K

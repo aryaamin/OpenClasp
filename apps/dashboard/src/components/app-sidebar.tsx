@@ -10,11 +10,7 @@ import {
   Settings,
   Sun,
 } from 'lucide-react';
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +33,7 @@ import {
   SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { ClaspMark } from '@/components/clasp-mark';
 import { pageMeta, primaryNav, type Page } from '@/lib/navigation';
 import { initials } from '@/lib/utils';
 
@@ -92,17 +89,10 @@ export function AppSidebar({
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              tooltip="OpenClasp"
-              onClick={() => go('dashboard')}
-            >
-              <span className="mark">OC</span>
-              <span className="grid min-w-0 text-left leading-tight">
-                <span className="truncate font-semibold">OpenClasp</span>
-                <span className="truncate text-[11px] text-muted-foreground">
-                  Messages stay off-network
-                </span>
+            <SidebarMenuButton size="lg" tooltip="OpenClasp" onClick={() => go('dashboard')}>
+              <ClaspMark className="sidebarBrandMark" size={18} />
+              <span className="sidebarBrandText">
+                <strong>openclasp</strong>
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -121,15 +111,12 @@ export function AppSidebar({
                       isActive={page === item}
                       tooltip={pageMeta[item].label}
                       onClick={() => go(item)}
-                      className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary data-[active=true]:hover:text-sidebar-primary-foreground"
                     >
                       <Icon />
                       <span>{pageMeta[item].label}</span>
                     </SidebarMenuButton>
                     {count > 0 ? (
-                      <SidebarMenuBadge className="bg-sidebar-primary text-sidebar-primary-foreground peer-data-[active=true]/menu-button:bg-white peer-data-[active=true]/menu-button:text-sidebar-primary">
-                        {count}
-                      </SidebarMenuBadge>
+                      <SidebarMenuBadge>{count}</SidebarMenuBadge>
                     ) : null}
                   </SidebarMenuItem>
                 );
@@ -144,12 +131,11 @@ export function AppSidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={page === 'settings'}
-                  tooltip="Settings"
+                  tooltip="settings"
                   onClick={() => go('settings')}
-                  className="data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:hover:bg-sidebar-primary data-[active=true]:hover:text-sidebar-primary-foreground"
                 >
                   <Settings />
-                  <span>Settings</span>
+                  <span>settings</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -161,13 +147,10 @@ export function AppSidebar({
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuButton
-                  size="lg"
-                  className="data-[state=open]:bg-sidebar-accent"
-                >
-                  <Avatar size="sm" className="rounded-lg">
+                <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent">
+                  <Avatar size="sm" className="rounded-none">
                     {user.picture ? <AvatarImage src={user.picture} alt="" /> : null}
-                    <AvatarFallback className="rounded-lg bg-primary text-[10px] font-semibold text-primary-foreground">
+                    <AvatarFallback className="rounded-none bg-primary text-[10px] font-medium text-primary-foreground">
                       {initials(name)}
                     </AvatarFallback>
                   </Avatar>
@@ -177,12 +160,7 @@ export function AppSidebar({
                   </span>
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent
-                className="min-w-56"
-                side="top"
-                align="start"
-                sideOffset={6}
-              >
+              <DropdownMenuContent className="min-w-56" side="top" align="start" sideOffset={6}>
                 <DropdownMenuItem onClick={onToggleTheme}>
                   {theme === 'dark' ? <Sun /> : <Moon />}
                   {theme === 'dark' ? 'Light theme' : 'Dark theme'}

@@ -13,46 +13,46 @@ export type Page = (typeof pages)[number];
 export const pageMeta: Record<Page, { label: string; title: string; lede: string; eyebrow: string }> =
   {
     dashboard: {
-      label: 'Overview',
+      label: 'overview',
       title: 'Overview',
       lede: 'What needs you, and what already settled.',
-      eyebrow: 'Network',
+      eyebrow: 'network',
     },
     history: {
-      label: 'History',
+      label: 'history',
       title: 'History',
       lede: 'Signed events and contracts. No raw messages.',
-      eyebrow: 'Audit',
+      eyebrow: 'audit',
     },
     conversations: {
-      label: 'Inbox',
+      label: 'inbox',
       title: 'Inbox',
       lede: 'Hosted temporary chats only.',
-      eyebrow: 'Inbox',
+      eyebrow: 'inbox',
     },
     agents: {
-      label: 'Agents',
+      label: 'agents',
       title: 'Agents',
       lede: 'Identities, runtimes, automation.',
-      eyebrow: 'Registry',
+      eyebrow: 'registry',
     },
     insights: {
-      label: 'Insights',
+      label: 'insights',
       title: 'Insights',
       lede: 'Task-specific reliability. No universal score.',
-      eyebrow: 'Context',
+      eyebrow: 'context',
     },
     connect: {
-      label: 'Connect',
+      label: 'connect',
       title: 'Connect',
       lede: 'Approve an identity. OpenClasp handles the rest.',
-      eyebrow: 'Setup',
+      eyebrow: 'setup',
     },
     settings: {
-      label: 'Settings',
+      label: 'settings',
       title: 'Settings',
       lede: 'Privacy and network contribution.',
-      eyebrow: 'Account',
+      eyebrow: 'account',
     },
   };
 
