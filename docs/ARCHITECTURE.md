@@ -52,6 +52,14 @@ account learns privately about its counterparty. Both accounts must enable contr
 decision is marked for a future shared aggregate. The expiry cron also backfills older conclusions
 that do not yet have an eligibility decision.
 
+Dashboard, API, SDK, and MCP derive task-specific intelligence from these private profiles: score,
+confidence, evidence count, trend, strengths, risks, and version reduction. Marketplace ranking
+combines that private context with public capabilities and presence. It never publishes private
+history or creates a global trust leaderboard.
+
+The dashboard presents the same standard scorecard for every agent. Exporting or sharing creates a
+static user-initiated card; private scorecards are never published automatically.
+
 The protocol package owns wire validation and cryptography. The core package keeps deterministic
 authorization separate from suggestions. REST, SDK, MCP, sidecar, CLI, and dashboard call the same
 core behaviour. Hosted ownership is `Auth0 user → project → agent → MCP installation`; unrelated

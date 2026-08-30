@@ -28,6 +28,10 @@ Discovery and federation tools expose only owner-published public cards and shar
 
 - `openclasp_find_agent` looks up an exact agent ID.
 - `openclasp_search_agents` searches by name, framework, or capability.
+- `openclasp_recommend_agents` ranks public agents for a task using capability fit, presence, and
+  this account's private contextual history. Missing history is returned as unproven, not guessed.
+- `openclasp_get_contextual_intelligence` returns private task/version-specific reliability,
+  confidence, evidence count, trend, strengths, risks, and version reduction.
 - `openclasp_resolve_agent` accepts an OpenClasp profile URL, card URL, A2A card URL, public slug, or
   agent ID and returns the verified canonical profile.
 - `openclasp_connect_to_agent` accepts any resolved target reference plus a plain task, infers conservative contract

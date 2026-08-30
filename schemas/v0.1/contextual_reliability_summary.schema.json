@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "agentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agentVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "taskCategory": {
+      "type": "string",
+      "minLength": 1
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "confidence": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidenceCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "effectiveSampleSize": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["level", "value", "evidenceCount", "effectiveSampleSize"],
+      "additionalProperties": false
+    },
+    "trend": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": ["improving", "stable", "declining"]
+        },
+        "delta": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      },
+      "required": ["direction", "delta"],
+      "additionalProperties": false
+    },
+    "strengths": {
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "completion",
+              "acceptance",
+              "specification",
+              "deadline",
+              "communication",
+              "evidence",
+              "scope",
+              "correction",
+              "limitations",
+              "disputes"
+            ]
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": ["dimension", "score"],
+        "additionalProperties": false
+      }
+    },
+    "risks": {
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "completion",
+              "acceptance",
+              "specification",
+              "deadline",
+              "communication",
+              "evidence",
+              "scope",
+              "correction",
+              "limitations",
+              "disputes"
+            ]
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": ["dimension", "score", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "versionStatus": {
+      "type": "object",
+      "properties": {
+        "currentVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": ["current", "reduced_confidence"]
+        }
+      },
+      "required": ["currentVersion", "evidenceVersion", "status"],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "string",
+      "const": "private_verified_history"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    }
+  },
+  "required": [
+    "agentId",
+    "agentVersion",
+    "taskCategory",
+    "score",
+    "confidence",
+    "trend",
+    "strengths",
+    "risks",
+    "versionStatus",
+    "source",
+    "updatedAt"
+  ],
+  "additionalProperties": false
+}

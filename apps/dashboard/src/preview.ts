@@ -29,6 +29,7 @@ export type DashboardData = {
   interactionConclusions: Record<string, any>[];
   learningEligibility: Record<string, any>[];
   profileDeltas: Record<string, any>[];
+  intelligenceSummaries: Record<string, any>[];
   runtimes: Record<string, any>[];
   accessTokens: Record<string, any>[];
 };
@@ -427,6 +428,18 @@ export function createPreviewData(): DashboardData {
         agentVersion: '1.4.2',
         sampleSize: 14,
         effectiveSampleSize: 10.8,
+        dimensionSampleSizes: {
+          completion: 10.8,
+          acceptance: 8.9,
+          specification: 10.1,
+          deadline: 9.4,
+          communication: 10.8,
+          evidence: 9.7,
+          scope: 10.2,
+          correction: 5.1,
+          limitations: 4.4,
+          disputes: 10.8,
+        },
         updatedAt: ago(218),
         completion: 0.92,
         acceptance: 0.87,
@@ -435,6 +448,8 @@ export function createPreviewData(): DashboardData {
         evidence: 0.88,
         communication: 0.79,
         deadline: 0.9,
+        correction: 0.82,
+        limitations: 0.77,
         disputes: 0.08,
       },
       {
@@ -443,6 +458,18 @@ export function createPreviewData(): DashboardData {
         agentVersion: '2.1.0',
         sampleSize: 6,
         effectiveSampleSize: 4.1,
+        dimensionSampleSizes: {
+          completion: 4.1,
+          acceptance: 3.2,
+          specification: 3.8,
+          deadline: 3.5,
+          communication: 4.1,
+          evidence: 3.9,
+          scope: 3.7,
+          correction: 1.8,
+          limitations: 1.2,
+          disputes: 4.1,
+        },
         updatedAt: ago(3 * 24 * 60),
         completion: 0.71,
         acceptance: 0.68,
@@ -451,7 +478,65 @@ export function createPreviewData(): DashboardData {
         evidence: 0.58,
         communication: 0.74,
         deadline: 0.62,
+        correction: 0.69,
+        limitations: 0.54,
         disputes: 0.22,
+      },
+    ],
+    intelligenceSummaries: [
+      {
+        agentId: 'agent_atlas',
+        agentVersion: '1.4.2',
+        taskCategory: 'research',
+        score: 0.86,
+        confidence: {
+          level: 'high',
+          value: 0.72,
+          evidenceCount: 14,
+          effectiveSampleSize: 10.8,
+        },
+        trend: { direction: 'improving', delta: 0.018 },
+        strengths: [
+          { dimension: 'completion', score: 0.92 },
+          { dimension: 'deadline', score: 0.9 },
+          { dimension: 'evidence', score: 0.88 },
+        ],
+        risks: [],
+        versionStatus: {
+          currentVersion: '1.4.2',
+          evidenceVersion: '1.4.2',
+          status: 'current',
+        },
+        source: 'private_verified_history',
+        updatedAt: ago(218),
+      },
+      {
+        agentId: 'agent_harbor',
+        agentVersion: '2.1.0',
+        taskCategory: 'ops',
+        score: 0.66,
+        confidence: {
+          level: 'medium',
+          value: 0.49,
+          evidenceCount: 6,
+          effectiveSampleSize: 4.1,
+        },
+        trend: { direction: 'declining', delta: -0.022 },
+        strengths: [{ dimension: 'communication', score: 0.74 }],
+        risks: [
+          {
+            dimension: 'evidence',
+            score: 0.58,
+            reason: 'Claims are not consistently supported by evidence.',
+          },
+        ],
+        versionStatus: {
+          currentVersion: '2.1.0',
+          evidenceVersion: '2.1.0',
+          status: 'current',
+        },
+        source: 'private_verified_history',
+        updatedAt: ago(3 * 24 * 60),
       },
     ],
     runtimes: [
@@ -694,7 +779,11 @@ export function applyPreviewRequest(
 }
 
 export function isPreviewActive() {
-  return import.meta.env.DEV && sessionStorage.getItem(previewKey) === '1';
+  return (
+    import.meta.env.DEV &&
+    (sessionStorage.getItem(previewKey) === '1' ||
+      new URLSearchParams(location.search).get('preview') === '1')
+  );
 }
 
 export function enablePreview() {

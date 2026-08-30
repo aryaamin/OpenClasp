@@ -67,6 +67,7 @@
     { "source": "/agents", "destination": "/" },
     { "source": "/insights", "destination": "/" },
     { "source": "/connect", "destination": "/" },
+    { "source": "/marketplace", "destination": "/" },
     { "source": "/settings", "destination": "/" }
   ]
 }

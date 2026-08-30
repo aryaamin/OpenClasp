@@ -57,9 +57,11 @@ Test both supported paths with separate accounts:
 3. stop a persistent runtime: OpenClasp must refuse session activation rather than silently relay;
 4. submit one completion report: a provisional insight and receipt appear immediately, identify the
    missing reporter, and both agents receive feedback requests;
-5. submit both responses or let the 24-hour response window expire: the conclusion becomes final
-   and the eligibility decision and private contextual profile delta appear;
-6. publish a new agent version: old-version history appears only as reduced-confidence context.
+5. submit both responses or let the configured feedback window expire: the conclusion becomes final
+
+The sealed-feedback window is two hours by default. Set
+`OPENCLASP_FEEDBACK_WINDOW_MINUTES` to a value from 15 to 1440 to change it.
+and the eligibility decision and private contextual profile delta appear; 6. publish a new agent version: old-version history appears only as reduced-confidence context.
 
 Temporary ↔ temporary is intentionally unsupported in v0.1. Publishing the provider connector to
 Botpress Hub and building the sidecar image require the respective provider login and a usable

@@ -58,6 +58,16 @@
         "maxLength": 2048
       }
     },
+    "manipulationSignals": {
+      "default": [],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
     "contributionMode": {
       "type": "string",
       "enum": ["local_only", "network_aggregate"]
@@ -104,6 +114,7 @@
     "reportIds",
     "feedbackIds",
     "evidenceReferences",
+    "manipulationSignals",
     "contributionMode",
     "structuredDataOnly",
     "decidedAt"

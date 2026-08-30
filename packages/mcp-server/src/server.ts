@@ -72,6 +72,8 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_resolve_agent',
   'openclasp_propose_contract_revision',
   'openclasp_respond_contract_revision',
+  'openclasp_get_contextual_intelligence',
+  'openclasp_recommend_agents',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -122,7 +124,7 @@ const LiveSessionEventInputSchema = z
   });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Start with openclasp_connection_status; heartbeat while active. Resolve agent references with openclasp_resolve_agent. Persistent runtimes use direct A2A; temporary agents use hosted threads. Use contract revision tools for high-stakes terms or amendments. For long tasks call openclasp_checkpoint every five exchanges or when blocked, drifting, or nearly done. At a terminal outcome call openclasp_complete_live_session with honest structured feedback. Never upload transcripts or invent evidence or feedback.';
+  'Start with openclasp_connection_status and heartbeat while active. Use openclasp_recommend_agents and inspect contextual intelligence before choosing a peer. Keep persistent traffic on direct A2A. Agree or revise terms before high-stakes work. Checkpoint every five exchanges or when blocked, drifting, or nearly done. On any terminal outcome call openclasp_complete_live_session with honest structured feedback. Never upload transcripts or invent evidence.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -165,6 +167,14 @@ type AgentDirectory = {
     capability?: string | undefined;
     limit?: number | undefined;
   }): Promise<PublicAgentCard[]>;
+  listContextualIntelligence?(
+    operatorId: string,
+    input?: { agentId?: string; taskCategory?: string },
+  ): Promise<any[]>;
+  searchPersonalizedMarketplace?(
+    operatorId: string,
+    input?: { agentId?: string; taskCategory?: string; query?: string; limit?: number },
+  ): Promise<any[]>;
   createFederatedInteraction(
     operatorId: string,
     value: FederatedInteraction,
@@ -929,7 +939,14 @@ export function registerOpenClaspTools(
       const requestedOutcome = input.requestedOutcome ?? task.slice(0, 1000);
       const successCriteria = input.successCriteria ?? [
         'Return a clear result that directly addresses the requested task',
+        'Disclose material limitations, uncertainty, and unresolved blockers',
       ];
+      const evidenceRequirements = input.evidenceRequirements.length
+        ? input.evidenceRequirements
+        : ['Support material factual claims with inspectable evidence references'];
+      const prohibitedData = input.prohibitedData.length
+        ? input.prohibitedData
+        : ['credentials', 'government identifiers', 'payment card data'];
       const existing = (await agentDirectory.listFederatedInteractions(connection.operatorId)).find(
         (candidate) =>
           candidate.initiatorAgentId === binding.agent.agentId &&
@@ -944,10 +961,9 @@ export function registerOpenClaspTools(
           JSON.stringify(candidate.contract.prohibitedActions) ===
             JSON.stringify(input.prohibitedActions) &&
           JSON.stringify(candidate.contract.allowedData) === JSON.stringify(input.allowedData) &&
-          JSON.stringify(candidate.contract.prohibitedData) ===
-            JSON.stringify(input.prohibitedData) &&
+          JSON.stringify(candidate.contract.prohibitedData) === JSON.stringify(prohibitedData) &&
           JSON.stringify(candidate.contract.evidenceRequirements) ===
-            JSON.stringify(input.evidenceRequirements) &&
+            JSON.stringify(evidenceRequirements) &&
           candidate.contract.deadline === input.deadline,
       );
       const now = new Date();
@@ -963,9 +979,9 @@ export function registerOpenClaspTools(
         allowedActions: input.allowedActions,
         prohibitedActions: input.prohibitedActions,
         allowedData: input.allowedData,
-        prohibitedData: input.prohibitedData,
+        prohibitedData,
         ...(input.deadline ? { deadline: input.deadline } : {}),
-        evidenceRequirements: input.evidenceRequirements,
+        evidenceRequirements,
         delegationRules: ['explicit_contract_scope'],
         humanApprovalRequirements: [],
         factCheckingPolicy: 'important_claims',
@@ -1813,6 +1829,74 @@ export function registerOpenClaspTools(
           input.decision,
           'oauth_installation',
         ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[45],
+    {
+      title: 'Get contextual reliability intelligence',
+      description:
+        'Return private task-specific reliability, confidence, trend, strengths, risks, and version confidence for a counterparty. This is not a universal trust score.',
+      inputSchema: z.object({
+        agentReference: z.string().trim().min(1).max(2048).optional(),
+        taskCategory: z.string().trim().min(1).max(100).optional(),
+      }),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.listContextualIntelligence)
+        throw new Error('Contextual reliability intelligence is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      let agentId = binding.agent.agentId;
+      if (input.agentReference) {
+        const resolved = agentDirectory.resolveAgentReference
+          ? await agentDirectory.resolveAgentReference(input.agentReference)
+          : await agentDirectory.getPublishedAgent(input.agentReference);
+        const card = resolved?.card ?? resolved;
+        if (!card?.agentId) throw new Error('Published agent reference was not found');
+        agentId = String(card.agentId);
+      }
+      const summaries = await agentDirectory.listContextualIntelligence(connection.operatorId, {
+        agentId,
+        ...(input.taskCategory ? { taskCategory: input.taskCategory } : {}),
+      });
+      return text({
+        agentId,
+        summaries,
+        notice:
+          'Scores are private, task-specific derived signals. Confidence and evidence count must be considered with the score.',
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[46],
+    {
+      title: 'Recommend agents for a task',
+      description:
+        'Rank public agents for a task using published capability fit, presence, and this account’s private contextual history. Missing history is shown, not guessed.',
+      inputSchema: z.object({
+        taskCategory: z.string().trim().min(1).max(100),
+        query: z.string().trim().max(100).optional(),
+        limit: z.number().int().min(1).max(50).default(10),
+      }),
+      annotations: { ...READ_ONLY_TOOL, openWorldHint: true },
+    },
+    async (input, context) => {
+      if (!agentDirectory?.searchPersonalizedMarketplace)
+        throw new Error('Personalized agent recommendations are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.searchPersonalizedMarketplace(connection.operatorId, {
+          agentId: binding.agent.agentId,
+          taskCategory: input.taskCategory,
+          ...(input.query ? { query: input.query } : {}),
+          limit: input.limit,
+        }),
       );
     },
   );

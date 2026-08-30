@@ -7,6 +7,7 @@ import {
   AgentModeSchema,
   AgentTransportSchema,
   BehaviouralProfileDeltaSchema,
+  ContextualReliabilitySummarySchema,
   CompletionOutcomeSchema,
   CounterpartyBriefSchema,
   ContractRevisionSchema,
@@ -74,6 +75,7 @@ const schemas = {
   interaction_conclusion: InteractionConclusionSchema,
   learning_eligibility_decision: LearningEligibilityDecisionSchema,
   behavioural_profile_delta: BehaviouralProfileDeltaSchema,
+  contextual_reliability_summary: ContextualReliabilitySummarySchema,
 };
 await mkdir('schemas/v0.1', { recursive: true });
 await Promise.all(

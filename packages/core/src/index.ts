@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   AgentIdentitySchema,
   CounterpartyBriefSchema,
+  ContextualReliabilitySummarySchema,
   canonicalHash,
   createKeyPair,
   DelegationCredentialSchema,
@@ -19,6 +20,7 @@ import {
   verifyObject,
   type AgentIdentity,
   type CounterpartyBrief,
+  type ContextualReliabilitySummary,
   type DelegationCredential,
   type FactCheckResult,
   type Feedback,
@@ -324,6 +326,7 @@ export function evaluateLearningEligibility(input: {
   consensus: InteractionConclusion['consensus'];
   contributionMode: 'local_only' | 'network_aggregate';
   reviewerCredibility?: Record<string, number>;
+  manipulationSignals?: string[];
   decisionId?: string;
   decidedAt?: string;
 }): LearningEligibilityDecision {
@@ -339,8 +342,23 @@ export function evaluateLearningEligibility(input: {
   ];
   const evidenceBacked = bilateralReports || evidenceReferences.length > 0;
   const eligible = attestedReports.length > 0;
+  const extremeWithoutEvidence = attestedFeedback.filter(
+    (item) => extremeFeedbackPenalty(item) < 1,
+  );
+  const mirroredFeedback =
+    attestedFeedback.length === 2 &&
+    canonicalHash(attestedFeedback[0]!.ratings) === canonicalHash(attestedFeedback[1]!.ratings) &&
+    evidenceReferences.length === 0;
+  const manipulationSignals = [
+    ...new Set([
+      ...(input.manipulationSignals ?? []),
+      ...(extremeWithoutEvidence.length ? ['extreme_feedback_without_evidence'] : []),
+      ...(mirroredFeedback ? ['reciprocal_rating_mirroring'] : []),
+    ]),
+  ];
   const contributionMode =
-    input.contributionMode === 'network_aggregate' && !bilateralReports
+    input.contributionMode === 'network_aggregate' &&
+    (!bilateralReports || manipulationSignals.length > 0)
       ? ('local_only' as const)
       : input.contributionMode;
   const reviewerWeight = attestedFeedback.length
@@ -361,7 +379,8 @@ export function evaluateLearningEligibility(input: {
             (bilateralReports ? 0.35 : 0) +
             Math.min(0.2, reviewerWeight * 0.2) +
             (evidenceReferences.length ? 0.1 : 0) -
-            (input.consensus === 'conflicting' ? 0.2 : 0),
+            (input.consensus === 'conflicting' ? 0.2 : 0) -
+            Math.min(0.25, manipulationSignals.length * 0.12),
         ),
       )
     : 0;
@@ -386,6 +405,9 @@ export function evaluateLearningEligibility(input: {
     input.consensus === 'conflicting'
       ? 'Conflicting reports reduce sample weight'
       : 'No report-conflict penalty',
+    ...(manipulationSignals.length
+      ? [`Manipulation checks reduced weight: ${manipulationSignals.join(', ')}`]
+      : ['No feedback-manipulation signal detected']),
   ];
   return LearningEligibilityDecisionSchema.parse({
     decisionId: input.decisionId ?? randomUUID(),
@@ -396,6 +418,7 @@ export function evaluateLearningEligibility(input: {
     reportIds: attestedReports.map((report) => report.reportId),
     feedbackIds: attestedFeedback.map((item) => item.feedbackId),
     evidenceReferences,
+    manipulationSignals,
     contributionMode,
     structuredDataOnly: true,
     decidedAt: input.decidedAt ?? new Date().toISOString(),
@@ -411,6 +434,8 @@ export type BehaviouralObservations = Partial<
     | 'communication'
     | 'evidence'
     | 'scope'
+    | 'correction'
+    | 'limitations'
     | 'disputes',
     number
   >
@@ -424,14 +449,160 @@ export const BEHAVIOURAL_DIMENSIONS = [
   'communication',
   'evidence',
   'scope',
+  'correction',
+  'limitations',
   'disputes',
 ] as const;
 
 export type BehaviouralDimension = (typeof BEHAVIOURAL_DIMENSIONS)[number];
 
+const RELIABILITY_WEIGHTS: Record<BehaviouralDimension, number> = {
+  completion: 0.16,
+  acceptance: 0.12,
+  specification: 0.12,
+  deadline: 0.1,
+  communication: 0.08,
+  evidence: 0.12,
+  scope: 0.1,
+  correction: 0.08,
+  limitations: 0.08,
+  disputes: 0.04,
+};
+
+const DIMENSION_RISK_LABELS: Record<BehaviouralDimension, string> = {
+  completion: 'Outcomes are often incomplete.',
+  acceptance: 'Delivered outcomes are not consistently accepted.',
+  specification: 'Requirements are not consistently satisfied.',
+  deadline: 'Delivery timing is unreliable.',
+  communication: 'Communication quality is inconsistent.',
+  evidence: 'Claims are not consistently supported by evidence.',
+  scope: 'The agent has a pattern of leaving agreed scope.',
+  correction: 'The agent does not consistently correct mistakes well.',
+  limitations: 'The agent does not consistently disclose limitations early.',
+  disputes: 'The interaction history contains elevated disagreement.',
+};
+
+export function summarizeContextualReliability(input: {
+  profile: ContextualBehaviouralProfile & {
+    agentId: string;
+    agentVersion: string;
+    taskCategory: string;
+  };
+  deltas?: Array<{ dimensionDeltas: Record<string, number>; appliedAt: string }>;
+  currentAgentVersion?: string;
+  now?: string;
+}): ContextualReliabilitySummary {
+  const currentAgentVersion = input.currentAgentVersion ?? input.profile.agentVersion;
+  const versionChanged = currentAgentVersion !== input.profile.agentVersion;
+  const ageDays = Math.max(
+    0,
+    (Date.parse(input.now ?? new Date().toISOString()) - Date.parse(input.profile.updatedAt)) /
+      86_400_000,
+  );
+  const freshness = Math.exp(-ageDays / 180);
+  const effectiveSampleSize = Math.max(
+    0,
+    input.profile.effectiveSampleSize ?? input.profile.sampleSize,
+  );
+  const confidenceValue = Math.min(
+    0.98,
+    (effectiveSampleSize / (effectiveSampleSize + 4)) * freshness * (versionChanged ? 0.35 : 1),
+  );
+  const confidenceLevel =
+    confidenceValue >= 0.67 ? 'high' : confidenceValue >= 0.34 ? 'medium' : 'low';
+  const legacyDimensions = new Set<BehaviouralDimension>([
+    'completion',
+    'acceptance',
+    'specification',
+    'deadline',
+    'communication',
+    'evidence',
+    'scope',
+    'disputes',
+  ]);
+  const measuredDimensions = new Set(
+    BEHAVIOURAL_DIMENSIONS.filter((dimension) => {
+      const explicit = input.profile.dimensionSampleSizes?.[dimension];
+      return typeof explicit === 'number' ? explicit > 0 : legacyDimensions.has(dimension);
+    }),
+  );
+  const dimensionValues = Object.fromEntries(
+    BEHAVIOURAL_DIMENSIONS.map((dimension) => [
+      dimension,
+      dimension === 'disputes'
+        ? 1 - Math.max(0, Math.min(1, Number(input.profile.disputes ?? 0.5)))
+        : Math.max(0, Math.min(1, Number(input.profile[dimension] ?? 0.5))),
+    ]),
+  ) as Record<BehaviouralDimension, number>;
+  const measuredWeight = BEHAVIOURAL_DIMENSIONS.reduce(
+    (total, dimension) =>
+      total + (measuredDimensions.has(dimension) ? RELIABILITY_WEIGHTS[dimension] : 0),
+    0,
+  );
+  const score =
+    BEHAVIOURAL_DIMENSIONS.reduce(
+      (total, dimension) =>
+        total +
+        (measuredDimensions.has(dimension)
+          ? dimensionValues[dimension] * RELIABILITY_WEIGHTS[dimension]
+          : 0),
+      0,
+    ) / Math.max(Number.EPSILON, measuredWeight);
+  const recentDeltas = [...(input.deltas ?? [])]
+    .sort((left, right) => Date.parse(right.appliedAt) - Date.parse(left.appliedAt))
+    .slice(0, 5);
+  const trendDelta = recentDeltas.length
+    ? recentDeltas.reduce((total, delta) => {
+        const weighted = BEHAVIOURAL_DIMENSIONS.reduce((sum, dimension) => {
+          const raw = Number(delta.dimensionDeltas[dimension] ?? 0);
+          return sum + (dimension === 'disputes' ? -raw : raw) * RELIABILITY_WEIGHTS[dimension];
+        }, 0);
+        return total + weighted;
+      }, 0) / recentDeltas.length
+    : 0;
+  const ordered = BEHAVIOURAL_DIMENSIONS.filter((dimension) =>
+    measuredDimensions.has(dimension),
+  ).map((dimension) => ({ dimension, score: dimensionValues[dimension] }));
+  const strengths = ordered
+    .filter((item) => item.score >= 0.65)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3);
+  const risks = ordered
+    .filter((item) => item.score < 0.6)
+    .sort((left, right) => left.score - right.score)
+    .slice(0, 3)
+    .map((item) => ({ ...item, reason: DIMENSION_RISK_LABELS[item.dimension] }));
+  return ContextualReliabilitySummarySchema.parse({
+    agentId: input.profile.agentId,
+    agentVersion: input.profile.agentVersion,
+    taskCategory: input.profile.taskCategory,
+    score,
+    confidence: {
+      level: confidenceLevel,
+      value: confidenceValue,
+      evidenceCount: Math.max(0, Math.floor(input.profile.sampleSize)),
+      effectiveSampleSize,
+    },
+    trend: {
+      direction: trendDelta > 0.015 ? 'improving' : trendDelta < -0.015 ? 'declining' : 'stable',
+      delta: Math.max(-1, Math.min(1, trendDelta)),
+    },
+    strengths,
+    risks,
+    versionStatus: {
+      currentVersion: currentAgentVersion,
+      evidenceVersion: input.profile.agentVersion,
+      status: versionChanged ? 'reduced_confidence' : 'current',
+    },
+    source: 'private_verified_history',
+    updatedAt: input.profile.updatedAt,
+  });
+}
+
 export type ContextualBehaviouralProfile = Record<BehaviouralDimension, number> & {
   sampleSize: number;
   effectiveSampleSize: number;
+  dimensionSampleSizes?: Partial<Record<BehaviouralDimension, number>>;
   updatedAt: string;
 };
 
@@ -471,6 +642,28 @@ export function updateContextualBehaviouralProfile(input: {
       return [dimension, next];
     }),
   ) as Record<BehaviouralDimension, number>;
+  const legacyDimensions = new Set<BehaviouralDimension>([
+    'completion',
+    'acceptance',
+    'specification',
+    'deadline',
+    'communication',
+    'evidence',
+    'scope',
+    'disputes',
+  ]);
+  const dimensionSampleSizes = Object.fromEntries(
+    BEHAVIOURAL_DIMENSIONS.map((dimension) => {
+      const prior =
+        input.current?.dimensionSampleSizes?.[dimension] ??
+        (legacyDimensions.has(dimension) ? priorEffectiveSampleSize : 0);
+      const decayed = prior * Math.exp(-priorAgeDays / Math.max(1, decayDays));
+      return [
+        dimension,
+        decayed + (typeof input.observations[dimension] === 'number' ? sampleWeight : 0),
+      ];
+    }),
+  ) as Record<BehaviouralDimension, number>;
   return {
     profile: {
       ...dimensions,
@@ -478,6 +671,7 @@ export function updateContextualBehaviouralProfile(input: {
         Math.max(0, Math.floor(input.current?.sampleSize ?? 0)) +
         (hasObservation && sampleWeight > 0 ? 1 : 0),
       effectiveSampleSize: nextEffectiveSampleSize,
+      dimensionSampleSizes,
       updatedAt: appliedAt,
     },
     dimensionDeltas,
@@ -527,6 +721,12 @@ export function deriveBehaviouralObservations(input: {
       ? { evidence: ratings.evidence_quality }
       : {}),
     ...(typeof ratings?.scope_adherence === 'number' ? { scope: ratings.scope_adherence } : {}),
+    ...(typeof ratings?.correction_handling === 'number'
+      ? { correction: ratings.correction_handling }
+      : {}),
+    ...(typeof ratings?.limitation_disclosure === 'number'
+      ? { limitations: ratings.limitation_disclosure }
+      : {}),
     ...(subjectReport || input.reviewerFeedback
       ? { disputes: input.conclusion.consensus === 'conflicting' ? 1 : 0 }
       : {}),

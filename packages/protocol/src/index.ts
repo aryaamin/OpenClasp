@@ -498,6 +498,7 @@ export const FeedbackDimensionSchema = z.enum([
   'scope_adherence',
   'evidence_quality',
   'correction_handling',
+  'limitation_disclosure',
   'reliability',
 ]);
 
@@ -593,6 +594,7 @@ export const LearningEligibilityDecisionSchema = z
     reportIds: z.array(z.string().uuid()).max(2),
     feedbackIds: z.array(z.string().uuid()).max(2),
     evidenceReferences: z.array(z.string().min(1).max(2048)).max(100).default([]),
+    manipulationSignals: z.array(z.string().min(1).max(128)).max(20).default([]),
     contributionMode: z.enum(['local_only', 'network_aggregate']),
     structuredDataOnly: z.literal(true),
     decidedAt: z.string().datetime(),
@@ -612,6 +614,62 @@ export const BehaviouralProfileDeltaSchema = z
     explanation: z.string().min(1).max(2000),
     appliedAt: z.string().datetime(),
     platformAttestation: RecordAttestationSchema.optional(),
+  })
+  .strict();
+
+export const BehaviouralDimensionNameSchema = z.enum([
+  'completion',
+  'acceptance',
+  'specification',
+  'deadline',
+  'communication',
+  'evidence',
+  'scope',
+  'correction',
+  'limitations',
+  'disputes',
+]);
+
+export const ContextualReliabilitySummarySchema = z
+  .object({
+    agentId: z.string().min(1),
+    agentVersion: z.string().min(1),
+    taskCategory: z.string().min(1),
+    score: z.number().min(0).max(1),
+    confidence: z.object({
+      level: z.enum(['low', 'medium', 'high']),
+      value: z.number().min(0).max(1),
+      evidenceCount: z.number().int().nonnegative(),
+      effectiveSampleSize: z.number().nonnegative(),
+    }),
+    trend: z.object({
+      direction: z.enum(['improving', 'stable', 'declining']),
+      delta: z.number().min(-1).max(1),
+    }),
+    strengths: z
+      .array(
+        z.object({
+          dimension: BehaviouralDimensionNameSchema,
+          score: z.number().min(0).max(1),
+        }),
+      )
+      .max(3),
+    risks: z
+      .array(
+        z.object({
+          dimension: BehaviouralDimensionNameSchema,
+          score: z.number().min(0).max(1),
+          reason: z.string().min(1).max(300),
+        }),
+      )
+      .max(3),
+    versionStatus: z.object({
+      currentVersion: z.string().min(1),
+      evidenceVersion: z.string().min(1),
+      status: z.enum(['current', 'reduced_confidence']),
+    }),
+    source: z.literal('private_verified_history'),
+    updatedAt: z.string().datetime(),
   })
   .strict();
 
@@ -781,6 +839,8 @@ export type InteractionFeedback = z.infer<typeof InteractionFeedbackSchema>;
 export type InteractionConclusion = z.infer<typeof InteractionConclusionSchema>;
 export type LearningEligibilityDecision = z.infer<typeof LearningEligibilityDecisionSchema>;
 export type BehaviouralProfileDelta = z.infer<typeof BehaviouralProfileDeltaSchema>;
+export type BehaviouralDimensionName = z.infer<typeof BehaviouralDimensionNameSchema>;
+export type ContextualReliabilitySummary = z.infer<typeof ContextualReliabilitySummarySchema>;
 export type RecordAttestation = z.infer<typeof RecordAttestationSchema>;
 
 export interface KeyPair {

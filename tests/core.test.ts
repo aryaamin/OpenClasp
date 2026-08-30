@@ -6,6 +6,7 @@ import {
   deriveBehaviouralObservations,
   evaluateLearningEligibility,
   FixtureFactCheckProvider,
+  summarizeContextualReliability,
   TrustEngine,
   updateContextualBehaviouralProfile,
 } from '@openclasp/core';
@@ -375,6 +376,8 @@ describe('behavioural learning', () => {
         timeliness: rating,
         evidence_quality: rating,
         scope_adherence: rating,
+        correction_handling: rating,
+        limitation_disclosure: rating,
       },
       wouldWorkAgain: rating >= 0.5 ? 'yes' : 'no',
       evidenceReferences,
@@ -425,6 +428,7 @@ describe('behavioural learning', () => {
     });
     expect(normal.eligible).toBe(true);
     expect(extreme.sampleWeight).toBeLessThan(normal.sampleWeight);
+    expect(extreme.manipulationSignals).toContain('extreme_feedback_without_evidence');
     expect(unsupported).toMatchObject({
       eligible: true,
       sampleWeight: 0.1,
@@ -445,6 +449,8 @@ describe('behavioural learning', () => {
       specification: 0.5,
       acceptance: 0.8,
       communication: 0.8,
+      correction: 0.8,
+      limitations: 0.8,
       disputes: 1,
     });
     const updated = updateContextualBehaviouralProfile({
@@ -463,5 +469,41 @@ describe('behavioural learning', () => {
     expect(updated.profile.effectiveSampleSize).toBeLessThan(5);
     expect(updated.profile.completion).toBeLessThan(1);
     expect(updated.dimensionDeltas.completion).toBeLessThan(0);
+  });
+
+  it('summarizes reliability with explicit confidence, trend, and version reduction', () => {
+    const summary = summarizeContextualReliability({
+      profile: {
+        agentId: 'agent:b',
+        agentVersion: '1.0.0',
+        taskCategory: 'procurement',
+        completion: 0.9,
+        acceptance: 0.85,
+        specification: 0.8,
+        deadline: 0.75,
+        communication: 0.9,
+        evidence: 0.4,
+        scope: 0.8,
+        correction: 0.7,
+        limitations: 0.65,
+        disputes: 0.1,
+        sampleSize: 12,
+        effectiveSampleSize: 8,
+        updatedAt: '2026-08-29T00:12:00.000Z',
+      },
+      deltas: [
+        {
+          dimensionDeltas: { completion: 0.1, evidence: 0.08 },
+          appliedAt: '2026-08-29T00:12:00.000Z',
+        },
+      ],
+      currentAgentVersion: '2.0.0',
+      now: '2026-08-30T00:12:00.000Z',
+    });
+    expect(summary.taskCategory).toBe('procurement');
+    expect(summary.confidence.level).toBe('low');
+    expect(summary.trend.direction).toBe('improving');
+    expect(summary.risks[0]?.dimension).toBe('evidence');
+    expect(summary.versionStatus.status).toBe('reduced_confidence');
   });
 });

@@ -31,7 +31,6 @@ import {
 
 type DashboardRepository = Pick<
   HostedRepository,
-  | 'dashboard'
   | 'getSettings'
   | 'saveSettings'
   | 'upsert'
@@ -41,8 +40,9 @@ type DashboardRepository = Pick<
   | 'getPublishedAgent'
   | 'resolveAgentReference'
   | 'searchPublishedAgents'
-> &
-  Partial<
+> & {
+  dashboard(operatorId: string): Promise<Record<string, unknown>>;
+} & Partial<
     Pick<
       HostedRepository,
       | 'createFederatedInteraction'
@@ -74,7 +74,16 @@ type DashboardRepository = Pick<
       | 'markHostedThreadRead'
       | 'closeHostedThread'
     >
-  >;
+  > & {
+    listContextualIntelligence?: (
+      operatorId: string,
+      input?: { agentId?: string; taskCategory?: string },
+    ) => Promise<any[]>;
+    searchPersonalizedMarketplace?: (
+      operatorId: string,
+      input?: { agentId?: string; taskCategory?: string; query?: string; limit?: number },
+    ) => Promise<any[]>;
+  };
 
 export function buildApi(
   engine = new TrustEngine(),
@@ -360,8 +369,43 @@ export function buildApi(
         interactionConclusions: [],
         learningEligibility: [],
         profileDeltas: [],
+        intelligenceSummaries: [],
         runtimes: [],
       };
+    });
+    router.get('/v0.1/intelligence', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listContextualIntelligence || !owner)
+        throw new Error('Contextual intelligence is not configured');
+      const input = z
+        .object({
+          agentId: z.string().min(1).optional(),
+          taskCategory: z.string().trim().min(1).max(100).optional(),
+        })
+        .parse(request.query);
+      return repository.listContextualIntelligence(owner, {
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.taskCategory ? { taskCategory: input.taskCategory } : {}),
+      });
+    });
+    router.get('/v0.1/marketplace', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.searchPersonalizedMarketplace || !owner)
+        throw new Error('Personalized marketplace is not configured');
+      const input = z
+        .object({
+          agentId: z.string().min(1).optional(),
+          taskCategory: z.string().trim().min(1).max(100).optional(),
+          query: z.string().trim().max(100).optional(),
+          limit: z.coerce.number().int().min(1).max(50).default(30),
+        })
+        .parse(request.query);
+      return repository.searchPersonalizedMarketplace(owner, {
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.taskCategory ? { taskCategory: input.taskCategory } : {}),
+        ...(input.query ? { query: input.query } : {}),
+        limit: input.limit,
+      });
     });
     router.get('/v0.1/account', async (request) => {
       const owner = operatorId(request);

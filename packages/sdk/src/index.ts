@@ -116,6 +116,22 @@ export class OpenClaspClient {
       return body as PublicAgentCard[];
     });
   }
+  getContextualIntelligence(input: { agentId?: string; taskCategory?: string } = {}) {
+    const search = new URLSearchParams();
+    if (input.agentId) search.set('agentId', input.agentId);
+    if (input.taskCategory) search.set('taskCategory', input.taskCategory);
+    return this.request(`/intelligence?${search}`);
+  }
+  recommendAgents(
+    input: { agentId?: string; taskCategory?: string; query?: string; limit?: number } = {},
+  ) {
+    const search = new URLSearchParams();
+    if (input.agentId) search.set('agentId', input.agentId);
+    if (input.taskCategory) search.set('taskCategory', input.taskCategory);
+    if (input.query) search.set('query', input.query);
+    if (input.limit) search.set('limit', String(input.limit));
+    return this.request(`/marketplace?${search}`);
+  }
   async verifyPlatformRecord(value: Record<string, unknown>): Promise<boolean> {
     const root = this.baseUrl.replace(/\/v0\.1\/?$/, '');
     const keyUrl =

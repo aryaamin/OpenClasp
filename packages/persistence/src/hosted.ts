@@ -5,6 +5,7 @@ import {
   buildInteractionConclusion,
   deriveBehaviouralObservations,
   evaluateLearningEligibility,
+  summarizeContextualReliability,
   updateContextualBehaviouralProfile,
 } from '../../core/src/index.js';
 import {
@@ -105,6 +106,21 @@ type ContextualProfile = {
   taskCategory: string;
   sampleSize: number;
   effectiveSampleSize?: number;
+  dimensionSampleSizes?: Partial<
+    Record<
+      | 'completion'
+      | 'acceptance'
+      | 'specification'
+      | 'deadline'
+      | 'communication'
+      | 'evidence'
+      | 'scope'
+      | 'correction'
+      | 'limitations'
+      | 'disputes',
+      number
+    >
+  >;
   updatedAt: string;
   completion: number;
   acceptance: number;
@@ -113,10 +129,18 @@ type ContextualProfile = {
   communication: number;
   evidence: number;
   scope: number;
+  correction: number;
+  limitations: number;
   disputes: number;
 };
 
 const FEEDBACK_DIMENSIONS = FeedbackDimensionSchema.options;
+
+function feedbackWindowMilliseconds() {
+  const configured = Number(process.env.OPENCLASP_FEEDBACK_WINDOW_MINUTES ?? 120);
+  const minutes = Number.isFinite(configured) ? Math.max(15, Math.min(1440, configured)) : 120;
+  return minutes * 60_000;
+}
 
 function reviewerCredibility(feedback: InteractionFeedback): number {
   const provenance =
@@ -595,6 +619,15 @@ export class HostedRepository {
 
   async dashboard(operatorId: string) {
     await this.ensureSchema();
+    const dueFeedback = await this.sql`
+      SELECT 1 FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'feedback_request'
+        AND payload->>'status' = 'pending'
+        AND (payload->>'dueAt')::timestamptz <= NOW()
+      LIMIT 1
+    `;
+    if (dueFeedback.length) await this.processDueFeedback().catch(() => undefined);
     const outstanding = await this.sql`
       SELECT DISTINCT report.payload->>'interactionId' AS interaction_id
       FROM openclasp_records report
@@ -614,6 +647,42 @@ export class HostedRepository {
       LIMIT 20
     `;
     for (const row of outstanding) {
+      const interactionId = String(row.interaction_id ?? '');
+      if (interactionId)
+        await this.finalizeInteractionConclusion(interactionId).catch(() => undefined);
+    }
+    const intelligenceBackfill = await this.sql`
+      SELECT DISTINCT interaction.interaction_id
+      FROM openclasp_federated_interactions interaction
+      INNER JOIN openclasp_records conclusion
+        ON conclusion.payload->>'interactionId' = interaction.interaction_id::text
+        AND conclusion.kind = 'interaction_conclusion'
+        AND conclusion.payload->>'lifecycle' = 'final'
+      WHERE (
+          interaction.initiator_operator_id = ${operatorId}
+          OR interaction.responder_operator_id = ${operatorId}
+        )
+        AND EXISTS (
+          SELECT 1 FROM openclasp_records eligibility
+          WHERE eligibility.kind = 'learning_eligibility'
+            AND eligibility.payload->>'interactionId' = interaction.interaction_id::text
+            AND eligibility.payload->>'eligible' = 'true'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM openclasp_records delta
+          WHERE delta.operator_id = ${operatorId}
+            AND delta.kind = 'profile_delta'
+            AND delta.payload->>'interactionId' = interaction.interaction_id::text
+            AND delta.payload->>'agentId' = CASE
+              WHEN interaction.initiator_operator_id = ${operatorId}
+                THEN interaction.initiator_agent_id::text
+              ELSE interaction.responder_agent_id::text
+            END
+        )
+      ORDER BY interaction.interaction_id DESC
+      LIMIT 20
+    `;
+    for (const row of intelligenceBackfill) {
       const interactionId = String(row.interaction_id ?? '');
       if (interactionId)
         await this.finalizeInteractionConclusion(interactionId).catch(() => undefined);
@@ -664,6 +733,7 @@ export class HostedRepository {
         .filter((row) => row.kind === 'presence')
         .map((row) => [row.recordId, String(row.payload.lastSeenAt)]),
     );
+    const intelligenceSummaries = await this.listContextualIntelligence(operatorId);
     return {
       agents: [...ofKind('agent_profile'), ...ofKind('agent')].map((agent) => ({
         ...agent,
@@ -685,6 +755,7 @@ export class HostedRepository {
       interactionConclusions: ofKind('interaction_conclusion'),
       learningEligibility: ofKind('learning_eligibility'),
       profileDeltas: ofKind('profile_delta'),
+      intelligenceSummaries,
       federatedInteractions,
       liveSessions: liveSessionRows.map((row) => ({
         interactionId: String(row.interaction_id),
@@ -705,6 +776,62 @@ export class HostedRepository {
       runtimes,
       accessTokens,
     };
+  }
+
+  async listContextualIntelligence(
+    operatorId: string,
+    input: { agentId?: string; taskCategory?: string } = {},
+  ) {
+    await this.ensureSchema();
+    const [records, publicRows] = await Promise.all([
+      this.list(operatorId),
+      this
+        .sql`SELECT agent_id, card FROM openclasp_public_agents ORDER BY updated_at DESC LIMIT 1000`,
+    ]);
+    const currentVersions = new Map<string, string>();
+    for (const row of publicRows) {
+      const card = PublicAgentCardSchema.safeParse(normalizePublicAgentCard(row.card));
+      if (card.success) currentVersions.set(String(row.agent_id), card.data.agentVersion);
+    }
+    for (const record of records.filter((item) => item.kind === 'agent_profile')) {
+      const profile = record.payload as Partial<AgentProfile>;
+      if (typeof profile.agentId === 'string' && typeof profile.agentVersion === 'string')
+        currentVersions.set(profile.agentId, profile.agentVersion);
+    }
+    const deltas = records
+      .filter((record) => record.kind === 'profile_delta')
+      .map((record) => BehaviouralProfileDeltaSchema.safeParse(record.payload))
+      .filter((result) => result.success)
+      .map((result) => result.data);
+    return records
+      .filter((record) => record.kind === 'profile')
+      .map((record) => ({ recordId: record.recordId, ...record.payload }) as ContextualProfile)
+      .filter(
+        (profile) =>
+          (!input.agentId || profile.agentId === input.agentId) &&
+          (!input.taskCategory || profile.taskCategory === input.taskCategory),
+      )
+      .map((profile) =>
+        summarizeContextualReliability({
+          profile: {
+            ...profile,
+            effectiveSampleSize: profile.effectiveSampleSize ?? profile.sampleSize,
+          },
+          deltas: deltas.filter(
+            (delta) =>
+              delta.agentId === profile.agentId &&
+              delta.agentVersion === profile.agentVersion &&
+              delta.taskCategory === profile.taskCategory,
+          ),
+          currentAgentVersion: currentVersions.get(profile.agentId) ?? profile.agentVersion,
+        }),
+      )
+      .sort((left, right) => {
+        if (left.agentId !== right.agentId) return left.agentId.localeCompare(right.agentId);
+        if (left.versionStatus.status !== right.versionStatus.status)
+          return left.versionStatus.status === 'current' ? -1 : 1;
+        return right.confidence.value - left.confidence.value;
+      });
   }
 
   async issueAgentAccessToken(
@@ -1084,6 +1211,73 @@ export class HostedRepository {
             card.capabilities.some((value) => value.toLowerCase().includes(capability))),
       )
       .slice(0, Math.min(Math.max(input.limit ?? 20, 1), 50));
+  }
+
+  async searchPersonalizedMarketplace(
+    operatorId: string,
+    input: {
+      agentId?: string;
+      taskCategory?: string;
+      query?: string;
+      limit?: number;
+    } = {},
+  ) {
+    const [cards, records, summaries] = await Promise.all([
+      this.searchPublishedAgents({ query: input.query, limit: input.limit }),
+      this.list(operatorId),
+      this.listContextualIntelligence(operatorId, {
+        ...(input.taskCategory ? { taskCategory: input.taskCategory } : {}),
+      }),
+    ]);
+    const ownedAgents = records
+      .filter((record) => record.kind === 'agent_profile')
+      .map((record) => record.payload as Partial<AgentProfile>);
+    const ownedIds = new Set(ownedAgents.map((agent) => agent.agentId));
+    const selected = ownedAgents.find((agent) => agent.agentId === input.agentId);
+    const taskCategory = input.taskCategory ?? selected?.capabilities?.[0] ?? 'general';
+    const normalizedCategory = taskCategory.toLowerCase();
+    const summaryFor = (agentId: string) =>
+      summaries.find(
+        (summary) =>
+          summary.agentId === agentId &&
+          summary.taskCategory.toLowerCase() === normalizedCategory &&
+          summary.versionStatus.status === 'current',
+      ) ?? summaries.find((summary) => summary.agentId === agentId);
+    return cards
+      .filter((card) => !ownedIds.has(card.agentId))
+      .map((card) => {
+        const intelligence = summaryFor(card.agentId);
+        const capabilityMatch = card.capabilities.some((capability) =>
+          capability.toLowerCase().includes(normalizedCategory),
+        );
+        const online = card.presence?.status === 'online';
+        const fitScore = Math.min(
+          1,
+          0.25 +
+            (capabilityMatch ? 0.35 : 0) +
+            (online ? 0.1 : 0) +
+            (intelligence ? intelligence.score * intelligence.confidence.value * 0.3 : 0),
+        );
+        return {
+          card,
+          taskCategory,
+          ...(intelligence ? { contextualReliability: intelligence } : {}),
+          match: {
+            score: fitScore,
+            label: fitScore >= 0.72 ? 'strong' : fitScore >= 0.48 ? 'possible' : 'unproven',
+            reasons: [
+              capabilityMatch
+                ? `Published capability matches ${taskCategory}`
+                : `No explicit ${taskCategory} capability`,
+              intelligence
+                ? `${intelligence.confidence.evidenceCount} verified outcomes in private history`
+                : 'No verified private history for this task',
+              online ? 'Currently online' : 'Currently offline',
+            ],
+          },
+        };
+      })
+      .sort((left, right) => right.match.score - left.match.score);
   }
 
   async touchAgentPresence(operatorId: string, agentId: string): Promise<AgentPresence> {
@@ -1917,7 +2111,7 @@ export class HostedRepository {
       status: 'pending',
       requestedDimensions: FEEDBACK_DIMENSIONS,
       requestedAt: requestedAt.toISOString(),
-      dueAt: new Date(requestedAt.getTime() + 24 * 60 * 60_000).toISOString(),
+      dueAt: new Date(requestedAt.getTime() + feedbackWindowMilliseconds()).toISOString(),
     });
     const request = FeedbackRequestSchema.parse({
       ...base,
@@ -2141,12 +2335,24 @@ export class HostedRepository {
     conclusion: InteractionConclusion;
   }) {
     const { interaction, reports, feedback, conclusion } = input;
-    const [initiatorSettings, responderSettings, cards] = await Promise.all([
+    const [initiatorSettings, responderSettings, cards, pairActivity] = await Promise.all([
       this.getSettings(input.initiatorOperatorId),
       this.getSettings(input.responderOperatorId),
       this.sql`
         SELECT agent_id, card FROM openclasp_public_agents
         WHERE agent_id IN (${interaction.initiatorAgentId}, ${interaction.responderAgentId})
+      `,
+      this.sql`
+        SELECT COUNT(*)::integer AS count
+        FROM openclasp_federated_interactions
+        WHERE created_at >= NOW() - INTERVAL '24 hours'
+          AND (
+            (initiator_agent_id = ${interaction.initiatorAgentId}
+              AND responder_agent_id = ${interaction.responderAgentId})
+            OR
+            (initiator_agent_id = ${interaction.responderAgentId}
+              AND responder_agent_id = ${interaction.initiatorAgentId})
+          )
       `,
     ]);
     const contributionMode =
@@ -2162,6 +2368,10 @@ export class HostedRepository {
       reviewerCredibility: Object.fromEntries(
         feedback.map((item) => [item.reviewerAgentId, reviewerCredibility(item)]),
       ),
+      manipulationSignals: [
+        ...(input.initiatorOperatorId === input.responderOperatorId ? ['same_operator_pair'] : []),
+        ...(Number(pairActivity[0]?.count ?? 0) > 10 ? ['rapid_reciprocal_pair_activity'] : []),
+      ],
       decisionId: deterministicUuid(`learning-eligibility:${interaction.interactionId}`),
       decidedAt: conclusion.generatedAt,
     });
@@ -2205,81 +2415,103 @@ export class HostedRepository {
         reviewerAgentId: interaction.responderAgentId,
         subjectAgentId: interaction.initiatorAgentId,
       },
+      {
+        viewerOperatorId: input.initiatorOperatorId,
+        reviewerAgentId: interaction.responderAgentId,
+        subjectAgentId: interaction.initiatorAgentId,
+      },
+      {
+        viewerOperatorId: input.responderOperatorId,
+        reviewerAgentId: interaction.initiatorAgentId,
+        subjectAgentId: interaction.responderAgentId,
+      },
     ];
-    const profileDeltas = await Promise.all(
-      participants.map(async (participant) => {
-        const agentVersion = versions.get(participant.subjectAgentId);
-        if (!agentVersion) return undefined;
-        const deltaId = deterministicUuid(
-          `profile-delta:${interaction.interactionId}:${participant.viewerOperatorId}:${participant.subjectAgentId}`,
-        );
-        const existingDelta = await this.sql`
+    const profileDeltas: Array<BehaviouralProfileDelta | undefined> = [];
+    for (const participant of participants) {
+      const agentVersion = versions.get(participant.subjectAgentId);
+      if (!agentVersion) {
+        profileDeltas.push(undefined);
+        continue;
+      }
+      const deltaId = deterministicUuid(
+        `profile-delta:${interaction.interactionId}:${participant.viewerOperatorId}:${participant.reviewerAgentId}:${participant.subjectAgentId}`,
+      );
+      const legacyDeltaId = deterministicUuid(
+        `profile-delta:${interaction.interactionId}:${participant.viewerOperatorId}:${participant.subjectAgentId}`,
+      );
+      const existingDelta = await this.sql`
           SELECT payload FROM openclasp_records
           WHERE operator_id = ${participant.viewerOperatorId}
-            AND kind = 'profile_delta' AND record_id = ${deltaId}
+            AND kind = 'profile_delta'
+            AND (record_id = ${deltaId} OR record_id = ${legacyDeltaId})
           LIMIT 1
         `;
-        const parsedDelta = BehaviouralProfileDeltaSchema.safeParse(existingDelta[0]?.payload);
-        if (parsedDelta.success) return parsedDelta.data;
-        const profileId = deterministicUuid(
-          `contextual-profile:${participant.subjectAgentId}:${agentVersion}:${interaction.contract.taskCategory}`,
-        );
-        const currentRows = await this.sql`
+      const parsedDelta = BehaviouralProfileDeltaSchema.safeParse(existingDelta[0]?.payload);
+      if (parsedDelta.success) {
+        profileDeltas.push(parsedDelta.data);
+        continue;
+      }
+      const profileId = deterministicUuid(
+        `contextual-profile:${participant.subjectAgentId}:${agentVersion}:${interaction.contract.taskCategory}`,
+      );
+      const currentRows = await this.sql`
           SELECT payload FROM openclasp_records
           WHERE operator_id = ${participant.viewerOperatorId}
             AND kind = 'profile' AND record_id = ${profileId}
           LIMIT 1
         `;
-        const current = currentRows[0]?.payload as Partial<ContextualProfile> | undefined;
-        const reviewerFeedback = feedback.find(
-          (item) =>
-            item.reviewerAgentId === participant.reviewerAgentId &&
-            item.subjectAgentId === participant.subjectAgentId,
-        );
-        const observations = deriveBehaviouralObservations({
-          subjectAgentId: participant.subjectAgentId,
-          reviewerAgentId: participant.reviewerAgentId,
-          reports,
-          ...(reviewerFeedback ? { reviewerFeedback } : {}),
-          conclusion,
-        });
-        if (!Object.keys(observations).length) return undefined;
-        const applied = updateContextualBehaviouralProfile({
-          ...(current ? { current } : {}),
-          observations,
-          sampleWeight: eligibility.sampleWeight,
-          appliedAt,
-        });
-        const profile: ContextualProfile = {
-          recordId: profileId,
-          agentId: participant.subjectAgentId,
-          agentVersion,
-          taskCategory: interaction.contract.taskCategory,
-          ...applied.profile,
-        };
-        const deltaBase = BehaviouralProfileDeltaSchema.parse({
-          deltaId,
-          interactionId: interaction.interactionId,
-          agentId: participant.subjectAgentId,
-          agentVersion,
-          taskCategory: interaction.contract.taskCategory,
-          sampleWeight: eligibility.sampleWeight,
-          dimensionDeltas: applied.dimensionDeltas,
-          explanation:
-            'Applied platform-attested structured outcome and eligible reviewer signals; private comments and raw conversation content were excluded.',
-          appliedAt,
-        });
-        const delta = BehaviouralProfileDeltaSchema.parse({
-          ...deltaBase,
-          platformAttestation: attestSessionRecord(this.gatewaySecret(), deltaBase),
-        });
-        await Promise.all([
-          this.upsert(participant.viewerOperatorId, 'profile', profileId, profile),
-          this.upsert(participant.viewerOperatorId, 'profile_delta', deltaId, delta),
-        ]);
-        return delta;
-      }),
-    );
+      const current = currentRows[0]?.payload as Partial<ContextualProfile> | undefined;
+      const reviewerFeedback = feedback.find(
+        (item) =>
+          item.reviewerAgentId === participant.reviewerAgentId &&
+          item.subjectAgentId === participant.subjectAgentId,
+      );
+      const observations = deriveBehaviouralObservations({
+        subjectAgentId: participant.subjectAgentId,
+        reviewerAgentId: participant.reviewerAgentId,
+        reports,
+        ...(reviewerFeedback ? { reviewerFeedback } : {}),
+        conclusion,
+      });
+      if (!Object.keys(observations).length) {
+        profileDeltas.push(undefined);
+        continue;
+      }
+      const applied = updateContextualBehaviouralProfile({
+        ...(current ? { current } : {}),
+        observations,
+        sampleWeight: eligibility.sampleWeight,
+        appliedAt,
+      });
+      const profile: ContextualProfile = {
+        recordId: profileId,
+        agentId: participant.subjectAgentId,
+        agentVersion,
+        taskCategory: interaction.contract.taskCategory,
+        ...applied.profile,
+      };
+      const deltaBase = BehaviouralProfileDeltaSchema.parse({
+        deltaId,
+        interactionId: interaction.interactionId,
+        agentId: participant.subjectAgentId,
+        agentVersion,
+        taskCategory: interaction.contract.taskCategory,
+        sampleWeight: eligibility.sampleWeight,
+        dimensionDeltas: applied.dimensionDeltas,
+        explanation:
+          'Applied platform-attested structured outcome and eligible reviewer signals; private comments and raw conversation content were excluded.',
+        appliedAt,
+      });
+      const delta = BehaviouralProfileDeltaSchema.parse({
+        ...deltaBase,
+        platformAttestation: attestSessionRecord(this.gatewaySecret(), deltaBase),
+      });
+      await Promise.all([
+        this.upsert(participant.viewerOperatorId, 'profile', profileId, profile),
+        this.upsert(participant.viewerOperatorId, 'profile_delta', deltaId, delta),
+      ]);
+      profileDeltas.push(delta);
+    }
     return {
       eligibility,
       profileDeltas: profileDeltas.filter(

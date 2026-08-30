@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Settings,
+  Store,
   Sun,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ const pageIcons = {
   agents: Bot,
   insights: BarChart3,
   connect: Plus,
+  marketplace: Store,
   settings: Settings,
 } as const;
 

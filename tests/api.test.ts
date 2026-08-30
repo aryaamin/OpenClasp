@@ -97,6 +97,37 @@ describe('HTTP API', () => {
       getPublishedAgent: async () => undefined,
       resolveAgentReference: async () => undefined,
       searchPublishedAgents: async () => [],
+      listContextualIntelligence: async () => [
+        {
+          agentId: 'agent-peer',
+          agentVersion: '1.0.0',
+          taskCategory: 'research',
+          score: 0.8,
+          confidence: {
+            level: 'medium' as const,
+            value: 0.5,
+            evidenceCount: 4,
+            effectiveSampleSize: 3,
+          },
+          trend: { direction: 'stable' as const, delta: 0 },
+          strengths: [],
+          risks: [],
+          versionStatus: {
+            currentVersion: '1.0.0',
+            evidenceVersion: '1.0.0',
+            status: 'current' as const,
+          },
+          source: 'private_verified_history' as const,
+          updatedAt: '2026-08-30T00:00:00.000Z',
+        },
+      ],
+      searchPersonalizedMarketplace: async () => [
+        {
+          card: { agentId: 'agent-peer', name: 'Peer' },
+          taskCategory: 'research',
+          match: { score: 0.7, label: 'possible', reasons: [] },
+        },
+      ],
       registerAgentRuntime: async (operatorId: string, agentId: string, endpoint: string) => {
         calls.push(`runtime:${operatorId}:${agentId}:${endpoint}`);
         return {
@@ -237,6 +268,24 @@ describe('HTTP API', () => {
         })
       ).statusCode,
     ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v0.1/intelligence?agentId=agent-peer&taskCategory=research',
+          headers: { 'x-openclasp-operator': 'user-a' },
+        })
+      ).json()[0],
+    ).toMatchObject({ agentId: 'agent-peer', score: 0.8 });
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/v0.1/marketplace?agentId=agent-a&taskCategory=research',
+          headers: { 'x-openclasp-operator': 'user-a' },
+        })
+      ).json()[0],
+    ).toMatchObject({ match: { label: 'possible' } });
     expect(
       (
         await app.inject({

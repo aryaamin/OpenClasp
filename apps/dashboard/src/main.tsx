@@ -1,12 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowRight, Bot, Moon, Sun } from 'lucide-react';
+import {
+  ArrowRight,
+  Bot,
+  Check,
+  ChevronDown,
+  Circle,
+  Cloud,
+  Copy,
+  Download,
+  ExternalLink,
+  MessageCircle,
+  Moon,
+  Plus,
+  Search,
+  Share2,
+  ShieldCheck,
+  Sun,
+  X,
+} from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { ClaspMark } from '@/components/clasp-mark';
 import { LandingBackdrop, LandingClock, LandingDiagram } from '@/components/landing-scene';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { pageMeta, pages, type Page } from '@/lib/navigation';
+import { pageMeta, type Page } from '@/lib/navigation';
 import {
   applyPreviewRequest,
   createPreviewData,
@@ -60,6 +79,7 @@ type DashboardData = {
   interactionConclusions: Record<string, any>[];
   learningEligibility: Record<string, any>[];
   profileDeltas: Record<string, any>[];
+  intelligenceSummaries: Record<string, any>[];
   runtimes: Record<string, any>[];
   accessTokens: Record<string, any>[];
 };
@@ -93,6 +113,7 @@ const emptyData: DashboardData = {
   interactionConclusions: [],
   learningEligibility: [],
   profileDeltas: [],
+  intelligenceSummaries: [],
   runtimes: [],
   accessTokens: [],
 };
@@ -171,7 +192,8 @@ async function remoteApi(path: string, init?: RequestInit) {
 
 function route(): Page {
   const value = location.pathname.slice(1) || 'dashboard';
-  return pages.includes(value as Page) ? (value as Page) : 'dashboard';
+  if (value === 'marketplace' || value === 'settings' || value === 'connect') return value;
+  return 'dashboard';
 }
 
 function initialTheme(): Theme {
@@ -294,8 +316,9 @@ function App() {
   }, [preview, refreshDashboard, session]);
 
   const navigate = (next: Page) => {
-    history.pushState({}, '', `/${next}`);
-    setPage(next);
+    const target = ['marketplace', 'settings', 'connect'].includes(next) ? next : 'dashboard';
+    history.pushState({}, '', `/${target}`);
+    setPage(target as Page);
   };
   const pendingSetup = data.setupRequests.filter((request) => request.status === 'pending').length;
   const pendingInvites = data.federatedInteractions.filter(
@@ -525,7 +548,9 @@ HASH      0x7F3C · bilateral`}</pre>
               <span>after</span>
               <div>
                 <h3>Keep usable history.</h3>
-                <p>Monitoring, outcomes, and feedback stay attached. Trust never becomes one score.</p>
+                <p>
+                  Monitoring, outcomes, and feedback stay attached. Trust never becomes one score.
+                </p>
                 <pre className="asciiMini">{`09:41  + contract signed
 10:08  + outcome recorded
 10:12  · feedback attached`}</pre>
@@ -698,19 +723,1002 @@ function PageContent({
   refreshDashboard: () => Promise<void>;
   api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
+  if (page === 'connect')
+    return (
+      <Connect data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />
+    );
+  if (page === 'marketplace') return <Marketplace data={data} />;
+  if (page === 'settings')
+    return <SettingsPage settings={settings} setSettings={setSettings} api={api} />;
   if (page === 'history') return <History data={data} />;
   if (page === 'conversations')
     return <Conversations data={data} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'agents')
     return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'insights') return <Insights data={data} />;
-  if (page === 'connect')
+  if (page !== 'dashboard')
     return (
-      <Connect data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />
+      <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />
     );
-  if (page === 'settings')
-    return <SettingsPage settings={settings} setSettings={setSettings} api={api} />;
-  return <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
+  return (
+    <AgentWorkspace data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />
+  );
+}
+
+type AgentHistoryItem = {
+  interactionId: string;
+  title: string;
+  counterpart: string;
+  counterpartMode: 'agent' | 'temporary';
+  outcome: 'success' | 'partial' | 'failure' | 'cancelled' | 'provisional' | 'active' | 'pending';
+  at: string;
+};
+
+const SCORECARD_DIMENSIONS = [
+  { key: 'completion', label: 'Task completion', short: 'Completion' },
+  { key: 'acceptance', label: 'Outcome satisfaction', short: 'Satisfaction' },
+  { key: 'specification', label: 'Requirement adherence', short: 'Requirements' },
+  { key: 'deadline', label: 'Timeliness', short: 'Timeliness' },
+  { key: 'communication', label: 'Communication', short: 'Communication' },
+  { key: 'evidence', label: 'Evidence quality', short: 'Evidence' },
+  { key: 'scope', label: 'Scope adherence', short: 'Scope' },
+  { key: 'correction', label: 'Correction behaviour', short: 'Corrections' },
+  { key: 'limitations', label: 'Limitation disclosure', short: 'Limitations' },
+  { key: 'disputes', label: 'Dispute-free outcomes', short: 'Dispute-free' },
+] as const;
+
+type ScorecardMetric = {
+  key: (typeof SCORECARD_DIMENSIONS)[number]['key'];
+  label: string;
+  short: string;
+  value: number | null;
+  evidence: number;
+};
+
+function AgentWorkspace({
+  data,
+  navigate,
+  refreshDashboard,
+  api,
+}: {
+  data: DashboardData;
+  navigate: (page: Page) => void;
+  refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
+}) {
+  const [expandedAgent, setExpandedAgent] = useState('');
+  const [scorecardAgentId, setScorecardAgentId] = useState(
+    () => new URLSearchParams(window.location.search).get('scorecard') ?? '',
+  );
+  const [working, setWorking] = useState('');
+  const [error, setError] = useState('');
+  const pendingSetups = data.setupRequests.filter((request) => request.status === 'pending');
+
+  const decideSetup = async (requestId: string, decision: 'approve' | 'reject') => {
+    setWorking(`setup:${requestId}`);
+    setError('');
+    try {
+      await api(`/v0.1/onboarding/${encodeURIComponent(requestId)}/${decision}`, {
+        method: 'POST',
+      });
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not update request');
+    } finally {
+      setWorking('');
+    }
+  };
+
+  const respondToContract = async (
+    interaction: Record<string, any>,
+    agentId: string,
+    decision: 'accept' | 'reject',
+  ) => {
+    const proposal = latestContractProposal(interaction);
+    if (!proposal) return;
+    setWorking(`contract:${interaction.interactionId}`);
+    setError('');
+    try {
+      await api(
+        `/v0.1/federated-interactions/${encodeURIComponent(String(interaction.interactionId))}/contract-proposals/${encodeURIComponent(String(proposal.revisionId))}/respond`,
+        { method: 'POST', body: JSON.stringify({ agentId, decision }) },
+      );
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not respond to request');
+    } finally {
+      setWorking('');
+    }
+  };
+
+  return (
+    <div className="workspacePage">
+      <header className="workspaceHead">
+        <div>
+          <p className="eyebrow">your workspace</p>
+          <h1>My agents</h1>
+          <p>{data.agents.length} connected</p>
+        </div>
+        <button className="connectAgentButton" type="button" onClick={() => navigate('connect')}>
+          <Plus /> Connect new agent
+        </button>
+      </header>
+
+      {error ? (
+        <div className="errorBar" role="alert">
+          {error}
+        </div>
+      ) : null}
+
+      {pendingSetups.length ? (
+        <section className="compactRequests" aria-label="New agent requests">
+          {pendingSetups.map((request) => (
+            <article key={request.requestId}>
+              <span className="requestIcon">
+                <Bot />
+              </span>
+              <div>
+                <strong>{request.agentName ?? 'New agent'}</strong>
+                <small>{request.framework ?? 'Agent'} wants to connect</small>
+              </div>
+              <div className="iconDecisions">
+                <button
+                  type="button"
+                  aria-label={`Reject ${String(request.agentName ?? 'agent')}`}
+                  disabled={working === `setup:${request.requestId}`}
+                  onClick={() => void decideSetup(String(request.requestId), 'reject')}
+                >
+                  <X />
+                </button>
+                <button
+                  className="approve"
+                  type="button"
+                  aria-label={`Approve ${String(request.agentName ?? 'agent')}`}
+                  disabled={working === `setup:${request.requestId}`}
+                  onClick={() => void decideSetup(String(request.requestId), 'approve')}
+                >
+                  <Check />
+                </button>
+              </div>
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      <section className="agentList" aria-label="Connected agents">
+        {data.agents.length ? (
+          data.agents.map((agent) => {
+            const agentId = String(agent.agentId);
+            const expanded = expandedAgent === agentId;
+            const invitations = invitationsForAgent(data, agentId);
+            const history = historyForAgent(data, agent);
+            const reliability = reliabilityForAgent(data, agentId);
+            const mode = String(
+              agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat'),
+            );
+            const temporary = mode === 'temporary_chat';
+            const runtime = data.runtimes.find((item) => item.agentId === agentId);
+            const verified = !agent.revoked && Boolean(agent.identityMode);
+            const online = agent.presence?.status === 'online';
+            const published = data.publications.some(
+              (item) => item.agentId === agentId && item.published,
+            );
+            return (
+              <article className={`agentRow ${expanded ? 'isExpanded' : ''}`} key={agentId}>
+                <div className="agentRowSummary">
+                  <button
+                    className="agentRowCore"
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() => setExpandedAgent(expanded ? '' : agentId)}
+                  >
+                    <span className="agentAvatar">
+                      <Bot />
+                      <i className={online ? 'online' : ''} />
+                    </span>
+                    <span className="agentIdentity">
+                      <strong>{agent.name ?? agentId}</strong>
+                      <small>{agent.framework ?? 'Agent'}</small>
+                    </span>
+                    <span className="agentSignals">
+                      <span className={online ? 'signalOnline' : ''}>
+                        <Circle /> {online ? 'Online' : 'Offline'}
+                      </span>
+                      <span className={verified ? 'signalVerified' : ''}>
+                        <ShieldCheck /> {verified ? 'Verified' : 'Unverified'}
+                      </span>
+                      <span>
+                        {temporary ? <MessageCircle /> : <Cloud />}
+                        {temporary
+                          ? 'Temporary'
+                          : runtime?.status === 'verified'
+                            ? 'Cloud'
+                            : 'Cloud · disconnected'}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    className="scorecardTeaser"
+                    type="button"
+                    onClick={() => setScorecardAgentId(agentId)}
+                    aria-label={`Open behavioural scorecard for ${String(agent.name ?? agentId)}`}
+                  >
+                    <span className="scorecardBars" aria-hidden="true">
+                      {[0, 1, 2, 3].map((index) => (
+                        <i
+                          key={index}
+                          style={{
+                            width: `${Math.max(18, Number(reliability.score ?? 50) - index * 9)}%`,
+                          }}
+                        />
+                      ))}
+                    </span>
+                    <span>
+                      <strong>Behaviour card</strong>
+                      <small>
+                        {reliability.summary
+                          ? `${humanize(reliability.summary.confidence.level)} confidence · ${reliability.samples}`
+                          : 'Awaiting verified outcomes'}
+                      </small>
+                    </span>
+                  </button>
+                  {invitations.length ? (
+                    <span
+                      className="notificationCount"
+                      aria-label={`${invitations.length} requests`}
+                    >
+                      {invitations.length}
+                    </span>
+                  ) : null}
+                  <button
+                    className="agentExpandButton"
+                    type="button"
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} ${String(agent.name ?? agentId)}`}
+                    onClick={() => setExpandedAgent(expanded ? '' : agentId)}
+                  >
+                    <ChevronDown className="expandIcon" />
+                  </button>
+                </div>
+
+                {expanded ? (
+                  <div className="agentExpanded">
+                    {invitations.length ? (
+                      <section className="agentRequests" aria-label="Contract requests">
+                        <p className="sectionLabel">Requests</p>
+                        {invitations.map((interaction) => {
+                          const proposal = latestContractProposal(interaction);
+                          return (
+                            <article key={interaction.interactionId}>
+                              <span className="requestPulse" />
+                              <div>
+                                <strong>
+                                  {interaction.contract?.purpose ?? 'New interaction request'}
+                                </strong>
+                                <small>from {counterpartyName(data, interaction, agentId)}</small>
+                              </div>
+                              <div className="iconDecisions">
+                                <button
+                                  type="button"
+                                  aria-label="Reject request"
+                                  disabled={working === `contract:${interaction.interactionId}`}
+                                  onClick={() =>
+                                    void respondToContract(interaction, agentId, 'reject')
+                                  }
+                                >
+                                  <X />
+                                </button>
+                                <button
+                                  className="approve"
+                                  type="button"
+                                  aria-label="Accept request"
+                                  disabled={
+                                    !proposal || working === `contract:${interaction.interactionId}`
+                                  }
+                                  onClick={() =>
+                                    void respondToContract(interaction, agentId, 'accept')
+                                  }
+                                >
+                                  <Check />
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </section>
+                    ) : null}
+
+                    <div className="agentDetailStrip">
+                      <span>
+                        <b>{reliability.samples || '—'}</b>
+                        verified outcomes
+                      </span>
+                      <span>
+                        <b>{published ? 'Public' : 'Private'}</b>
+                        discovery
+                      </span>
+                      <span>
+                        <b>
+                          {online
+                            ? 'Now'
+                            : agent.presence?.lastSeenAt
+                              ? relativeTime(agent.presence.lastSeenAt)
+                              : 'Never'}
+                        </b>
+                        last active
+                      </span>
+                      {published ? (
+                        <a
+                          href={`/a/${encodeURIComponent(agentId)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Profile <ExternalLink />
+                        </a>
+                      ) : null}
+                    </div>
+
+                    <section className="agentHistory">
+                      <div className="historyHeading">
+                        <p className="sectionLabel">History</p>
+                        <small>{history.length} interactions</small>
+                      </div>
+                      {history.length ? (
+                        <ol>
+                          {history.map((item) => (
+                            <li key={item.interactionId}>
+                              <OutcomeSymbol outcome={item.outcome} />
+                              <div>
+                                <strong>{item.counterpart}</strong>
+                                <small>
+                                  {item.counterpartMode === 'temporary'
+                                    ? 'Temporary chat'
+                                    : 'Agent'}
+                                  {' · '}
+                                  {relativeTime(item.at)}
+                                </small>
+                              </div>
+                              <span className="historyPurpose">{item.title}</span>
+                              <b className={`outcomeText ${item.outcome}`}>
+                                {humanize(item.outcome)}
+                              </b>
+                            </li>
+                          ))}
+                        </ol>
+                      ) : (
+                        <div className="quietEmpty">No interactions yet</div>
+                      )}
+                    </section>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })
+        ) : (
+          <button className="emptyAgentState" type="button" onClick={() => navigate('connect')}>
+            <Plus />
+            <strong>Connect your first agent</strong>
+            <span>It takes about a minute.</span>
+          </button>
+        )}
+      </section>
+      <BehaviourScorecardDialog
+        open={Boolean(scorecardAgentId)}
+        onOpenChange={(open) => {
+          if (!open) setScorecardAgentId('');
+        }}
+        data={data}
+        agent={data.agents.find((item) => item.agentId === scorecardAgentId)}
+      />
+    </div>
+  );
+}
+
+function latestContractProposal(interaction: Record<string, any>) {
+  return [...(interaction.contractRevisions ?? [])]
+    .reverse()
+    .find((revision) => revision.status === 'proposed');
+}
+
+function invitationsForAgent(data: DashboardData, agentId: string) {
+  return data.federatedInteractions.filter((interaction) => {
+    const proposal = latestContractProposal(interaction);
+    return (
+      proposal &&
+      (
+        interaction.contract?.parties ?? [
+          interaction.initiatorAgentId,
+          interaction.responderAgentId,
+        ]
+      ).includes(agentId) &&
+      !proposal.acceptances?.[agentId]
+    );
+  });
+}
+
+function counterpartyName(data: DashboardData, interaction: Record<string, any>, agentId: string) {
+  const counterpartyId =
+    interaction.initiatorAgentId === agentId
+      ? interaction.responderAgentId
+      : interaction.initiatorAgentId;
+  return data.agents.find((agent) => agent.agentId === counterpartyId)?.name ?? counterpartyId;
+}
+
+function reliabilityForAgent(data: DashboardData, agentId: string) {
+  const summaries = data.intelligenceSummaries
+    .filter((summary) => summary.agentId === agentId)
+    .sort((left, right) => {
+      if (left.versionStatus?.status !== right.versionStatus?.status)
+        return left.versionStatus?.status === 'current' ? -1 : 1;
+      return Number(right.confidence?.value ?? 0) - Number(left.confidence?.value ?? 0);
+    });
+  const summary = summaries[0];
+  if (summary)
+    return {
+      score: Math.round(Number(summary.score) * 100),
+      samples: Number(summary.confidence?.evidenceCount ?? 0),
+      summary,
+      all: summaries,
+    };
+  const profiles = data.profiles.filter((profile) => profile.agentId === agentId);
+  if (!profiles.length) return { score: null, samples: 0, summary: null, all: [] };
+  let weightedScore = 0;
+  let weight = 0;
+  for (const profile of profiles) {
+    const dimensions = [
+      profile.completion,
+      profile.acceptance,
+      profile.specification,
+      profile.scope,
+      profile.evidence,
+      profile.communication,
+    ].filter((value) => Number.isFinite(Number(value)));
+    const profileScore = dimensions.length
+      ? dimensions.reduce((sum, value) => sum + Number(value), 0) / dimensions.length
+      : 0.5;
+    const sampleWeight = Math.max(
+      1,
+      Number(profile.effectiveSampleSize ?? profile.sampleSize ?? 1),
+    );
+    weightedScore += profileScore * sampleWeight;
+    weight += sampleWeight;
+  }
+  return {
+    score: Math.round((weightedScore / Math.max(1, weight)) * 100),
+    samples: profiles.reduce((sum, profile) => sum + Number(profile.sampleSize ?? 0), 0),
+    summary: null,
+    all: [],
+  };
+}
+
+type BehaviourScorecardModel = {
+  agentId: string;
+  name: string;
+  version: string;
+  taskCategory: string;
+  confidence: string;
+  confidenceValue: number;
+  evidenceCount: number;
+  trend: string;
+  updatedAt: string;
+  verified: boolean;
+  metrics: ScorecardMetric[];
+};
+
+function scorecardForAgent(
+  data: DashboardData,
+  agent: Record<string, any>,
+): BehaviourScorecardModel {
+  const agentId = String(agent.agentId);
+  const reliability = reliabilityForAgent(data, agentId);
+  const summary = reliability.summary;
+  const profiles = data.profiles
+    .filter(
+      (profile) =>
+        profile.agentId === agentId &&
+        (!summary ||
+          (profile.taskCategory === summary.taskCategory &&
+            profile.agentVersion === summary.agentVersion)),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(String(right.updatedAt ?? 0)) - Date.parse(String(left.updatedAt ?? 0)),
+    );
+  const profile = profiles[0];
+  const summaryDimensions = new Map<string, number>();
+  for (const item of [...(summary?.strengths ?? []), ...(summary?.risks ?? [])])
+    summaryDimensions.set(String(item.dimension), Number(item.score));
+  const legacyDimensions = new Set([
+    'completion',
+    'acceptance',
+    'specification',
+    'deadline',
+    'communication',
+    'evidence',
+    'scope',
+    'disputes',
+  ]);
+  const metrics = SCORECARD_DIMENSIONS.map((definition): ScorecardMetric => {
+    const raw = Number(profile?.[definition.key]);
+    const evidence = Number(
+      profile?.dimensionSampleSizes?.[definition.key] ??
+        (legacyDimensions.has(definition.key) ? (profile?.effectiveSampleSize ?? 0) : 0),
+    );
+    const profileValue = Number.isFinite(raw)
+      ? definition.key === 'disputes'
+        ? 1 - raw
+        : raw
+      : undefined;
+    const fallback = summaryDimensions.get(definition.key);
+    const measured = evidence > 0 || typeof fallback === 'number';
+    return {
+      ...definition,
+      value: measured
+        ? Math.round(Math.max(0, Math.min(1, profileValue ?? fallback ?? 0)) * 100)
+        : null,
+      evidence: Math.max(0, evidence),
+    };
+  });
+  return {
+    agentId,
+    name: String(agent.name ?? agentId),
+    version: String(summary?.agentVersion ?? agent.agentVersion ?? 'unknown'),
+    taskCategory: String(summary?.taskCategory ?? profile?.taskCategory ?? 'general'),
+    confidence: String(summary?.confidence?.level ?? 'unrated'),
+    confidenceValue: Number(summary?.confidence?.value ?? 0),
+    evidenceCount: Number(summary?.confidence?.evidenceCount ?? profile?.sampleSize ?? 0),
+    trend: String(summary?.trend?.direction ?? 'unrated'),
+    updatedAt: String(summary?.updatedAt ?? profile?.updatedAt ?? new Date().toISOString()),
+    verified: !agent.revoked && Boolean(agent.identityMode),
+    metrics,
+  };
+}
+
+function scorecardSummary(model: BehaviourScorecardModel) {
+  const metrics = model.metrics
+    .map(
+      (metric) =>
+        `${metric.label}: ${metric.value === null ? 'not measured' : `${metric.value}/100`}`,
+    )
+    .join('\n');
+  return `${model.name} — OpenClasp behavioural scorecard\nContext: ${humanize(model.taskCategory)} · ${humanize(model.confidence)} confidence · ${model.evidenceCount} verified outcomes\n${metrics}\nGenerated from signed structured outcomes; no raw conversation content.`;
+}
+
+function escapeSvg(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function scorecardSvg(model: BehaviourScorecardModel) {
+  const metricRows = model.metrics
+    .map((metric, index) => {
+      const column = index >= 5 ? 1 : 0;
+      const row = index % 5;
+      const x = 76 + column * 554;
+      const y = 266 + row * 64;
+      const width = metric.value === null ? 0 : Math.round((metric.value / 100) * 360);
+      const value = metric.value === null ? 'NOT MEASURED' : `${metric.value}`;
+      return `<g><text x="${x}" y="${y}" class="label">${escapeSvg(metric.short.toUpperCase())}</text><text x="${x + 454}" y="${y}" class="value">${value}</text><rect x="${x}" y="${y + 14}" width="454" height="5" rx="2.5" fill="#282321"/><rect x="${x}" y="${y + 14}" width="${width}" height="5" rx="2.5" fill="#ff4d2e"/></g>`;
+    })
+    .join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675"><style>.brand{font:700 22px Arial,sans-serif;fill:#f5f1ed}.name{font:700 48px Arial,sans-serif;fill:#f5f1ed}.meta{font:500 16px Arial,sans-serif;fill:#a49a93}.label{font:600 13px Arial,sans-serif;letter-spacing:1.5px;fill:#a49a93}.value{font:700 15px Arial,sans-serif;text-anchor:end;fill:#f5f1ed}.foot{font:500 13px Arial,sans-serif;fill:#756d68}</style><rect width="1200" height="675" fill="#0c0b0a"/><rect x="34" y="34" width="1132" height="607" fill="none" stroke="#3a312d"/><circle cx="78" cy="77" r="12" fill="none" stroke="#ff4d2e" stroke-width="3"/><text x="105" y="85" class="brand">openclasp / behaviour card</text><text x="76" y="160" class="name">${escapeSvg(model.name)}</text><text x="76" y="198" class="meta">${escapeSvg(humanize(model.taskCategory))} · ${escapeSvg(humanize(model.confidence))} confidence · ${model.evidenceCount} verified outcomes · v${escapeSvg(model.version)}</text><line x1="76" y1="228" x2="1124" y2="228" stroke="#3a312d"/>${metricRows}<line x1="76" y1="598" x2="1124" y2="598" stroke="#3a312d"/><text x="76" y="622" class="foot">STANDARD SCORECARD · SIGNED STRUCTURED OUTCOMES · RAW CONVERSATIONS EXCLUDED</text></svg>`;
+}
+
+function BehaviourScorecardDialog({
+  open,
+  onOpenChange,
+  data,
+  agent,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  data: DashboardData;
+  agent?: Record<string, any>;
+}) {
+  const [actionState, setActionState] = useState('');
+  useEffect(() => setActionState(''), [agent?.agentId]);
+  if (!agent) return null;
+  const model = scorecardForAgent(data, agent);
+  const saveCard = () => {
+    const blob = new Blob([scorecardSvg(model)], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${model.name.toLowerCase().replaceAll(/[^a-z0-9]+/g, '-')}-openclasp-card.svg`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setActionState('Downloaded');
+  };
+  const shareCard = async () => {
+    const file = new File([scorecardSvg(model)], 'openclasp-behaviour-card.svg', {
+      type: 'image/svg+xml',
+    });
+    try {
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: `${model.name} behaviour card`, files: [file] });
+        setActionState('Shared');
+      } else {
+        saveCard();
+      }
+    } catch (reason) {
+      if (!(reason instanceof DOMException && reason.name === 'AbortError'))
+        setActionState('Failed');
+    }
+  };
+  const copyCard = async () => {
+    try {
+      await navigator.clipboard.writeText(scorecardSummary(model));
+      setActionState('Copied');
+    } catch {
+      setActionState('Copy failed');
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="scorecardDialog" showCloseButton>
+        <DialogTitle className="scorecardA11yTitle">{model.name} behavioural scorecard</DialogTitle>
+        <DialogDescription className="scorecardA11yTitle">
+          Standard OpenClasp behavioural dimensions based on verified structured outcomes.
+        </DialogDescription>
+        <article className="behaviourScorecard">
+          <header className="scorecardHeader">
+            <div className="scorecardBrand">
+              <ClaspMark />
+              <span>openclasp / behaviour card</span>
+            </div>
+            <span className={model.verified ? 'scorecardVerified' : ''}>
+              <ShieldCheck /> {model.verified ? 'Identity verified' : 'Identity unverified'}
+            </span>
+          </header>
+          <div className="scorecardIdentity">
+            <div>
+              <p>STANDARD AGENT SCORECARD</p>
+              <h2>{model.name}</h2>
+            </div>
+            <div className="scorecardContext">
+              <span>{humanize(model.taskCategory)}</span>
+              <span>{humanize(model.confidence)} confidence</span>
+              <span>{model.evidenceCount} outcomes</span>
+              <span>v{model.version}</span>
+            </div>
+          </div>
+          <div className="scorecardMetrics">
+            {model.metrics.map((metric) => (
+              <div className={metric.value === null ? 'isUnmeasured' : ''} key={metric.key}>
+                <span>
+                  <strong>{metric.label}</strong>
+                  <small>
+                    {metric.value === null
+                      ? 'Awaiting eligible evidence'
+                      : `${metric.evidence.toFixed(1)} effective samples`}
+                  </small>
+                </span>
+                <span className="scorecardMeter" aria-hidden="true">
+                  <i style={{ width: `${metric.value ?? 0}%` }} />
+                </span>
+                <b>{metric.value === null ? '—' : metric.value}</b>
+              </div>
+            ))}
+          </div>
+          <footer className="scorecardFoot">
+            <span>
+              {model.trend === 'improving' ? '↗' : model.trend === 'declining' ? '↘' : '→'}{' '}
+              {humanize(model.trend)} trend
+            </span>
+            <span>Updated {relativeTime(model.updatedAt)}</span>
+            <small>Signed structured outcomes · raw conversations excluded</small>
+          </footer>
+        </article>
+        <div className="scorecardActions">
+          <span aria-live="polite">{actionState}</span>
+          <button type="button" onClick={() => void copyCard()}>
+            <Copy /> Copy summary
+          </button>
+          <button type="button" onClick={saveCard}>
+            <Download /> Download
+          </button>
+          <button className="primary" type="button" onClick={() => void shareCard()}>
+            <Share2 /> Share card
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function historyForAgent(data: DashboardData, agent: Record<string, any>): AgentHistoryItem[] {
+  const agentId = String(agent.agentId);
+  const interactions = new Map<string, Record<string, any>>();
+  for (const interaction of [...data.interactions, ...data.federatedInteractions]) {
+    const participants = [
+      interaction.agentId,
+      interaction.initiatorAgentId,
+      interaction.responderAgentId,
+      ...(interaction.contract?.parties ?? []),
+    ];
+    if (participants.includes(agentId))
+      interactions.set(String(interaction.interactionId), interaction);
+  }
+  return [...interactions.values()]
+    .map((interaction) => {
+      const interactionId = String(interaction.interactionId);
+      const report = [...data.completionReports]
+        .reverse()
+        .find((item) => item.interactionId === interactionId);
+      const receipt = [...data.receipts]
+        .reverse()
+        .find((item) => item.interactionId === interactionId);
+      const conclusion = [...data.interactionConclusions]
+        .reverse()
+        .find((item) => item.interactionId === interactionId);
+      const thread = data.hostedThreads.find((item) => item.interactionId === interactionId);
+      const counterpartId = interaction.initiatorAgentId
+        ? interaction.initiatorAgentId === agentId
+          ? interaction.responderAgentId
+          : interaction.initiatorAgentId
+        : (interaction.counterpartyAgentId ?? 'Local interaction');
+      const counterpart =
+        data.agents.find((item) => item.agentId === counterpartId)?.name ??
+        (thread ? 'Temporary chat' : counterpartId);
+      const counterpartMode: AgentHistoryItem['counterpartMode'] = thread ? 'temporary' : 'agent';
+      const rawOutcome = String(
+        conclusion?.lifecycle === 'provisional'
+          ? 'provisional'
+          : (conclusion?.outcome ??
+              receipt?.outcome ??
+              report?.outcome ??
+              (interaction.status === 'completed' ? 'success' : (interaction.status ?? 'pending'))),
+      );
+      const outcome = (
+        ['success', 'partial', 'failure', 'cancelled', 'provisional', 'active'].includes(rawOutcome)
+          ? rawOutcome
+          : 'pending'
+      ) as AgentHistoryItem['outcome'];
+      return {
+        interactionId,
+        title: String(interaction.contract?.purpose ?? interaction.purpose ?? 'Interaction'),
+        counterpart: String(counterpart),
+        counterpartMode,
+        outcome,
+        at: String(
+          report?.completedAt ??
+            receipt?.issuedAt ??
+            conclusion?.concludedAt ??
+            interaction.completedAt ??
+            interaction.updatedAt ??
+            interaction.createdAt ??
+            new Date().toISOString(),
+        ),
+      };
+    })
+    .sort((left, right) => Date.parse(right.at) - Date.parse(left.at));
+}
+
+function OutcomeSymbol({ outcome }: { outcome: AgentHistoryItem['outcome'] }) {
+  if (outcome === 'success')
+    return (
+      <span className="outcomeSymbol success">
+        <Check />
+      </span>
+    );
+  if (outcome === 'failure' || outcome === 'cancelled')
+    return (
+      <span className="outcomeSymbol failure">
+        <X />
+      </span>
+    );
+  if (outcome === 'partial' || outcome === 'provisional')
+    return <span className="outcomeSymbol partial">½</span>;
+  return (
+    <span className="outcomeSymbol pending">
+      <Circle />
+    </span>
+  );
+}
+
+function Marketplace({ data }: { data: DashboardData }) {
+  const [query, setQuery] = useState('');
+  const [selectedAgentId, setSelectedAgentId] = useState(() =>
+    String(data.agents[0]?.agentId ?? ''),
+  );
+  const [taskCategory, setTaskCategory] = useState(() =>
+    String(data.agents[0]?.capabilities?.[0] ?? 'general'),
+  );
+  const [results, setResults] = useState<Record<string, any>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const parameters = new URLSearchParams({ limit: '50' });
+      if (query.trim()) parameters.set('query', query.trim());
+      if (selectedAgentId) parameters.set('agentId', selectedAgentId);
+      if (taskCategory.trim()) parameters.set('taskCategory', taskCategory.trim());
+      remoteApi(`/v0.1/marketplace?${parameters}`, { signal: controller.signal })
+        .then((result) => setResults(result as Record<string, any>[]))
+        .catch((reason: unknown) => {
+          if (controller.signal.aborted) return;
+          setError(reason instanceof Error ? reason.message : 'Directory unavailable');
+          setResults(
+            data.agents
+              .filter((agent) =>
+                data.publications.some(
+                  (publication) => publication.agentId === agent.agentId && publication.published,
+                ),
+              )
+              .filter((agent) =>
+                `${agent.name} ${agent.description} ${(agent.capabilities ?? []).join(' ')}`
+                  .toLowerCase()
+                  .includes(query.toLowerCase()),
+              )
+              .map((card) => ({
+                card,
+                taskCategory,
+                match: {
+                  score: 0.5,
+                  label: 'possible',
+                  reasons: ['Preview capability match', 'No verified private history'],
+                },
+                contextualReliability: data.intelligenceSummaries.find(
+                  (summary) =>
+                    summary.agentId === card.agentId &&
+                    summary.taskCategory.toLowerCase() === taskCategory.toLowerCase(),
+                ),
+              })),
+          );
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 220);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    data.agents,
+    data.intelligenceSummaries,
+    data.publications,
+    query,
+    selectedAgentId,
+    taskCategory,
+  ]);
+
+  return (
+    <div className="workspacePage marketplacePage">
+      <header className="workspaceHead marketplaceHead">
+        <div>
+          <p className="eyebrow">public directory</p>
+          <h1>Marketplace</h1>
+          <p>Find verified agents ready to work.</p>
+        </div>
+        <div className="marketFilters">
+          <label>
+            <span>For</span>
+            <select
+              value={selectedAgentId}
+              onChange={(event) => {
+                const agentId = event.target.value;
+                const agent = data.agents.find((item) => item.agentId === agentId);
+                setSelectedAgentId(agentId);
+                setTaskCategory(String(agent?.capabilities?.[0] ?? 'general'));
+                setLoading(true);
+              }}
+            >
+              {data.agents.map((agent) => (
+                <option value={agent.agentId} key={agent.agentId}>
+                  {agent.name ?? agent.agentId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Task</span>
+            <input
+              value={taskCategory}
+              onChange={(event) => {
+                setTaskCategory(event.target.value);
+                setLoading(true);
+              }}
+              placeholder="procurement"
+            />
+          </label>
+          <label className="marketSearch">
+            <Search />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => {
+                setLoading(true);
+                setError('');
+                setQuery(event.target.value);
+              }}
+              placeholder="Search agents"
+            />
+          </label>
+        </div>
+      </header>
+      <div className="marketContext">
+        Recommendations combine public capabilities with your private, verified history. Scores are
+        task-specific and confidence-adjusted.
+      </div>
+      {error && !results.length ? <div className="errorBar">{error}</div> : null}
+      <section className="marketGrid" aria-live="polite">
+        {loading ? (
+          Array.from({ length: 6 }, (_, index) => <div className="marketSkeleton" key={index} />)
+        ) : results.length ? (
+          results.map((result) => {
+            const agent = result.card;
+            const online = agent.presence?.status === 'online';
+            const temporary = agent.agentMode === 'temporary_chat';
+            const intelligence = result.contextualReliability;
+            return (
+              <article className="marketCard" key={agent.agentId}>
+                <div className="marketCardTop">
+                  <span className="agentAvatar">
+                    <Bot />
+                    <i className={online ? 'online' : ''} />
+                  </span>
+                  <span className={online ? 'marketPresence online' : 'marketPresence'}>
+                    {online ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+                <div className={`matchBadge ${result.match.label}`}>
+                  <strong>{Math.round(Number(result.match.score) * 100)}%</strong>
+                  <span>
+                    {result.match.label} match for {result.taskCategory}
+                  </span>
+                </div>
+                <h2>{agent.name}</h2>
+                <p>{agent.description || 'Public OpenClasp agent'}</p>
+                <div className="marketTags">
+                  {(agent.capabilities ?? []).slice(0, 4).map((capability: string) => (
+                    <span key={capability}>{capability}</span>
+                  ))}
+                </div>
+                <div className="marketMeta">
+                  <span>
+                    <ShieldCheck /> Verified
+                  </span>
+                  <span>
+                    {temporary ? <MessageCircle /> : <Cloud />} {temporary ? 'Temporary' : 'Cloud'}
+                  </span>
+                </div>
+                <div className="marketIntelligence">
+                  {intelligence ? (
+                    <>
+                      <strong>{Math.round(Number(intelligence.score) * 100)}%</strong>
+                      <span>
+                        contextual reliability · {intelligence.confidence.level} confidence ·{' '}
+                        {intelligence.confidence.evidenceCount} outcomes
+                      </span>
+                    </>
+                  ) : (
+                    <span>No verified history for this task</span>
+                  )}
+                </div>
+                <a
+                  className="marketProfileLink"
+                  href={agent.profileUrl ?? `/a/${encodeURIComponent(String(agent.agentId))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View agent <ArrowRight />
+                </a>
+              </article>
+            );
+          })
+        ) : (
+          <div className="quietEmpty marketEmpty">No matching public agents</div>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function Overview({
