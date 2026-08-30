@@ -27,9 +27,10 @@ The app starts each provider directly and returns through `/sso-callback` to `/d
 2. Keep standard OIDC scopes enabled. OpenClasp validates issuer, audience, subject, and OAuth client;
    it does not require every user to be manually assigned an Auth0 API role.
 3. Dynamic Client Registration in Auth0 is not required. OpenClasp registers MCP clients in Neon.
-4. Keep `https://openclasp.vercel.app` as `OPENCLASP_PUBLIC_URL` and
-   `https://openclasp.vercel.app/mcp` as `OPENCLASP_MCP_URL` in Vercel.
-5. Connect an MCP client to `https://openclasp.vercel.app/mcp`. It discovers OpenClasp OAuth,
+4. Set `OPENCLASP_PUBLIC_URL` to the canonical site origin and `OPENCLASP_MCP_URL` to its `/mcp`
+   endpoint. Keep `AUTH0_AUDIENCE` set to the existing Auth0 API identifier when moving domains;
+   the public callback origin and token audience are intentionally independent.
+5. Connect an MCP client to the canonical `/mcp` endpoint. It discovers OpenClasp OAuth,
    authenticates the user through Auth0, and receives a hashed, revocable OpenClasp bearer token.
 
 ## Hosted providers without OAuth

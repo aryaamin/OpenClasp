@@ -37,6 +37,11 @@ export default defineConfig(({ mode }) => {
           env.OPENCLASP_MCP_URL ??
           'https://openclasp.vercel.app/mcp',
       ),
+      __OPENCLASP_PUBLIC_URL__: JSON.stringify(
+        process.env.OPENCLASP_PUBLIC_URL ??
+          env.OPENCLASP_PUBLIC_URL ??
+          'https://openclasp.vercel.app',
+      ),
     },
     server: {
       port: 5173,

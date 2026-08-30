@@ -40,6 +40,7 @@ import './styles.css';
 declare const __AUTH0_DOMAIN__: string;
 declare const __AUTH0_CLIENT_ID__: string;
 declare const __AUTH0_AUDIENCE__: string;
+declare const __OPENCLASP_PUBLIC_URL__: string;
 
 type Auth0User = { sub: string; name?: string; email?: string; picture?: string };
 type AuthSession = { user: Auth0User };
@@ -149,7 +150,7 @@ async function beginAuth(provider: 'google' | 'github') {
   sessionStorage.setItem(authTransactionKey, JSON.stringify(transaction));
   const parameters = new URLSearchParams({
     client_id: __AUTH0_CLIENT_ID__,
-    redirect_uri: `${new URL(__AUTH0_AUDIENCE__).origin}/sso-callback`,
+    redirect_uri: `${new URL(__OPENCLASP_PUBLIC_URL__).origin}/sso-callback`,
     response_type: 'code',
     scope: 'openid profile email',
     audience: __AUTH0_AUDIENCE__,
@@ -171,7 +172,7 @@ async function signOut(preview: boolean) {
   await fetch('/api/session', { method: 'DELETE', credentials: 'same-origin' });
   const parameters = new URLSearchParams({
     client_id: __AUTH0_CLIENT_ID__,
-    returnTo: `${new URL(__AUTH0_AUDIENCE__).origin}/login`,
+    returnTo: `${new URL(__OPENCLASP_PUBLIC_URL__).origin}/login`,
   });
   location.assign(`https://${__AUTH0_DOMAIN__}/v2/logout?${parameters}`);
 }
