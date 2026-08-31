@@ -22,6 +22,7 @@ import {
   LiveSessionActivationSchema,
   LiveSessionEventSchema,
   LiveSessionOfferSchema,
+  LiveSessionStateRecordSchema,
   HostedMessageSchema,
   HostedThreadSchema,
   InteractionCompletionReportSchema,
@@ -418,6 +419,135 @@ export class HostedRepository {
 
   ensureSchema(): Promise<void> {
     return (this.initialized ??= verifyHostedMigrations(this.sql));
+  }
+
+  private async appendSourceRecord(
+    operatorId: string,
+    kind: string,
+    recordId: string,
+    payload: unknown,
+    metadata?: SourceRecordWriteMetadata,
+  ) {
+    const source = buildSourceRecordEnvelope({
+      operatorId,
+      kind,
+      recordId,
+      payload,
+      ...(metadata ? { metadata } : {}),
+    });
+    await this.sql`
+      INSERT INTO openclasp_source_records(
+        event_id, operator_id, kind, record_id, schema_name, schema_version, payload,
+        payload_digest, entity_refs, provenance, visibility, retention_class, learning_scope,
+        reported_at, ingested_at
+      ) VALUES (
+        ${source.eventId}, ${source.operatorId}, ${source.kind}, ${source.recordId},
+        ${source.schemaName}, ${source.schemaVersion}, ${JSON.stringify(source.payload)}::jsonb,
+        ${source.payloadDigest}, ${JSON.stringify(source.entityRefs)}::jsonb,
+        ${source.provenance}, ${source.visibility}, ${source.retentionClass},
+        ${source.learningScope}, ${source.reportedAt}, ${source.ingestedAt}
+      )
+      ON CONFLICT (operator_id, kind, record_id, payload_digest) DO NOTHING
+    `;
+  }
+
+  private async interactionOperatorIds(interactionId: string): Promise<string[]> {
+    const rows = await this.sql`
+      SELECT initiator_operator_id, responder_operator_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${interactionId}
+      LIMIT 1
+    `;
+    if (!rows[0]) return [];
+    return [
+      ...new Set([String(rows[0].initiator_operator_id), String(rows[0].responder_operator_id)]),
+    ];
+  }
+
+  private async journalFederatedInteraction(interactionId: string) {
+    const rows = await this.sql`
+      SELECT payload, initiator_operator_id, responder_operator_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${interactionId}
+      LIMIT 1
+    `;
+    if (!rows[0]) return;
+    const payload = FederatedInteractionSchema.parse(rows[0].payload);
+    const operatorIds = [
+      ...new Set([String(rows[0].initiator_operator_id), String(rows[0].responder_operator_id)]),
+    ];
+    await Promise.all(
+      operatorIds.map((operatorId) =>
+        this.appendSourceRecord(operatorId, 'federated_interaction', interactionId, payload, {
+          schemaName: 'openclasp.federated_interaction',
+          schemaVersion: '0.1',
+          visibility: 'shared_participants',
+          retentionClass: 'audit',
+        }),
+      ),
+    );
+  }
+
+  private async journalLiveSessionState(interactionId: string) {
+    const rows = await this.sql`
+      SELECT session.interaction_id, session.initiator_agent_id, session.responder_agent_id,
+        session.status, session.expires_at, session.created_at, session.activated_at,
+        session.completed_at, interaction.initiator_operator_id,
+        interaction.responder_operator_id
+      FROM openclasp_live_sessions session
+      INNER JOIN openclasp_federated_interactions interaction
+        ON interaction.interaction_id = session.interaction_id
+      WHERE session.interaction_id = ${interactionId}
+      LIMIT 1
+    `;
+    if (!rows[0]) return;
+    const row = rows[0];
+    const payload = LiveSessionStateRecordSchema.parse({
+      interactionId: String(row.interaction_id),
+      initiatorAgentId: String(row.initiator_agent_id),
+      responderAgentId: String(row.responder_agent_id),
+      status: String(row.status),
+      expiresAt: new Date(String(row.expires_at)).toISOString(),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      ...(row.activated_at
+        ? { activatedAt: new Date(String(row.activated_at)).toISOString() }
+        : {}),
+      ...(row.completed_at
+        ? { completedAt: new Date(String(row.completed_at)).toISOString() }
+        : {}),
+      ...(row.status === 'failed' ? { failureCode: 'session_failed' } : {}),
+    });
+    const operatorIds = [
+      ...new Set([String(row.initiator_operator_id), String(row.responder_operator_id)]),
+    ];
+    await Promise.all(
+      operatorIds.map((operatorId) =>
+        this.appendSourceRecord(operatorId, 'live_session_state', interactionId, payload, {
+          schemaName: 'openclasp.live_session_state',
+          schemaVersion: '0.1',
+          visibility: 'shared_participants',
+          retentionClass: 'audit',
+          reportedAt: payload.completedAt ?? payload.activatedAt ?? payload.createdAt,
+        }),
+      ),
+    );
+  }
+
+  private async journalLiveSessionEvent(payload: Record<string, unknown>) {
+    const interactionId = String(payload.interactionId ?? '');
+    const eventId = String(payload.eventId ?? '');
+    if (!interactionId || !eventId) return;
+    const operatorIds = await this.interactionOperatorIds(interactionId);
+    await Promise.all(
+      operatorIds.map((operatorId) =>
+        this.appendSourceRecord(operatorId, 'live_session_event', eventId, payload, {
+          schemaName: 'openclasp.live_session_event',
+          schemaVersion: '0.1',
+          visibility: 'shared_participants',
+          retentionClass: 'audit',
+        }),
+      ),
+    );
   }
 
   getRuntimeVerificationKey() {
@@ -1743,8 +1873,10 @@ export class HostedRepository {
         responder_session_id = EXCLUDED.responder_session_id,
         initiator_endpoint = EXCLUDED.initiator_endpoint,
         responder_endpoint = EXCLUDED.responder_endpoint,
-        status = 'preparing', expires_at = EXCLUDED.expires_at, last_error = NULL
+        status = 'preparing', expires_at = EXCLUDED.expires_at,
+        activated_at = NULL, completed_at = NULL, last_error = NULL
     `;
+    await this.journalLiveSessionState(interaction.interactionId);
     const baseUrl = (process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(
       /\/$/,
       '',
@@ -1833,6 +1965,7 @@ export class HostedRepository {
         SET status = 'active', activated_at = NOW(), last_error = NULL
         WHERE interaction_id = ${interaction.interactionId}
       `;
+      await this.journalLiveSessionState(interaction.interactionId);
       await this.sql`
         UPDATE openclasp_agent_runtimes
         SET last_seen_at = NOW(), last_error = NULL, updated_at = NOW()
@@ -1849,6 +1982,7 @@ export class HostedRepository {
         UPDATE openclasp_live_sessions SET status = 'failed', last_error = ${reason}
         WHERE interaction_id = ${interaction.interactionId}
       `;
+      await this.journalLiveSessionState(interaction.interactionId);
       throw error;
     }
   }
@@ -2175,6 +2309,10 @@ export class HostedRepository {
             updated_at = NOW()
           WHERE interaction_id = ${stored.interactionId} AND status = 'active'
         `,
+      ]);
+      await Promise.all([
+        this.journalLiveSessionState(stored.interactionId),
+        this.journalFederatedInteraction(stored.interactionId),
       ]);
     } else {
       const requested = await this.requestRuntimeFinalization(
@@ -2722,6 +2860,15 @@ export class HostedRepository {
             WHERE status = 'expired' AND expires_at <= ${now.toISOString()}
           )
       `;
+      await Promise.all(
+        expiredInteractions.flatMap((row) => {
+          const interactionId = String(row.interaction_id);
+          return [
+            this.journalFederatedInteraction(interactionId),
+            this.journalLiveSessionState(interactionId),
+          ];
+        }),
+      );
     }
     const [rows, backfillRows] = await Promise.all([
       this.sql`
@@ -2955,6 +3102,7 @@ export class HostedRepository {
       VALUES (${event.interactionId}, ${event.eventId}, ${event.agentId}, ${event.sequence}, ${eventWithAttestation}::jsonb)
       ON CONFLICT DO NOTHING
     `;
+    await this.journalLiveSessionEvent(JSON.parse(eventWithAttestation) as Record<string, unknown>);
     return { message: this.hostedMessage(inserted[0]), deduplicated: false };
   }
 
@@ -3145,6 +3293,11 @@ export class HostedRepository {
       ON CONFLICT DO NOTHING
       RETURNING event_id
     `;
+    if (rows.length)
+      await this.journalLiveSessionEvent({
+        ...event,
+        attestation,
+      });
     if (event.type === 'session_completed' || event.type === 'session_failed') {
       const terminal = await this.sql`
         SELECT COUNT(DISTINCT agent_id) AS count
@@ -3168,6 +3321,10 @@ export class HostedRepository {
             updated_at = NOW()
           WHERE interaction_id = ${event.interactionId} AND status = 'active'
         `;
+        await Promise.all([
+          this.journalLiveSessionState(event.interactionId),
+          this.journalFederatedInteraction(event.interactionId),
+        ]);
       }
     }
     return {
@@ -3242,6 +3399,7 @@ export class HostedRepository {
       RETURNING payload
     `;
     const stored = FederatedInteractionSchema.parse(rows[0]?.payload);
+    await this.journalFederatedInteraction(stored.interactionId);
     const profiles = await this.sql`
       SELECT payload FROM openclasp_records
       WHERE operator_id = ${responder.operator_id}
@@ -3263,11 +3421,15 @@ export class HostedRepository {
 
   async listFederatedInteractions(operatorId: string): Promise<FederatedInteraction[]> {
     await this.ensureSchema();
-    await this.sql`
+    const expired = await this.sql`
       UPDATE openclasp_federated_interactions
       SET status = 'expired', payload = jsonb_set(payload, '{status}', '"expired"'::jsonb), updated_at = NOW()
       WHERE status = 'pending' AND expires_at <= NOW()
+      RETURNING interaction_id
     `;
+    await Promise.all(
+      expired.map((row) => this.journalFederatedInteraction(String(row.interaction_id))),
+    );
     const rows = await this.sql`
       SELECT payload FROM openclasp_federated_interactions
       WHERE initiator_operator_id = ${operatorId} OR responder_operator_id = ${operatorId}
@@ -3565,6 +3727,7 @@ export class HostedRepository {
         AND (${expectedUpdatedAt ?? null}::text IS NULL OR payload->>'updatedAt' = ${expectedUpdatedAt ?? null})
       RETURNING interaction_id
     `;
+    if (rows.length) await this.journalFederatedInteraction(interactionId);
     return rows.length > 0;
   }
 

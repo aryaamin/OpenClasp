@@ -469,6 +469,20 @@ export const LiveSessionEventSchema = z
       });
   });
 
+export const LiveSessionStateRecordSchema = z
+  .object({
+    interactionId: z.string().uuid(),
+    initiatorAgentId: z.string().min(1),
+    responderAgentId: z.string().min(1),
+    status: z.enum(['preparing', 'active', 'completed', 'failed']),
+    expiresAt: z.string().datetime(),
+    createdAt: z.string().datetime(),
+    activatedAt: z.string().datetime().optional(),
+    completedAt: z.string().datetime().optional(),
+    failureCode: z.literal('session_failed').optional(),
+  })
+  .strict();
+
 export const CompletionOutcomeSchema = z.enum(['success', 'partial', 'failure', 'cancelled']);
 
 export const SuccessCriterionAssessmentSchema = z
@@ -856,6 +870,7 @@ export type LiveSessionOffer = z.infer<typeof LiveSessionOfferSchema>;
 export type LiveSessionAcceptance = z.infer<typeof LiveSessionAcceptanceSchema>;
 export type LiveSessionActivation = z.infer<typeof LiveSessionActivationSchema>;
 export type LiveSessionEvent = z.infer<typeof LiveSessionEventSchema>;
+export type LiveSessionStateRecord = z.infer<typeof LiveSessionStateRecordSchema>;
 export type RequirementAssessment = z.infer<typeof RequirementAssessmentSchema>;
 export type CounterpartyBrief = z.infer<typeof CounterpartyBriefSchema>;
 export type CompletionOutcome = z.infer<typeof CompletionOutcomeSchema>;

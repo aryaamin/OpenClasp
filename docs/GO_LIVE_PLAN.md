@@ -326,8 +326,10 @@ verified outcomes.
 - [x] Replace startup DDL with explicit, numbered database migrations.
 - [x] Add an append-only source-event journal beside mutable operational projections. Each distinct
       hosted-record snapshot written through the repository is retained rather than overwritten.
-- [ ] Route federated-interaction changes, live-session records, and direct projection mutations
-      through the source journal; record explicit tombstones for governed deletions.
+- [x] Journal federated-interaction revisions, structured live-session events, and privacy-filtered
+      live-session state transitions for both participants.
+- [ ] Route remaining direct projection mutations through the source journal and record explicit
+      tombstones for governed deletions.
 - [x] Add `schemaName`, `schemaVersion`, `ingestedAt`, `reportedAt`, `provenance`, `visibility`,
       `retentionClass`, learning scope, entity references, and a canonical digest to retained source
       records.

@@ -42,6 +42,9 @@ export const SOURCE_JOURNAL_RECORD_KINDS = new Set([
   'interaction_conclusion',
   'interaction_feedback',
   'learning_eligibility',
+  'federated_interaction',
+  'live_session_event',
+  'live_session_state',
   'profile_delta',
   'receipt',
   'revocation',
@@ -65,8 +68,11 @@ const OPERATIONAL_RECORD_KINDS = new Set(['counterparty_brief', 'feedback_reques
 const SHARED_RECORD_KINDS = new Set([
   'completion_report',
   'contract',
+  'federated_interaction',
   'interaction_conclusion',
   'learning_eligibility',
+  'live_session_event',
+  'live_session_state',
   'receipt',
 ]);
 

@@ -4,7 +4,11 @@ import {
   buildSourceRecordEnvelope,
   shouldJournalSourceRecord,
 } from '@openclasp/persistence';
-import { SourceRecordEnvelopeSchema, canonicalHash } from '@openclasp/protocol';
+import {
+  LiveSessionStateRecordSchema,
+  SourceRecordEnvelopeSchema,
+  canonicalHash,
+} from '@openclasp/protocol';
 
 describe('production source record journal', () => {
   it('wraps a hosted record with explicit lineage and stable content integrity', () => {
@@ -85,9 +89,32 @@ describe('production source record journal', () => {
   it('journals intelligence inputs but not high-volume operational projections', () => {
     expect(shouldJournalSourceRecord('completion_report')).toBe(true);
     expect(shouldJournalSourceRecord('interaction_feedback')).toBe(true);
+    expect(shouldJournalSourceRecord('federated_interaction')).toBe(true);
+    expect(shouldJournalSourceRecord('live_session_event')).toBe(true);
+    expect(shouldJournalSourceRecord('live_session_state')).toBe(true);
     expect(shouldJournalSourceRecord('profile_delta')).toBe(true);
     expect(shouldJournalSourceRecord('presence')).toBe(false);
     expect(shouldJournalSourceRecord('profile')).toBe(false);
     expect(shouldJournalSourceRecord('feedback_request')).toBe(false);
+  });
+
+  it('keeps live-session state useful without retaining endpoints or raw errors', () => {
+    const state = {
+      interactionId: '11111111-1111-4111-8111-111111111111',
+      initiatorAgentId: 'agent:buyer',
+      responderAgentId: 'agent:provider',
+      status: 'failed',
+      expiresAt: '2026-08-31T10:30:00.000Z',
+      createdAt: '2026-08-31T10:00:00.000Z',
+      failureCode: 'session_failed',
+    } as const;
+
+    expect(LiveSessionStateRecordSchema.parse(state)).toEqual(state);
+    expect(() =>
+      LiveSessionStateRecordSchema.parse({ ...state, lastError: 'secret upstream response' }),
+    ).toThrow();
+    expect(() =>
+      LiveSessionStateRecordSchema.parse({ ...state, initiatorEndpoint: 'https://private.test' }),
+    ).toThrow();
   });
 });

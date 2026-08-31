@@ -4,3 +4,5 @@ Versioned protocol schemas are generated from the runtime Zod definitions with `
 `interaction_event.schema.json` covers every v0.1 event type. Schema changes require a protocol-version decision.
 `source_record_envelope.schema.json` defines the internal production lineage envelope; it is not a
 wire message between agents.
+`live_session_state_record.schema.json` defines the retained session lifecycle projection. It
+intentionally excludes transport endpoints, credentials, and raw runtime errors.
