@@ -1,5 +1,27 @@
-import sharp from 'sharp';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import type { PublicAgentCard } from '../../../packages/protocol/src/index.js';
+
+let sharpModule: Promise<typeof import('sharp')> | undefined;
+
+function loadSharp() {
+  if (sharpModule) return sharpModule;
+  const require = createRequire(import.meta.url);
+  const fontDirectory = join(dirname(require.resolve('geist/font/sans')), 'fonts/geist-sans');
+  const configDirectory = '/tmp/openclasp-fontconfig';
+  const cacheDirectory = join(configDirectory, 'cache');
+  const configFile = join(configDirectory, 'fonts.conf');
+  mkdirSync(cacheDirectory, { recursive: true });
+  writeFileSync(
+    configFile,
+    `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><dir>${fontDirectory}</dir><cachedir>${cacheDirectory}</cachedir></fontconfig>`,
+  );
+  process.env.FONTCONFIG_FILE = configFile;
+  process.env.FONTCONFIG_PATH = configDirectory;
+  sharpModule = import('sharp');
+  return sharpModule;
+}
 
 const shorten = (value: string, length: number) =>
   value.length > length ? `${value.slice(0, length - 1).trimEnd()}…` : value;
@@ -74,23 +96,25 @@ export async function renderAgentCardImage(card: PublicAgentCard) {
     <rect width="1200" height="630" fill="url(#background)"/>
     <rect width="1200" height="630" fill="url(#glow)"/>
     <path d="M64 66h18l10 10-10 10H64l-10-10 10-10Z" fill="none" stroke="#f04b2d" stroke-width="4"/>
-    <text x="108" y="84" fill="#f04b2d" font-family="Inter,Arial,sans-serif" font-size="27" font-weight="700" letter-spacing="-1">OpenClasp</text>
+    <text x="108" y="84" fill="#f04b2d" font-family="Geist" font-size="27" font-weight="700" letter-spacing="-1">OpenClasp</text>
     <g transform="translate(936 58)">
       <rect width="200" height="42" rx="21" fill="#44d37e0d" stroke="#44d37e88"/>
-      <text x="20" y="27" fill="#44d37e" font-family="Inter,Arial,sans-serif" font-size="16">✓ Publisher verified</text>
+      <path d="M18 21l5 5 9-11" fill="none" stroke="#44d37e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="42" y="27" fill="#44d37e" font-family="Geist" font-size="16">Publisher verified</text>
     </g>
     <g transform="translate(64 165)">
       <rect width="122" height="122" rx="28" fill="#f04b2d1a" stroke="#f04b2d80"/>
-      <text x="61" y="78" text-anchor="middle" fill="#ff8068" font-family="Inter,Arial,sans-serif" font-size="42" font-weight="700">${escapeXml(initials || 'AI')}</text>
+      <text x="61" y="78" text-anchor="middle" fill="#ff8068" font-family="Geist" font-size="42" font-weight="700">${escapeXml(initials || 'AI')}</text>
     </g>
-    <text x="220" y="176" fill="#a99e99" font-family="Inter,Arial,sans-serif" font-size="18" letter-spacing="2">${escapeXml(shorten(card.framework, 44).toUpperCase())} · AGENT CARD</text>
-    <text x="220" y="246" fill="#f7f2ef" font-family="Inter,Arial,sans-serif" font-size="${nameSize}" font-weight="700" letter-spacing="-2">${escapeXml(name)}</text>
-    <text x="220" y="308" fill="#c7bdb8" font-family="Inter,Arial,sans-serif" font-size="24">${descriptionLines(description)}</text>
-    <g font-family="Inter,Arial,sans-serif">${capabilityChips(card.capabilities)}</g>
+    <text x="220" y="176" fill="#a99e99" font-family="Geist" font-size="18" letter-spacing="2">${escapeXml(shorten(card.framework, 44).toUpperCase())} · AGENT CARD</text>
+    <text x="220" y="246" fill="#f7f2ef" font-family="Geist" font-size="${nameSize}" font-weight="700" letter-spacing="-2">${escapeXml(name)}</text>
+    <text x="220" y="308" fill="#c7bdb8" font-family="Geist" font-size="24">${descriptionLines(description)}</text>
+    <g font-family="Geist">${capabilityChips(card.capabilities)}</g>
     <line x1="64" y1="540" x2="1136" y2="540" stroke="#ffffff21"/>
-    <text x="64" y="582" fill="#8f8580" font-family="Inter,Arial,sans-serif" font-size="16">${escapeXml(publicReference)}</text>
-    <text x="1136" y="582" text-anchor="end" fill="#8f8580" font-family="Inter,Arial,sans-serif" font-size="16">Capabilities are self-declared</text>
+    <text x="64" y="582" fill="#8f8580" font-family="Geist" font-size="16">${escapeXml(publicReference)}</text>
+    <text x="1136" y="582" text-anchor="end" fill="#8f8580" font-family="Geist" font-size="16">Capabilities are self-declared</text>
   </svg>`;
 
+  const { default: sharp } = await loadSharp();
   return sharp(Buffer.from(svg)).png().toBuffer();
 }

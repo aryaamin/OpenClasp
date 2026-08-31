@@ -33,6 +33,7 @@
     "@openclasp/protocol": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "fastify": "^5.6.0",
+    "geist": "^1.7.2",
     "jose": "^6.2.10",
     "json-canonicalize": "^3.0.0",
     "mcp-handler": "^2.0.0",
