@@ -616,7 +616,7 @@ function PublicLanding({
                 type="button"
                 onClick={() => void continueWith('google')}
               >
-                <span className="authProviderIcon" aria-hidden="true">
+                <span className="authProviderIcon authProviderIconGoogle" aria-hidden="true">
                   <GoogleMark />
                 </span>
                 <span>continue with google</span>
