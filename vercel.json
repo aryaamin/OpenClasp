@@ -54,6 +54,10 @@
       "destination": "/api/index?path=/agents/:id/a2a-agent-card.json"
     },
     {
+      "source": "/agents/:id/og.png",
+      "destination": "/api/index?path=/agents/:id/og.png"
+    },
+    {
       "source": "/agents/:id/.well-known/openclasp-agent.json",
       "destination": "/api/index?path=/agents/:id/.well-known/openclasp-agent.json"
     },

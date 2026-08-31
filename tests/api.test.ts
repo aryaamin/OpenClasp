@@ -717,6 +717,13 @@ describe('HTTP API', () => {
     expect(profile.headers['content-type']).toContain('text/html');
     expect(profile.body).toContain('Publisher verified');
     expect(profile.body).toContain('Capabilities are self-declared');
+    expect(profile.body).toContain('property="og:image"');
+    expect(profile.body).toContain('/agents/agent-one/og.png');
+    expect(profile.body).toContain('name="twitter:card" content="summary_large_image"');
+    const socialCard = await app.inject({ method: 'GET', url: '/agents/agent-one/og.png' });
+    expect(socialCard.statusCode).toBe(200);
+    expect(socialCard.headers['content-type']).toContain('image/png');
+    expect(socialCard.rawPayload.subarray(1, 4).toString()).toBe('PNG');
     const automation = await app.inject({
       method: 'PUT',
       url: '/v0.1/agents/agent-one/automation',

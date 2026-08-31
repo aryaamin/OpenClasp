@@ -30,7 +30,8 @@ With a new account, verify the guided first run can add an externally hosted age
 the exact public fields, publish its Agent Card, and return working profile and JSON links. Refresh
 between creation and publication to prove progress is derived from persisted records rather than
 browser-only state. Confirm the public page says only that the publisher account is verified and
-that capabilities are self-declared.
+that capabilities are self-declared. Confirm the profile includes Open Graph and Twitter large-image
+metadata, and that its `/agents/{id}/og.png` URL returns a 1200×630 PNG.
 
 Verify `/history` and `/insights` with representative pending, active, completed, conflicting, and
 ineligible records. Check dark and light themes at desktop and 390px widths. Required results:

@@ -31,6 +31,7 @@ import {
   rejectAgentSetup,
 } from '../../../packages/persistence/src/onboarding.js';
 import { FixedWindowRateLimiter } from './security.js';
+import { renderAgentCardImage } from './agent-card-image.js';
 
 type DashboardRepository = Pick<
   HostedRepository,
@@ -358,6 +359,15 @@ export function buildApi(
       if (!card.transports.length) throw new Error('Agent has not published an A2A endpoint');
       return toA2AAgentCard(card);
     });
+    router.get('/agents/:id/og.png', async (request, reply) => {
+      if (!repository) throw new Error('Hosted persistence is not configured');
+      const card = await repository.getPublishedAgent((request.params as { id: string }).id);
+      if (!card) throw new Error('Published agent not found');
+      return reply
+        .type('image/png')
+        .header('Cache-Control', 'public, max-age=0, s-maxage=86400, stale-while-revalidate=604800')
+        .send(await renderAgentCardImage(card));
+    });
     router.get('/directory/resolve', async (request) => {
       if (!repository) throw new Error('Hosted persistence is not configured');
       const { reference } = z
@@ -385,6 +395,7 @@ export function buildApi(
       );
       if (!result) throw new Error('Published agent not found');
       const { card } = result;
+      const socialImageUrl = `${publicBaseUrl(request)}/agents/${encodeURIComponent(card.agentId)}/og.png`;
       const capabilities = card.capabilities
         .map((capability) => `<li>${escapeHtml(capability)}</li>`)
         .join('');
@@ -401,12 +412,14 @@ export function buildApi(
       return reply.type('text/html; charset=utf-8').send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(card.name)} · OpenClasp</title><meta name="description" content="${escapeHtml(card.description)}">
-<meta property="og:title" content="${escapeHtml(card.name)} · OpenClasp agent profile"><meta property="og:description" content="${escapeHtml(card.description)}">
+<link rel="canonical" href="${escapeHtml(card.profileUrl ?? card.cardUrl)}"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(card.profileUrl ?? card.cardUrl)}">
+<meta property="og:title" content="${escapeHtml(card.name)} · OpenClasp agent profile"><meta property="og:description" content="${escapeHtml(card.description)}"><meta property="og:image" content="${escapeHtml(socialImageUrl)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="${escapeHtml(`${card.name} Agent Card`)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtml(card.name)} · OpenClasp agent profile"><meta name="twitter:description" content="${escapeHtml(card.description)}"><meta name="twitter:image" content="${escapeHtml(socialImageUrl)}">
 <style>color-scheme:dark;*{box-sizing:border-box}body{margin:0;background:#0c0a0a;color:#f6f1ee;font:15px/1.55 Inter,system-ui,sans-serif}main{max-width:760px;margin:0 auto;padding:64px 24px}.brand{color:#f04b2d;font-weight:700}.verified{display:inline-block;margin:24px 0 8px;padding:5px 9px;border:1px solid #2fbf71;color:#2fbf71;border-radius:999px;font-size:12px}.verification-note{margin:0 0 24px;font-size:12px}h1{font-size:42px;line-height:1.05;margin:8px 0 12px}p{color:#a39a94}.grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:36px 0}h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#a39a94}a{color:#f04b2d;overflow-wrap:anywhere}.links{padding-top:24px;border-top:1px solid #2b2523}.status{color:${card.presence?.status === 'online' ? '#2fbf71' : '#a39a94'}}@media(max-width:600px){.grid{grid-template-columns:1fr}h1{font-size:34px}}</style>
 <script type="application/ld+json">${structured}</script></head><body><main><div class="brand">OpenClasp</div><div class="verified">✓ Publisher verified</div><p class="verification-note">OpenClasp verified control of the publishing account. Capabilities are self-declared.</p>
 <h1>${escapeHtml(card.name)}</h1><p>${escapeHtml(card.description || 'No description provided.')}</p><p class="status">${escapeHtml(card.presence?.status ?? 'offline')} · ${escapeHtml(card.agentMode.replace('_', ' '))}</p>
 <div class="grid"><section><h2>Capabilities</h2><ul>${capabilities || '<li>None published</li>'}</ul></section><section><h2>Limitations</h2><ul>${limitations || '<li>None published</li>'}</ul></section></div>
-<div class="links"><p><strong>Agent ID</strong><br>${escapeHtml(card.agentId)}</p><p><a href="${escapeHtml(card.cardUrl)}">OpenClasp card</a> · <a href="${escapeHtml(card.a2aAgentCardUrl)}">A2A Agent Card</a></p></div></main></body></html>`);
+<div class="links"><p><strong>Agent ID</strong><br>${escapeHtml(card.agentId)}</p><p><a href="${escapeHtml(card.cardUrl)}">Machine-readable card</a> · <a href="${escapeHtml(card.a2aAgentCardUrl)}">A2A Agent Card</a> · <a href="${escapeHtml(socialImageUrl)}">Social preview</a></p></div></main></body></html>`);
     });
     router.get('/v0.1/dashboard', async (request) => {
       const owner = operatorId(request);
