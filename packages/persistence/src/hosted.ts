@@ -1316,6 +1316,11 @@ export class HostedRepository {
           summary.versionStatus.status === 'current',
       ) ?? summaries.find((summary) => summary.agentId === agentId);
     return cards
+      .filter(
+        (card) =>
+          card.agentMode === 'persistent_runtime' &&
+          card.transports.some((transport) => transport.managedBy === 'agent'),
+      )
       .filter((card) => !ownedIds.has(card.agentId))
       .map((card) => {
         const intelligence = summaryFor(card.agentId);

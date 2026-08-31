@@ -611,11 +611,25 @@ function PublicLanding({
               <span className="accessBlink">_</span>
             </div>
             <div className="socialButtons">
-              <button type="button" onClick={() => void continueWith('google')}>
-                <GoogleMark /> continue with google
+              <button
+                className="authProviderButton"
+                type="button"
+                onClick={() => void continueWith('google')}
+              >
+                <span className="authProviderIcon" aria-hidden="true">
+                  <GoogleMark />
+                </span>
+                <span>continue with google</span>
               </button>
-              <button type="button" onClick={() => void continueWith('github')}>
-                <GitHubMark /> continue with github
+              <button
+                className="authProviderButton"
+                type="button"
+                onClick={() => void continueWith('github')}
+              >
+                <span className="authProviderIcon" aria-hidden="true">
+                  <GitHubMark />
+                </span>
+                <span>continue with github</span>
               </button>
               {onPreview && (
                 <button type="button" onClick={() => void onPreview()}>
@@ -1522,12 +1536,16 @@ function OutcomeSymbol({ outcome }: { outcome: AgentHistoryItem['outcome'] }) {
 }
 
 function Marketplace({ data }: { data: DashboardData }) {
+  const cloudAgents = useMemo(
+    () => data.agents.filter((agent) => agent.agentMode === 'persistent_runtime'),
+    [data.agents],
+  );
   const [query, setQuery] = useState('');
   const [selectedAgentId, setSelectedAgentId] = useState(() =>
-    String(data.agents[0]?.agentId ?? ''),
+    String(cloudAgents[0]?.agentId ?? ''),
   );
   const [taskCategory, setTaskCategory] = useState(() =>
-    String(data.agents[0]?.capabilities?.[0] ?? 'general'),
+    String(cloudAgents[0]?.capabilities?.[0] ?? 'general'),
   );
   const [results, setResults] = useState<Record<string, any>[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1541,12 +1559,19 @@ function Marketplace({ data }: { data: DashboardData }) {
       if (selectedAgentId) parameters.set('agentId', selectedAgentId);
       if (taskCategory.trim()) parameters.set('taskCategory', taskCategory.trim());
       remoteApi(`/v0.1/marketplace?${parameters}`, { signal: controller.signal })
-        .then((result) => setResults(result as Record<string, any>[]))
+        .then((result) =>
+          setResults(
+            (result as Record<string, any>[]).filter(
+              (item) => item.card?.agentMode === 'persistent_runtime',
+            ),
+          ),
+        )
         .catch((reason: unknown) => {
           if (controller.signal.aborted) return;
           setError(reason instanceof Error ? reason.message : 'Directory unavailable');
           setResults(
             data.agents
+              .filter((agent) => agent.agentMode === 'persistent_runtime')
               .filter((agent) =>
                 data.publications.some(
                   (publication) => publication.agentId === agent.agentId && publication.published,
@@ -1594,9 +1619,9 @@ function Marketplace({ data }: { data: DashboardData }) {
     <div className="workspacePage marketplacePage">
       <header className="workspaceHead marketplaceHead">
         <div>
-          <p className="eyebrow">public directory</p>
+          <p className="eyebrow">verified cloud directory</p>
           <h1>Marketplace</h1>
-          <p>Find verified agents ready to work.</p>
+          <p>Find persistent cloud agents ready for direct A2A work.</p>
         </div>
         <div className="marketFilters">
           <label>
@@ -1605,13 +1630,13 @@ function Marketplace({ data }: { data: DashboardData }) {
               value={selectedAgentId}
               onChange={(event) => {
                 const agentId = event.target.value;
-                const agent = data.agents.find((item) => item.agentId === agentId);
+                const agent = cloudAgents.find((item) => item.agentId === agentId);
                 setSelectedAgentId(agentId);
                 setTaskCategory(String(agent?.capabilities?.[0] ?? 'general'));
                 setLoading(true);
               }}
             >
-              {data.agents.map((agent) => (
+              {cloudAgents.map((agent) => (
                 <option value={agent.agentId} key={agent.agentId}>
                   {agent.name ?? agent.agentId}
                 </option>
@@ -1645,8 +1670,8 @@ function Marketplace({ data }: { data: DashboardData }) {
         </div>
       </header>
       <div className="marketContext">
-        Recommendations combine public capabilities with your private, verified history. Scores are
-        task-specific and confidence-adjusted.
+        Cloud runtimes only. Recommendations combine public capabilities with your private, verified
+        history; scores remain task-specific and confidence-adjusted.
       </div>
       {error && !results.length ? <div className="errorBar">{error}</div> : null}
       <section className="marketGrid" aria-live="polite">
@@ -1656,7 +1681,6 @@ function Marketplace({ data }: { data: DashboardData }) {
           results.map((result) => {
             const agent = result.card;
             const online = agent.presence?.status === 'online';
-            const temporary = agent.agentMode === 'temporary_chat';
             const intelligence = result.contextualReliability;
             return (
               <article className="marketCard" key={agent.agentId}>
@@ -1684,10 +1708,10 @@ function Marketplace({ data }: { data: DashboardData }) {
                 </div>
                 <div className="marketMeta">
                   <span>
-                    <ShieldCheck /> Verified
+                    <ShieldCheck /> Publisher verified
                   </span>
                   <span>
-                    {temporary ? <MessageCircle /> : <Cloud />} {temporary ? 'Temporary' : 'Cloud'}
+                    <Cloud /> Cloud runtime
                   </span>
                 </div>
                 <div className="marketIntelligence">

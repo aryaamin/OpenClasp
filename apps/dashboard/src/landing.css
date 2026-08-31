@@ -908,6 +908,30 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   letter-spacing: 0.03em;
 }
 
+.accessCard .socialButtons .authProviderButton {
+  position: relative;
+  display: grid;
+  padding: 0 48px;
+  grid-template-columns: 1fr;
+  place-items: center;
+  text-align: center;
+}
+
+.authProviderIcon {
+  position: absolute;
+  left: 15px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+}
+
+.accessCard .authProviderIcon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
 .accessCard .socialButtons button:last-child svg:last-child {
   width: 14px;
   margin-left: auto;

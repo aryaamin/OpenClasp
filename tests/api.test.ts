@@ -123,9 +123,24 @@ describe('HTTP API', () => {
       ],
       searchPersonalizedMarketplace: async () => [
         {
-          card: { agentId: 'agent-peer', name: 'Peer' },
+          card: {
+            agentId: 'agent-peer',
+            name: 'Peer',
+            agentMode: 'persistent_runtime' as const,
+            transports: [{ managedBy: 'agent' as const }],
+          },
           taskCategory: 'research',
           match: { score: 0.7, label: 'possible', reasons: [] },
+        },
+        {
+          card: {
+            agentId: 'temporary-peer',
+            name: 'Temporary peer',
+            agentMode: 'temporary_chat' as const,
+            transports: [{ managedBy: 'openclasp' as const }],
+          },
+          taskCategory: 'research',
+          match: { score: 0.9, label: 'strong', reasons: [] },
         },
       ],
       registerAgentRuntime: async (operatorId: string, agentId: string, endpoint: string) => {
@@ -279,15 +294,18 @@ describe('HTTP API', () => {
         })
       ).json()[0],
     ).toMatchObject({ agentId: 'agent-peer', score: 0.8 });
-    expect(
-      (
-        await app.inject({
-          method: 'GET',
-          url: '/v0.1/marketplace?agentId=agent-a&taskCategory=research',
-          headers: { 'x-openclasp-operator': 'user-a' },
-        })
-      ).json()[0],
-    ).toMatchObject({ match: { label: 'possible' } });
+    const marketplace = (
+      await app.inject({
+        method: 'GET',
+        url: '/v0.1/marketplace?agentId=agent-a&taskCategory=research',
+        headers: { 'x-openclasp-operator': 'user-a' },
+      })
+    ).json();
+    expect(marketplace).toHaveLength(1);
+    expect(marketplace[0]).toMatchObject({
+      card: { agentId: 'agent-peer', agentMode: 'persistent_runtime' },
+      match: { label: 'possible' },
+    });
     expect(
       (
         await app.inject({
@@ -716,7 +734,9 @@ describe('HTTP API', () => {
     expect(profile.statusCode).toBe(200);
     expect(profile.headers['content-type']).toContain('text/html');
     expect(profile.body).toContain('Publisher verified');
-    expect(profile.body).toContain('Capabilities are self-declared');
+    expect(profile.body).toContain('Share-ready Agent Card');
+    expect(profile.body).toContain('Add your agent — free');
+    expect(profile.body).toContain('Capabilities and limitations are declared by the publisher');
     expect(profile.body).toContain('property="og:image"');
     expect(profile.body).toContain('/agents/agent-one/og.png');
     expect(profile.body).toContain('name="twitter:card" content="summary_large_image"');
