@@ -109,20 +109,13 @@ describe('safe connection automation', () => {
     );
   });
 
-  it('publishes an OpenClasp-managed endpoint only for temporary chat identities', () => {
+  it('publishes only an agent-managed runtime endpoint', () => {
     const { agent } = fixture();
-    const temporaryAgent = { ...agent, agentMode: 'temporary_chat' as const };
-    delete temporaryAgent.a2aEndpoint;
-    const temporary = buildPublicAgentCard(temporaryAgent, 'https://openclasp.example');
     const persistent = buildPublicAgentCard(
       { ...agent, agentMode: 'persistent_runtime' },
       'https://openclasp.example',
     );
-    expect(temporary.transports[0]).toMatchObject({
-      endpoint: 'https://openclasp.example/a2a/temporary/agent%3Ab',
-      managedBy: 'openclasp',
-    });
-    expect(temporary).toMatchObject({
+    expect(persistent).toMatchObject({
       slug: expect.stringMatching(/^research-agent-/),
       profileUrl: expect.stringContaining('/a/research-agent-'),
       verification: { status: 'verified', method: 'openclasp_oauth_account' },

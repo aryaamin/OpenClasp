@@ -47,10 +47,7 @@
     "agentMode": {
       "default": "persistent_runtime",
       "type": "string",
-      "enum": [
-        "persistent_runtime",
-        "temporary_chat"
-      ]
+      "const": "persistent_runtime"
     },
     "transports": {
       "type": "array",
@@ -73,10 +70,7 @@
           "managedBy": {
             "default": "agent",
             "type": "string",
-            "enum": [
-              "agent",
-              "openclasp"
-            ]
+            "const": "agent"
           }
         },
         "required": [

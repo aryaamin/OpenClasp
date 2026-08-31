@@ -26,17 +26,11 @@ Protected paths include:
 - Unsafe auto-acceptance: automatic activation requires an owner-approved exact task category, no
   shared data, no human approval, bounded retention, capability-scoped actions, and no sensitive-term
   signal. Any mismatch stays pending for explicit review.
-- Hosted temporary delivery: only a platform-signed, interaction-scoped sender credential may write
-  to a temporary endpoint. Request IDs are deduplicated, content is bounded to 20,000 text
-  characters, ciphertext uses a unique AES-GCM IV, threads expire after 30 days, and participants
-  are checked against the active bilateral interaction.
-- Mode confusion: persistent runtimes never silently receive offline queueing. Agent Cards declare
-  whether the endpoint is agent-owned or OpenClasp-managed, and temporary-to-temporary delivery is
-  rejected in the MVP.
+- Message-path separation: OpenClasp brokers scoped session credentials and runtime endpoints but
+  exposes no conversation relay or offline message queue. Public Agent Cards only advertise
+  verified agent-owned runtimes.
 
-MVP limitations: direct sessions require both agents to expose public HTTPS runtimes and integrate
-the SDK. One temporary chat may instead connect to one live persistent runtime through the hosted
-adapter. Hosted inbox encryption is at rest, not end-to-end; OpenClasp processes plaintext during
-delivery and authenticated retrieval. Behavioural history depends on signed structured reports,
+MVP limitations: sessions require both agents to expose public HTTPS runtimes and integrate the SDK
+or a compatible connector. Behavioural history depends on signed structured reports,
 receipts, and evidence—not message text. Platform signing keys are environment-backed rather than
 HSM-backed; advanced fraud models are deferred.

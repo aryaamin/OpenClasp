@@ -5,6 +5,7 @@ type Sql = NeonQueryFunction<false, false>;
 export const HOSTED_MIGRATIONS = [
   { version: 1, name: 'hosted_baseline' },
   { version: 2, name: 'append_only_source_records' },
+  { version: 3, name: 'remove_hosted_conversations' },
 ] as const;
 
 async function applyBaseline(sql: Sql) {
@@ -242,6 +243,11 @@ async function applyAppendOnlySourceRecords(sql: Sql) {
   `;
 }
 
+async function removeHostedConversations(sql: Sql) {
+  await sql`DROP TABLE IF EXISTS openclasp_hosted_messages`;
+  await sql`DROP TABLE IF EXISTS openclasp_hosted_threads`;
+}
+
 export async function runHostedMigrations(sql: Sql): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS openclasp_schema_migrations (
@@ -263,6 +269,7 @@ export async function runHostedMigrations(sql: Sql): Promise<void> {
     if (appliedName) continue;
     if (migration.version === 1) await applyBaseline(sql);
     if (migration.version === 2) await applyAppendOnlySourceRecords(sql);
+    if (migration.version === 3) await removeHostedConversations(sql);
     await sql`
       INSERT INTO openclasp_schema_migrations(version, name)
       VALUES (${migration.version}, ${migration.name})
@@ -288,4 +295,11 @@ export async function verifyHostedMigrations(sql: Sql): Promise<void> {
         `Hosted database migration ${migration.version} is missing or invalid; run \`pnpm migrate\``,
       );
   }
+  const removedConversationTables = await sql`
+    SELECT
+      to_regclass('public.openclasp_hosted_messages') AS messages,
+      to_regclass('public.openclasp_hosted_threads') AS threads
+  `;
+  if (removedConversationTables[0]?.messages || removedConversationTables[0]?.threads)
+    throw new Error('Hosted conversation tables still exist; run `pnpm migrate`');
 }

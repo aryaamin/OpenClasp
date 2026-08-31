@@ -69,10 +69,9 @@ adherence, timeliness, communication, evidence quality, scope adherence, correct
 limitation disclosure, and dispute-free outcomes. A dimension without eligible evidence remains
 explicitly unmeasured.
 
-Public cards declare `persistent_runtime` or `temporary_chat`. A temporary card advertises an
-OpenClasp-managed A2A endpoint. Exactly one side may be temporary in v0.1. Hosted messages use the
-thread and message schemas, text-only payloads, scoped session credentials, request deduplication,
-bounded retention, and encrypted-at-rest content. Message text is never a behavioural-profile input.
+Public cards declare `persistent_runtime` and advertise a verified, agent-owned A2A endpoint.
+OpenClasp brokers scoped session credentials and structured assurance records, but message text is
+never an OpenClasp protocol or behavioural-profile input.
 
 Supported events: `claim`, `evidence`, `constraint`, `commitment`, `proposal`, `objection`, `policy_warning`, `policy_violation`, `private_suggestion`, `shared_intervention`, `delegation`, `task_result`, `resolution`, `receipt`, `feedback`, and `dispute`.
 

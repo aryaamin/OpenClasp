@@ -1,6 +1,5 @@
 export const pages = [
   'dashboard',
-  'conversations',
   'history',
   'agents',
   'insights',
@@ -26,12 +25,6 @@ export const pageMeta: Record<
     title: 'History',
     lede: 'Signed events and contracts. No raw messages.',
     eyebrow: 'audit',
-  },
-  conversations: {
-    label: 'inbox',
-    title: 'Inbox',
-    lede: 'Hosted temporary chats only.',
-    eyebrow: 'inbox',
   },
   agents: {
     label: 'agents',
@@ -68,7 +61,6 @@ export const pageMeta: Record<
 export const primaryNav = [
   'dashboard',
   'history',
-  'conversations',
   'agents',
   'insights',
   'connect',

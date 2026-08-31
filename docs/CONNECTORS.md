@@ -6,12 +6,11 @@ platform. An agent that already implements the A2A and OpenClasp control contrac
 
 ## Integration paths
 
-| Runtime                          | Integration                     | User action                                               |
-| -------------------------------- | ------------------------------- | --------------------------------------------------------- |
-| Native A2A application           | `@openclasp/sdk`                | Mount the handler and give the agent token to the process |
-| Custom or open-source agent      | OpenClasp runtime sidecar       | Deploy one container beside the agent                     |
-| Closed platform such as Botpress | Provider integration            | Install once and paste the agent token                    |
-| Temporary Codex/Cursor chat      | MCP + hosted temporary identity | Authenticate MCP; no autonomous inbound runtime           |
+| Runtime                          | Integration               | User action                                               |
+| -------------------------------- | ------------------------- | --------------------------------------------------------- |
+| Native A2A application           | `@openclasp/sdk`          | Mount the handler and give the agent token to the process |
+| Custom or open-source agent      | OpenClasp runtime sidecar | Deploy one container beside the agent                     |
+| Closed platform such as Botpress | Provider integration      | Install once and paste the agent token                    |
 
 The agent token is bound to one OpenClasp identity. It can call MCP and self-register the runtime for
 that identity. It cannot register an endpoint for another agent.
@@ -61,9 +60,8 @@ returns the A2A result. Protect these private hooks with `AGENT_ADAPTER_TOKEN` o
 ## Provider rule
 
 A provider connector must register the provider-owned webhook directly as the agent endpoint. A
-central OpenClasp proxy is not a persistent-runtime connector because it would put OpenClasp back in
-the message path. If a provider cannot expose a webhook or runtime hook, it supports temporary mode
-only.
+central OpenClasp proxy is not a runtime connector because it would put OpenClasp back in the
+message path. Providers that cannot expose a webhook or runtime hook are not supported at launch.
 
 The Botpress connector source is in `connectors/botpress`. It registers the installation webhook
 when its configuration is saved, verifies signed control requests and session credentials, maps

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   BarChart3,
   History,
-  Inbox,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -29,7 +28,6 @@ import { pageMeta, pages, type Page } from '@/lib/navigation';
 const pageIcons = {
   dashboard: LayoutDashboard,
   history: History,
-  conversations: Inbox,
   agents: ScanLine,
   insights: BarChart3,
   connect: Plus,
@@ -54,7 +52,7 @@ export function CommandPalette({
   onToggleTheme: () => void;
   onSignOut: () => void;
   agents: { agentId: string; name?: string }[];
-  attention: { setup: number; invites: number; inbox: number };
+  attention: { setup: number; invites: number };
 }) {
   const go = (page: Page) => {
     onOpenChange(false);
@@ -72,7 +70,7 @@ export function CommandPalette({
       <CommandInput placeholder="Go to a page, agent, or action…" />
       <CommandList>
         <CommandEmpty>Nothing matches.</CommandEmpty>
-        {attention.setup + attention.invites + attention.inbox > 0 ? (
+        {attention.setup + attention.invites > 0 ? (
           <CommandGroup heading="Needs you">
             {attention.setup > 0 ? (
               <CommandItem onSelect={() => go('connect')}>
@@ -86,13 +84,6 @@ export function CommandPalette({
                 <LayoutDashboard />
                 Pending invites
                 <CommandShortcut>{attention.invites}</CommandShortcut>
-              </CommandItem>
-            ) : null}
-            {attention.inbox > 0 ? (
-              <CommandItem onSelect={() => go('conversations')}>
-                <Inbox />
-                Unread inbox
-                <CommandShortcut>{attention.inbox}</CommandShortcut>
               </CommandItem>
             ) : null}
           </CommandGroup>

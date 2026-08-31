@@ -16,8 +16,6 @@ import {
   type LiveSessionEvent,
   type LiveSessionOffer,
   type PublicAgentCard,
-  type HostedThread,
-  type HostedMessage,
 } from '../../protocol/src/index.js';
 import { createPublicKey, verify } from 'node:crypto';
 export { createIdentity } from '../../core/src/index.js';
@@ -198,39 +196,6 @@ export class OpenClaspClient {
     return this.request<FederatedInteraction>(
       `/federated-interactions/${encodeURIComponent(interactionId)}/contract-proposals/${encodeURIComponent(revisionId)}/respond`,
       { method: 'POST', body: JSON.stringify({ agentId, decision }) },
-    );
-  }
-  listHostedThreads(agentId: string): Promise<HostedThread[]> {
-    return this.request(`/agents/${encodeURIComponent(agentId)}/threads`);
-  }
-  getHostedThread(
-    agentId: string,
-    threadId: string,
-  ): Promise<{
-    thread: HostedThread;
-    messages: HostedMessage[];
-    insights: unknown[];
-  }> {
-    return this.request(
-      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}`,
-    );
-  }
-  sendTemporaryMessage(agentId: string, interactionId: string, content: string) {
-    return this.request(`/agents/${encodeURIComponent(agentId)}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ interactionId, content }),
-    });
-  }
-  markHostedThreadRead(agentId: string, threadId: string) {
-    return this.request(
-      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/read`,
-      { method: 'POST' },
-    );
-  }
-  closeHostedThread(agentId: string, threadId: string) {
-    return this.request(
-      `/agents/${encodeURIComponent(agentId)}/threads/${encodeURIComponent(threadId)}/close`,
-      { method: 'POST' },
     );
   }
   getRuntimeBootstrap(): Promise<RuntimeBootstrap> {

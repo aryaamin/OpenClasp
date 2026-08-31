@@ -51,7 +51,6 @@ describe('HTTP API', () => {
           interactions: [],
           federatedInteractions: [],
           liveSessions: [],
-          hostedThreads: [],
           events: [],
           conflicts: [],
           receipts: [],
@@ -72,8 +71,6 @@ describe('HTTP API', () => {
         return {
           displayName: '',
           contributionEnabled: false,
-          retentionDays: 30,
-          evidenceSharing: 'ask' as const,
           rawConversationsStored: false as const,
         };
       },
@@ -132,16 +129,6 @@ describe('HTTP API', () => {
           taskCategory: 'research',
           match: { score: 0.7, label: 'possible', reasons: [] },
         },
-        {
-          card: {
-            agentId: 'temporary-peer',
-            name: 'Temporary peer',
-            agentMode: 'temporary_chat' as const,
-            transports: [{ managedBy: 'openclasp' as const }],
-          },
-          taskCategory: 'research',
-          match: { score: 0.9, label: 'strong', reasons: [] },
-        },
       ],
       registerAgentRuntime: async (operatorId: string, agentId: string, endpoint: string) => {
         calls.push(`runtime:${operatorId}:${agentId}:${endpoint}`);
@@ -163,7 +150,7 @@ describe('HTTP API', () => {
       },
       disableAgentRuntime: async (operatorId: string, agentId: string) => {
         calls.push(`disable-runtime:${operatorId}:${agentId}`);
-        return { agentId, status: 'disabled' as const };
+        return { agentId, status: 'disabled' as const, unpublished: true as const };
       },
       deleteAgent: async (operatorId: string, agentId: string) => {
         calls.push(`delete-agent:${operatorId}:${agentId}`);
@@ -248,29 +235,6 @@ describe('HTTP API', () => {
       recordSessionFeedback: async (token: string, feedback: any) => {
         calls.push(`session-feedback:${token}:${feedback.interactionId}`);
         return { feedbackId: feedback.feedbackId, status: 'submitted' as const, revealed: false };
-      },
-      receiveTemporaryMessage: async (
-        token: string,
-        agentId: string,
-        requestKey: string,
-        content: string,
-      ) => {
-        calls.push(`temporary:${token}:${agentId}:${requestKey}:${content}`);
-        return {
-          message: {
-            messageId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-            threadId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-            interactionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-            senderAgentId: 'agent-peer',
-            recipientAgentId: agentId,
-            contentType: 'text/plain' as const,
-            content,
-            contentHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            delivery: 'delivered' as const,
-            createdAt: new Date().toISOString(),
-          },
-          deduplicated: false,
-        };
       },
     };
     const app = buildApi(undefined, undefined, repository);
@@ -611,39 +575,13 @@ describe('HTTP API', () => {
       accessToken: { name: 'Botpress', scopes: ['mcp:access', 'runtime:connect'] },
     });
     expect(calls.at(-1)).toMatch(/^issue-token:user-a:agent_.*:Botpress:365$/);
-    expect(
-      (
-        await app.inject({
-          method: 'POST',
-          url: '/a2a/temporary/agent-a',
-          payload: {
-            jsonrpc: '2.0',
-            id: 'request-1',
-            method: 'message/send',
-            params: { message: { parts: [{ kind: 'text', text: 'Hello engineer' }] } },
-          },
-        })
-      ).statusCode,
-    ).toBe(401);
-    const temporaryDelivery = await app.inject({
+    const removedConversationRoute = await app.inject({
       method: 'POST',
       url: '/a2a/temporary/agent-a',
       headers: { authorization: 'Bearer scoped-token' },
-      payload: {
-        jsonrpc: '2.0',
-        id: 'request-1',
-        method: 'message/send',
-        params: { message: { parts: [{ kind: 'text', text: 'Hello engineer' }] } },
-      },
+      payload: {},
     });
-    expect(temporaryDelivery.statusCode).toBe(200);
-    expect(temporaryDelivery.json()).toMatchObject({
-      result: {
-        task: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state: 'submitted' },
-        privacyMode: 'openclasp_hosted_temporary',
-      },
-    });
-    expect(calls.at(-1)).toBe('temporary:scoped-token:agent-a:request-1:Hello engineer');
+    expect(removedConversationRoute.statusCode).toBe(404);
     await app.close();
   });
 

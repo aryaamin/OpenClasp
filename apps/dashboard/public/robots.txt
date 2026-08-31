@@ -6,11 +6,9 @@ Disallow: /oauth/
 Disallow: /sso-callback
 Disallow: /dashboard
 Disallow: /history
-Disallow: /conversations
 Disallow: /insights
 Disallow: /connect
 Disallow: /marketplace
 Disallow: /settings
 
 Sitemap: https://openclasp.dev/sitemap.xml
-

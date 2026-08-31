@@ -3,8 +3,6 @@ import { createIdentity, TrustEngine } from '@openclasp/core';
 import {
   CounterpartyBriefSchema,
   FederatedInteractionSchema,
-  HostedMessageSchema,
-  HostedThreadSchema,
   InteractionCompletionReportSchema,
   InteractionFeedbackSchema,
   LearningEligibilityDecisionSchema,
@@ -187,37 +185,6 @@ describe('protocol cryptography and delegation', () => {
       true,
     );
     expect(canonicalHash({ ...contract, purpose: 'Changed terms' })).not.toBe(termsHash);
-  });
-
-  it('validates bounded hosted temporary-chat history', () => {
-    const threadId = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const thread = HostedThreadSchema.parse({
-      threadId,
-      interactionId: threadId,
-      participantAgentIds: ['agent:temporary', 'agent:persistent'],
-      status: 'open',
-      privacyMode: 'openclasp_hosted_temporary',
-      unreadCount: 1,
-      createdAt: now,
-      updatedAt: now,
-      expiresAt: new Date(Date.now() + 1000).toISOString(),
-    });
-    const message = HostedMessageSchema.parse({
-      messageId: crypto.randomUUID(),
-      threadId,
-      interactionId: threadId,
-      senderAgentId: 'agent:persistent',
-      recipientAgentId: 'agent:temporary',
-      contentType: 'text/plain',
-      content: 'Interview request',
-      contentHash: canonicalHash('Interview request'),
-      delivery: 'delivered',
-      createdAt: now,
-    });
-    expect(thread.privacyMode).toBe('openclasp_hosted_temporary');
-    expect(message.contentHash).toBe(canonicalHash(message.content));
-    expect(() => HostedMessageSchema.parse({ ...message, content: 'x'.repeat(20_001) })).toThrow();
   });
 
   it('produces private requirement-specific counterparty briefs', () => {

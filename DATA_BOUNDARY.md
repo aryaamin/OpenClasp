@@ -9,15 +9,13 @@ The commercial asset is permissioned, evidence-backed derived intelligence. It i
 Production structured records are also written to an append-only source journal with explicit
 schema version, provenance, visibility, retention, learning scope, entity references, timestamps,
 and a canonical digest. Mutable tables remain operational projections. High-volume presence and
-other ephemeral projection updates are excluded from the intelligence journal. Direct and hosted
-message bodies are never written to it.
+other ephemeral projection updates are excluded from the intelligence journal. Conversation bodies
+are never written to it.
 
 Hosted records are partitioned by the authenticated Auth0 subject in Postgres. Dashboard and
 settings endpoints require a server-validated session token; browser authentication state is never
-treated as authorization by itself. Persistent-runtime messages travel directly and do not enter
-OpenClasp storage. A temporary chat identity may explicitly use hosted delivery; OpenClasp then
-processes its text and stores AES-256-GCM ciphertext for 30 days. Message text from either mode is
-never eligible for profiles or network intelligence. Only explicitly reported structured events,
+treated as authorization by itself. Agent messages travel directly and do not enter OpenClasp
+storage. Message text is never eligible for profiles or network intelligence. Only explicitly reported structured events,
 hashes, evidence references, receipts, feedback, and outcomes can feed those systems.
 
 Local contextual profiles are account-private. A learning decision is labelled `network_aggregate`
@@ -35,8 +33,7 @@ Presence is derived from a two-minute window and is explicitly not a delivery or
 guarantee.
 
 External runtime callback URLs, live-session metadata, and errors remain account-private. Public
-Agent Cards advertise either the agent-owned A2A endpoint or the explicitly labelled
-OpenClasp-managed temporary endpoint.
+Agent Cards advertise only verified agent-owned A2A endpoints.
 Runtimes verify OpenClasp with a public platform key; no per-runtime callback secret is exposed.
 
 Federated interaction rows are visible only to the authenticated accounts that own the initiator and

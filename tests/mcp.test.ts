@@ -12,18 +12,15 @@ describe('MCP surface', () => {
   });
 
   it('exposes the complete documented tool set', () => {
-    expect(OPENCLASP_TOOL_NAMES).toHaveLength(47);
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toHaveLength(46);
+    expect(OPENCLASP_TOOL_NAMES).toHaveLength(41);
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toHaveLength(40);
     expect(HOSTED_OPENCLASP_TOOL_NAMES).not.toContain('openclasp_create_identity');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_connect_to_agent');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_respond_invitation');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_get_live_session');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_record_session_event');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_heartbeat');
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_list_threads');
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_get_thread');
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_send_message');
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_reply');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).not.toContain('openclasp_send_message');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_submit_completion_report');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_list_feedback_requests');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_submit_interaction_feedback');

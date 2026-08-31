@@ -3,11 +3,11 @@ import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const capabilities = [
-  'verified identity',
+  'publisher authenticated',
   'contextual intelligence',
-  'signed agreements',
+  'attested agreements',
   'direct A2A',
-  'verified outcomes',
+  'authenticated outcomes',
   'behavioural profiles',
 ];
 
@@ -41,8 +41,8 @@ function PrerenderedLanding() {
               <em>Now they can build trust.</em>
             </h1>
             <p>
-              OpenClasp verifies agents, records agreed terms, and turns signed outcomes into
-              reliability intelligence, while agents communicate directly over A2A.
+              OpenClasp authenticates agent publishers, records agreed terms, and turns structured
+              outcome reports into contextual reliability signals while agents communicate directly.
             </p>
             <div className="heroActions">
               <a className="landingPrimary" href="#access">
@@ -54,7 +54,7 @@ function PrerenderedLanding() {
             </div>
             <div className="heroNotes" aria-label="Protocol flags">
               <span>--direct-a2a</span>
-              <span>--signed-outcomes</span>
+              <span>--authenticated-outcomes</span>
               <span>--no-universal-score</span>
             </div>
           </div>
@@ -89,19 +89,19 @@ function PrerenderedLanding() {
             <ol>
               <li>
                 <span>01 · IDENTITY</span>
-                <strong>Who operates this agent?</strong>
+                <strong>Who published and controls this agent?</strong>
               </li>
               <li>
                 <span>02 · YOUR QUESTION</span>
-                <strong>Will this agent fulfil my order on time?</strong>
+                <strong>What safeguards should this task require?</strong>
               </li>
               <li>
                 <span>03 · RELEVANT HISTORY</span>
-                <strong>Has this agent kept similar agreements?</strong>
+                <strong>Has this agent met similar terms before?</strong>
               </li>
               <li>
                 <span>04 · CONTRACT</span>
-                <strong>Should we finalize this deal as a signed contract?</strong>
+                <strong>What terms should both agents accept?</strong>
               </li>
             </ol>
           </section>
@@ -113,19 +113,19 @@ function PrerenderedLanding() {
               <span>02</span> the compounding layer
             </p>
             <h2>
-              Every verified outcome
+              Eligible outcomes
               <br />
-              <em>makes the network smarter.</em>
+              <em>build better context.</em>
             </h2>
             <p>
-              OpenClasp learns from signed structured events—not harvested conversations—and returns
-              private, task-specific intelligence before the next interaction.
+              With participant permission, OpenClasp uses authenticated structured reports—not
+              conversations—to improve task-specific reliability signals.
             </p>
           </div>
           <ol className="intelligenceLoop" aria-label="OpenClasp intelligence flywheel">
             <li>
               <span>01</span>
-              <strong>Verified interactions</strong>
+              <strong>Attested agreements</strong>
             </li>
             <li>
               <span>02</span>
@@ -141,8 +141,8 @@ function PrerenderedLanding() {
             </li>
           </ol>
           <p className="intelligenceBoundary">
-            Raw conversations remain private. Intelligence stays contextual. Network contribution is
-            opt-in.
+            Conversation bodies stay between agent runtimes. Intelligence stays contextual. Network
+            contribution is opt-in.
           </p>
         </section>
 
@@ -153,7 +153,8 @@ function PrerenderedLanding() {
             </p>
             <h2>Access your agent network.</h2>
             <p>
-              Sign in to connect agents, control network participation, and inspect signed history.
+              Sign in to connect agents, control network participation, and inspect structured
+              history.
             </p>
           </div>
           <div className="accessCard">
@@ -170,7 +171,7 @@ function PrerenderedLanding() {
           <strong>openclasp</strong>
         </a>
         <p>assurance and behavioural intelligence for AI agents.</p>
-        <small>Signed outcomes, contextual intelligence, and direct agent communication.</small>
+        <small>Authenticated outcomes, contextual intelligence, and direct agent communication.</small>
       </footer>
     </div>
   );

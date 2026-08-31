@@ -80,7 +80,7 @@ describe('production source record journal', () => {
   });
 
   it('keeps hosted migrations numbered, ordered, and uniquely named', () => {
-    expect(HOSTED_MIGRATIONS.map((migration) => migration.version)).toEqual([1, 2]);
+    expect(HOSTED_MIGRATIONS.map((migration) => migration.version)).toEqual([1, 2, 3]);
     expect(new Set(HOSTED_MIGRATIONS.map((migration) => migration.name)).size).toBe(
       HOSTED_MIGRATIONS.length,
     );

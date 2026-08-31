@@ -168,10 +168,10 @@ export const AgentTransportSchema = z.object({
   protocol: z.literal('A2A/1.0'),
   protocolBinding: z.string().min(1).default('JSONRPC'),
   endpoint: z.string().url(),
-  managedBy: z.enum(['agent', 'openclasp']).default('agent'),
+  managedBy: z.literal('agent').default('agent'),
 });
 
-export const AgentModeSchema = z.enum(['persistent_runtime', 'temporary_chat']);
+export const AgentModeSchema = z.literal('persistent_runtime');
 
 export const AgentPresenceSchema = z.object({
   status: z.enum(['online', 'offline']),
@@ -219,34 +219,6 @@ export const AgentResolutionSchema = z.object({
   verified: z.literal(true),
   card: PublicAgentCardSchema,
   resolvedAt: z.string().datetime(),
-});
-
-export const HostedThreadStatusSchema = z.enum(['open', 'closed']);
-
-export const HostedMessageSchema = z.object({
-  messageId: z.string().uuid(),
-  threadId: z.string().uuid(),
-  interactionId: z.string().uuid(),
-  senderAgentId: z.string().min(1),
-  recipientAgentId: z.string().min(1),
-  contentType: z.literal('text/plain'),
-  content: z.string().min(1).max(20_000),
-  contentHash: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
-  delivery: z.enum(['accepted', 'delivered', 'read']),
-  createdAt: z.string().datetime(),
-  readAt: z.string().datetime().optional(),
-});
-
-export const HostedThreadSchema = z.object({
-  threadId: z.string().uuid(),
-  interactionId: z.string().uuid(),
-  participantAgentIds: z.tuple([z.string().min(1), z.string().min(1)]),
-  status: HostedThreadStatusSchema,
-  privacyMode: z.literal('openclasp_hosted_temporary'),
-  unreadCount: z.number().int().nonnegative().default(0),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  expiresAt: z.string().datetime(),
 });
 
 export const ContractAcceptanceSchema = z.object({
@@ -898,8 +870,6 @@ export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
 export type PublicAgentVerification = z.infer<typeof PublicAgentVerificationSchema>;
 export type PublicAgentCard = z.infer<typeof PublicAgentCardSchema>;
 export type AgentResolution = z.infer<typeof AgentResolutionSchema>;
-export type HostedMessage = z.infer<typeof HostedMessageSchema>;
-export type HostedThread = z.infer<typeof HostedThreadSchema>;
 export type ContractAcceptance = z.infer<typeof ContractAcceptanceSchema>;
 export type ContractRevision = z.infer<typeof ContractRevisionSchema>;
 export type FederatedInteraction = z.infer<typeof FederatedInteractionSchema>;

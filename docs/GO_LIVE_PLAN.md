@@ -267,7 +267,7 @@ The v0.1 lifecycle is substantial and should be kept:
 - attested completion reports, feedback, conclusions, receipts, and profile deltas;
 - version-aware, task-specific profiles with decay;
 - local versus network learning eligibility;
-- encrypted temporary messages kept outside behavioural intelligence.
+- conversation bodies kept outside OpenClasp entirely.
 
 The current hosted persistence has production-data weaknesses:
 
@@ -343,7 +343,7 @@ verified outcomes.
 - [ ] Record every pre-interaction risk decision before activation.
 - [ ] Define normalized failure, intervention, and evidence-verification reason codes.
 - [ ] Verify account isolation for every new table and query.
-- [ ] Implement and test retention deletion for expired temporary messages and retained source data.
+- [ ] Implement and test retention deletion for retained structured source data.
 - [ ] Implement user export/deletion workflows and an auditable consent ledger.
 - [ ] Configure managed database backups and test a restore.
 - [ ] Configure production monitoring and alerts for authentication failures, persistence failures,
@@ -389,8 +389,7 @@ interactions should remain invite-only until the P0 controls pass. Public self-s
 until the controlled beta has proven isolation, retention, restore, and a complete outcome cycle.
 
 1. Keep accounts free during the controlled beta and monitor public-login abuse and activation.
-2. Require each partner to bring a real counterparty; temporary-to-temporary interactions remain
-   unsupported.
+2. Require each partner to bring a real counterparty with a verified cloud runtime.
 3. Use the guided first run to publish and share the partner's Agent Card.
 4. Define one measurable agreement and observe the first interaction end to end: contract, decision, session, outcome, feedback,
    conclusion, receipt, eligibility, and profile delta.

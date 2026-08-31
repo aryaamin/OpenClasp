@@ -59,22 +59,20 @@ run a manual cron: Vercel invokes the configured schedule with the sensitive sec
 
 ## Runtime scenarios
 
-Test both supported paths with separate accounts:
+Test the supported path with separate accounts:
 
-1. persistent ↔ persistent: both endpoints verified and online; message bodies go directly between
+1. runtime ↔ runtime: both endpoints verified and online; message bodies go directly between
    runtimes;
-2. temporary ↔ persistent: the temporary side uses the explicit hosted adapter and encrypted
-   history;
-3. stop a persistent runtime: OpenClasp must refuse session activation rather than silently relay;
-4. submit one completion report: a provisional insight and receipt appear immediately, identify the
+2. stop a runtime: OpenClasp must refuse session activation rather than silently relay;
+3. submit one completion report: a provisional insight and receipt appear immediately, identify the
    missing reporter, and both agents receive feedback requests;
-5. submit both responses or let the configured feedback window expire: the conclusion becomes final
+4. submit both responses or let the configured feedback window expire: the conclusion becomes final
 
 The sealed-feedback window is two hours by default. Set
 `OPENCLASP_FEEDBACK_WINDOW_MINUTES` to a value from 15 to 1440 to change it.
-and the eligibility decision and private contextual profile delta appear; 6. publish a new agent version: old-version history appears only as reduced-confidence context.
+and the eligibility decision and private contextual profile delta appear; 5. publish a new agent version: old-version history appears only as reduced-confidence context.
 
-Temporary ↔ temporary is intentionally unsupported in v0.1. Publishing the provider connector to
+Publishing the provider connector to
 Botpress Hub and building the sidecar image require the respective provider login and a usable
 Docker daemon; source compilation and connector bundling remain part of the automated gate.
 
@@ -91,8 +89,7 @@ Docker daemon; source compilation and connector bundling remain part of the auto
   production environment variables;
 - during relay-key rotation, move the prior value to the comma-separated
   `OPENCLASP_RELAY_PREVIOUS_KEYS` (maximum three), deploy the new active key, wait beyond the longest
-  live session and temporary-message retention window, verify old data recovery, then remove the
-  retired key;
+  longest live session, verify runtime-secret recovery, then remove the retired key;
 - revoke and reissue agent tokens created before scoped authorization was deployed;
 - Vercel Cron: `0 0 * * *` for `/api/cron-feedback`;
 - generic sidecar deployments: stable `OPENCLASP_SESSION_SECRET` and the connector variables in
@@ -100,7 +97,7 @@ Docker daemon; source compilation and connector bundling remain part of the auto
 - Node.js: pinned to the 24.x LTS major.
 
 Never print or commit production secrets, Auth0 client secrets, agent access tokens, session grants,
-temporary-message plaintext, or private feedback comments.
+conversation plaintext, or private feedback comments.
 
 The API rejects bodies above 256 KiB and applies per-instance write limits. OAuth/session functions
 have tighter limits. Vercel Firewall rules must begin in log mode, be reviewed against real traffic,

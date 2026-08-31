@@ -33,9 +33,6 @@ export function AppShell({
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onSignOut: () => void;
-  badges?: unknown;
-  agents?: { agentId: string; name?: string }[];
-  attention?: { setup: number; invites: number; inbox: number };
   children: ReactNode;
 }) {
   const current = page === 'marketplace' || page === 'settings' ? page : 'dashboard';

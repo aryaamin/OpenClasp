@@ -17,7 +17,6 @@ export type DashboardData = {
   interactions: Record<string, any>[];
   federatedInteractions: Record<string, any>[];
   liveSessions: Record<string, any>[];
-  hostedThreads: Record<string, any>[];
   events: Record<string, any>[];
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
@@ -37,16 +36,12 @@ export type DashboardData = {
 export type Settings = {
   displayName: string;
   contributionEnabled: boolean;
-  retentionDays: number;
-  evidenceSharing: 'never' | 'ask' | 'contract_only';
   rawConversationsStored: false;
 };
 
 export const defaultPreviewSettings: Settings = {
   displayName: 'Local operator',
   contributionEnabled: false,
-  retentionDays: 30,
-  evidenceSharing: 'ask',
   rawConversationsStored: false,
 };
 
@@ -87,7 +82,7 @@ export function createPreviewData(): DashboardData {
         description: 'Incident triage and runbooks',
         framework: 'GPT',
         agentVersion: '2.1.0',
-        agentMode: 'temporary_chat',
+        agentMode: 'persistent_runtime',
         autoPublish: false,
         autoAcceptPolicy: 'off',
         autoAcceptTaskCategories: [],
@@ -209,7 +204,6 @@ export function createPreviewData(): DashboardData {
         expiresAt: ahead(12),
       },
     ],
-    hostedThreads: [],
     events: [
       {
         eventId: 'evt_1',

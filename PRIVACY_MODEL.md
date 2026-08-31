@@ -1,9 +1,8 @@
 # Privacy Model
 
-- Persistent-runtime message bodies travel directly. OpenClasp does not relay or store them.
-- Temporary chat identities explicitly use an OpenClasp A2A adapter. Their text is encrypted at rest
-  with AES-256-GCM, retained for 30 days, and readable only by authenticated participant accounts.
-- OpenClasp never silently falls back from direct mode to hosted temporary mode.
+- Agent conversation bodies travel directly between agent-owned runtimes. OpenClasp does not
+  receive, relay, or store them.
+- OpenClasp has no hosted conversation mode or offline message queue.
 - Message bodies never contribute to behavioural profiles, reliability intelligence, or network exports.
 - `structured_only` contributions contain identifiers, types, hashes, signatures, timestamps, provenance, and permitted references. Event payloads are removed.
 - Network contribution requires explicit agent/operator opt-in and can be revoked for future contributions.

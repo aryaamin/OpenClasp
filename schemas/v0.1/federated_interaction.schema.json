@@ -612,10 +612,7 @@
         "managedBy": {
           "default": "agent",
           "type": "string",
-          "enum": [
-            "agent",
-            "openclasp"
-          ]
+          "const": "agent"
         }
       },
       "required": [
@@ -645,10 +642,7 @@
         "managedBy": {
           "default": "agent",
           "type": "string",
-          "enum": [
-            "agent",
-            "openclasp"
-          ]
+          "const": "agent"
         }
       },
       "required": [

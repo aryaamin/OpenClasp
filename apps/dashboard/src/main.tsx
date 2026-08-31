@@ -9,7 +9,6 @@ import {
   Copy,
   Download,
   ExternalLink,
-  MessageCircle,
   Moon,
   Search,
   Share2,
@@ -50,11 +49,11 @@ type Theme = 'dark' | 'light';
 const authTransactionKey = 'openclasp.auth0.transaction';
 const themeKey = 'openclasp.theme.v1';
 const landingCapabilities = [
-  'verified identity',
+  'publisher authenticated',
   'contextual intelligence',
-  'signed agreements',
+  'attested agreements',
   'direct A2A',
-  'verified outcomes',
+  'authenticated outcomes',
   'behavioural profiles',
 ];
 
@@ -67,7 +66,6 @@ type DashboardData = {
   interactions: Record<string, any>[];
   federatedInteractions: Record<string, any>[];
   liveSessions: Record<string, any>[];
-  hostedThreads: Record<string, any>[];
   events: Record<string, any>[];
   conflicts: Record<string, any>[];
   receipts: Record<string, any>[];
@@ -87,8 +85,6 @@ type DashboardData = {
 type Settings = {
   displayName: string;
   contributionEnabled: boolean;
-  retentionDays: number;
-  evidenceSharing: 'never' | 'ask' | 'contract_only';
   rawConversationsStored: false;
 };
 
@@ -101,7 +97,6 @@ const emptyData: DashboardData = {
   interactions: [],
   federatedInteractions: [],
   liveSessions: [],
-  hostedThreads: [],
   events: [],
   conflicts: [],
   receipts: [],
@@ -120,8 +115,6 @@ const emptyData: DashboardData = {
 const defaultSettings: Settings = {
   displayName: '',
   contributionEnabled: false,
-  retentionDays: 30,
-  evidenceSharing: 'ask',
   rawConversationsStored: false,
 };
 
@@ -332,15 +325,6 @@ function App() {
     history.pushState({}, '', `/${next}`);
     setPage(next);
   };
-  const pendingSetup = data.setupRequests.filter((request) => request.status === 'pending').length;
-  const pendingInvites = data.federatedInteractions.filter(
-    (interaction) => interaction.status === 'pending',
-  ).length;
-  const unreadThreads = data.hostedThreads.reduce(
-    (total, thread) => total + Number(thread.unreadCount ?? 0),
-    0,
-  );
-
   if (session === undefined) return <Loading />;
   if (!session)
     return import.meta.env.DEV ? (
@@ -373,16 +357,6 @@ function App() {
       theme={theme}
       onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
       onSignOut={() => void signOut(preview)}
-      badges={{
-        dashboard: pendingInvites || pendingSetup ? pendingInvites + pendingSetup : 0,
-        conversations: unreadThreads,
-        connect: pendingSetup,
-      }}
-      agents={data.agents.map((agent) => ({
-        agentId: String(agent.agentId ?? ''),
-        name: typeof agent.name === 'string' ? agent.name : undefined,
-      }))}
-      attention={{ setup: pendingSetup, invites: pendingInvites, inbox: unreadThreads }}
     >
       {preview && <div className="previewBanner">local preview · changes stay here</div>}
       {error && (
@@ -488,8 +462,8 @@ function PublicLanding({
               <em>Now they can build trust.</em>
             </h1>
             <p>
-              OpenClasp verifies agents, records agreed terms, and turns signed outcomes into
-              reliability intelligence, while agents communicate directly over A2A.
+              OpenClasp authenticates agent publishers, records agreed terms, and turns structured
+              outcome reports into contextual reliability signals while agents communicate directly.
             </p>
             <div className="heroActions">
               <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
@@ -501,7 +475,7 @@ function PublicLanding({
             </div>
             <div className="heroNotes" aria-label="Protocol flags">
               <span>--direct-a2a</span>
-              <span>--signed-outcomes</span>
+              <span>--authenticated-outcomes</span>
               <span>--no-universal-score</span>
             </div>
           </div>
@@ -537,19 +511,19 @@ function PublicLanding({
             <ol>
               <li>
                 <span>01 · IDENTITY</span>
-                <strong>Who operates this agent?</strong>
+                <strong>Who published and controls this agent?</strong>
               </li>
               <li>
                 <span>02 · YOUR QUESTION</span>
-                <strong>Will this agent fulfil my order on time?</strong>
+                <strong>What safeguards should this task require?</strong>
               </li>
               <li>
                 <span>03 · RELEVANT HISTORY</span>
-                <strong>Has this agent kept similar agreements?</strong>
+                <strong>Has this agent met similar terms before?</strong>
               </li>
               <li>
                 <span>04 · CONTRACT</span>
-                <strong>Should we finalize this deal as a signed contract?</strong>
+                <strong>What terms should both agents accept?</strong>
               </li>
             </ol>
           </section>
@@ -561,19 +535,19 @@ function PublicLanding({
               <span>02</span> the compounding layer
             </p>
             <h2>
-              Every verified outcome
+              Eligible outcomes
               <br />
-              <em>makes the network smarter.</em>
+              <em>build better context.</em>
             </h2>
             <p>
-              OpenClasp learns from signed structured events—not harvested conversations—and returns
-              private, task-specific intelligence before the next interaction.
+              With participant permission, OpenClasp uses authenticated structured reports—not
+              conversations—to improve task-specific reliability signals.
             </p>
           </div>
           <ol className="intelligenceLoop" aria-label="OpenClasp intelligence flywheel">
             <li>
               <span>01</span>
-              <strong>Verified interactions</strong>
+              <strong>Attested agreements</strong>
             </li>
             <li>
               <span>02</span>
@@ -589,8 +563,8 @@ function PublicLanding({
             </li>
           </ol>
           <p className="intelligenceBoundary">
-            Raw conversations remain private. Intelligence stays contextual. Network contribution is
-            opt-in.
+            Conversation bodies stay between agent runtimes. Intelligence stays contextual. Network
+            contribution is opt-in.
           </p>
         </section>
 
@@ -601,7 +575,8 @@ function PublicLanding({
             </p>
             <h2>Access your agent network.</h2>
             <p>
-              Sign in to connect agents, control network participation, and inspect signed history.
+              Sign in to connect agents, control network participation, and inspect structured
+              history.
             </p>
           </div>
           <div className="accessCard">
@@ -652,7 +627,7 @@ function PublicLanding({
           <strong>openclasp</strong>
         </a>
         <p>assurance and behavioural intelligence for AI agents.</p>
-        <small>Signed outcomes, contextual intelligence, and direct agent communication.</small>
+        <small>Authenticated outcomes, contextual intelligence, and direct agent communication.</small>
       </footer>
     </div>
   );
@@ -738,8 +713,6 @@ function PageContent({
   if (page === 'settings')
     return <SettingsPage settings={settings} setSettings={setSettings} api={api} />;
   if (page === 'history') return <History data={data} />;
-  if (page === 'conversations')
-    return <Conversations data={data} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'agents')
     return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'insights') return <Insights data={data} />;
@@ -756,7 +729,7 @@ type AgentHistoryItem = {
   interactionId: string;
   title: string;
   counterpart: string;
-  counterpartMode: 'agent' | 'temporary';
+  counterpartMode: 'agent';
   outcome: 'success' | 'partial' | 'failure' | 'cancelled' | 'provisional' | 'active' | 'pending';
   at: string;
 };
@@ -904,10 +877,6 @@ function AgentWorkspace({
             const invitations = invitationsForAgent(data, agentId);
             const history = historyForAgent(data, agent);
             const reliability = reliabilityForAgent(data, agentId);
-            const mode = String(
-              agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat'),
-            );
-            const temporary = mode === 'temporary_chat';
             const runtime = data.runtimes.find((item) => item.agentId === agentId);
             const verified = !agent.revoked && Boolean(agent.identityMode);
             const online = agent.presence?.status === 'online';
@@ -936,12 +905,8 @@ function AgentWorkspace({
                         <ShieldCheck /> {verified ? 'Verified' : 'Unverified'}
                       </span>
                       <span>
-                        {temporary ? <MessageCircle /> : <Cloud />}
-                        {temporary
-                          ? 'Temporary'
-                          : runtime?.status === 'verified'
-                            ? 'Cloud'
-                            : 'Cloud · disconnected'}
+                        <Cloud />
+                        {runtime?.status === 'verified' ? 'Cloud' : 'Cloud · disconnected'}
                       </span>
                     </span>
                   </button>
@@ -957,7 +922,7 @@ function AgentWorkspace({
                       <small>
                         {reliability.summary
                           ? `${humanize(reliability.summary.confidence.level)} confidence · ${reliability.samples}`
-                          : 'awaiting verified outcomes'}
+                          : 'awaiting eligible outcomes'}
                       </small>
                     </span>
                   </button>
@@ -1030,7 +995,7 @@ function AgentWorkspace({
                     <div className="agentDetailStrip">
                       <span>
                         <b>{reliability.samples || '—'}</b>
-                        verified outcomes
+                        eligible outcomes
                       </span>
                       <span>
                         <b>{published ? 'Public' : 'Private'}</b>
@@ -1098,9 +1063,7 @@ function AgentWorkspace({
                                       <span className="historyIdentity">
                                         <strong>{item.counterpart}</strong>
                                         <small>
-                                          {item.counterpartMode === 'temporary'
-                                            ? 'Temporary chat'
-                                            : 'Agent'}
+                                          Agent
                                           {' · '}
                                           {relativeTime(item.at)}
                                         </small>
@@ -1332,7 +1295,7 @@ function scorecardSummary(model: BehaviourScorecardModel) {
         `${metric.label}: ${metric.value === null ? 'not measured' : `${metric.value}/100`}`,
     )
     .join('\n');
-  return `${model.name} — OpenClasp behavioural scorecard\nContext: ${humanize(model.taskCategory)} · ${humanize(model.confidence)} confidence · ${model.evidenceCount} verified outcomes\n${metrics}\nGenerated from signed structured outcomes; no raw conversation content.`;
+  return `${model.name} — OpenClasp behavioural scorecard\nContext: ${humanize(model.taskCategory)} · ${humanize(model.confidence)} confidence · ${model.evidenceCount} eligible outcomes\n${metrics}\nGenerated from authenticated structured outcomes; no conversation content.`;
 }
 
 function escapeSvg(value: string) {
@@ -1356,7 +1319,7 @@ function scorecardSvg(model: BehaviourScorecardModel) {
       return `<g><text x="${x}" y="${y}" class="label">${escapeSvg(metric.short.toUpperCase())}</text><text x="${x + 454}" y="${y}" class="value">${value}</text><rect x="${x}" y="${y + 14}" width="454" height="5" rx="2.5" fill="#282321"/><rect x="${x}" y="${y + 14}" width="${width}" height="5" rx="2.5" fill="#ff4d2e"/></g>`;
     })
     .join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675"><style>.brand{font:700 22px Arial,sans-serif;fill:#f5f1ed}.name{font:700 48px Arial,sans-serif;fill:#f5f1ed}.meta{font:500 16px Arial,sans-serif;fill:#a49a93}.label{font:600 13px Arial,sans-serif;letter-spacing:1.5px;fill:#a49a93}.value{font:700 15px Arial,sans-serif;text-anchor:end;fill:#f5f1ed}.foot{font:500 13px Arial,sans-serif;fill:#756d68}</style><rect width="1200" height="675" fill="#0c0b0a"/><rect x="34" y="34" width="1132" height="607" fill="none" stroke="#3a312d"/><circle cx="78" cy="77" r="12" fill="none" stroke="#ff4d2e" stroke-width="3"/><text x="105" y="85" class="brand">openclasp / behaviour card</text><text x="76" y="160" class="name">${escapeSvg(model.name)}</text><text x="76" y="198" class="meta">${escapeSvg(humanize(model.taskCategory))} · ${escapeSvg(humanize(model.confidence))} confidence · ${model.evidenceCount} verified outcomes · v${escapeSvg(model.version)}</text><line x1="76" y1="228" x2="1124" y2="228" stroke="#3a312d"/>${metricRows}<line x1="76" y1="598" x2="1124" y2="598" stroke="#3a312d"/><text x="76" y="622" class="foot">STANDARD SCORECARD · SIGNED STRUCTURED OUTCOMES · RAW CONVERSATIONS EXCLUDED</text></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675"><style>.brand{font:700 22px Arial,sans-serif;fill:#f5f1ed}.name{font:700 48px Arial,sans-serif;fill:#f5f1ed}.meta{font:500 16px Arial,sans-serif;fill:#a49a93}.label{font:600 13px Arial,sans-serif;letter-spacing:1.5px;fill:#a49a93}.value{font:700 15px Arial,sans-serif;text-anchor:end;fill:#f5f1ed}.foot{font:500 13px Arial,sans-serif;fill:#756d68}</style><rect width="1200" height="675" fill="#0c0b0a"/><rect x="34" y="34" width="1132" height="607" fill="none" stroke="#3a312d"/><circle cx="78" cy="77" r="12" fill="none" stroke="#ff4d2e" stroke-width="3"/><text x="105" y="85" class="brand">openclasp / behaviour card</text><text x="76" y="160" class="name">${escapeSvg(model.name)}</text><text x="76" y="198" class="meta">${escapeSvg(humanize(model.taskCategory))} · ${escapeSvg(humanize(model.confidence))} confidence · ${model.evidenceCount} eligible outcomes · v${escapeSvg(model.version)}</text><line x1="76" y1="228" x2="1124" y2="228" stroke="#3a312d"/>${metricRows}<line x1="76" y1="598" x2="1124" y2="598" stroke="#3a312d"/><text x="76" y="622" class="foot">STANDARD SCORECARD · AUTHENTICATED STRUCTURED OUTCOMES · NO CONVERSATION BODIES</text></svg>`;
 }
 
 function BehaviourScorecardDialog({
@@ -1461,7 +1424,7 @@ function BehaviourScorecardDialog({
               {humanize(model.trend)} trend
             </span>
             <span>Updated {relativeTime(model.updatedAt)}</span>
-            <small>Signed structured outcomes · raw conversations excluded</small>
+            <small>Authenticated structured outcomes · conversation bodies excluded</small>
           </footer>
         </article>
         <div className="scorecardActions">
@@ -1506,16 +1469,14 @@ function historyForAgent(data: DashboardData, agent: Record<string, any>): Agent
       const conclusion = [...data.interactionConclusions]
         .reverse()
         .find((item) => item.interactionId === interactionId);
-      const thread = data.hostedThreads.find((item) => item.interactionId === interactionId);
       const counterpartId = interaction.initiatorAgentId
         ? interaction.initiatorAgentId === agentId
           ? interaction.responderAgentId
           : interaction.initiatorAgentId
         : (interaction.counterpartyAgentId ?? 'Local interaction');
       const counterpart =
-        data.agents.find((item) => item.agentId === counterpartId)?.name ??
-        (thread ? 'Temporary chat' : counterpartId);
-      const counterpartMode: AgentHistoryItem['counterpartMode'] = thread ? 'temporary' : 'agent';
+        data.agents.find((item) => item.agentId === counterpartId)?.name ?? counterpartId;
+      const counterpartMode: AgentHistoryItem['counterpartMode'] = 'agent';
       const rawOutcome = String(
         conclusion?.lifecycle === 'provisional'
           ? 'provisional'
@@ -1801,15 +1762,8 @@ function Overview({
       .filter((runtime) => runtime.status === 'verified')
       .map((runtime) => String(runtime.agentId)),
   );
-  const modeOf = (agent: Record<string, any>) =>
-    agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat');
   const readyAgents = data.agents.filter(
-    (agent) =>
-      publishedIds.has(String(agent.agentId)) &&
-      (modeOf(agent) === 'temporary_chat' || runtimeIds.has(String(agent.agentId))),
-  ).length;
-  const activeTemporaryChats = data.agents.filter(
-    (agent) => modeOf(agent) === 'temporary_chat' && agent.presence?.status === 'online',
+    (agent) => publishedIds.has(String(agent.agentId)) && runtimeIds.has(String(agent.agentId)),
   ).length;
   const pendingInvitations = data.federatedInteractions.filter(
     (interaction) => interaction.status === 'pending',
@@ -1851,9 +1805,9 @@ function Overview({
       )}
       <section className="metrics">
         <Metric
-          label="Active temporary chats"
-          value={activeTemporaryChats}
-          note={`${runtimeIds.size} persistent runtimes connected`}
+          label="Connected runtimes"
+          value={runtimeIds.size}
+          note={`${readyAgents} published and ready`}
         />
         <Metric
           label="Interactions"
@@ -1896,168 +1850,6 @@ function Overview({
               title="No reliability profile yet"
               text="Profiles appear after signed receipts and eligible bilateral feedback."
             />
-          )}
-        </Panel>
-      </section>
-    </>
-  );
-}
-
-function Conversations({
-  data,
-  refreshDashboard,
-  api,
-}: {
-  data: DashboardData;
-  refreshDashboard: () => Promise<void>;
-  api: (path: string, init?: RequestInit) => Promise<unknown>;
-}) {
-  const [selected, setSelected] = useState<Record<string, any> | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState('');
-  const [draft, setDraft] = useState('');
-  const [working, setWorking] = useState(false);
-  const [error, setError] = useState('');
-  const temporaryAgentFor = (thread: Record<string, any>) =>
-    data.agents.find(
-      (agent) =>
-        thread.participantAgentIds?.includes(agent.agentId) &&
-        (agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat')) ===
-          'temporary_chat',
-    );
-  const openThread = async (thread: Record<string, any>) => {
-    const agent = temporaryAgentFor(thread);
-    if (!agent) return;
-    setWorking(true);
-    setError('');
-    try {
-      const [detail] = (await Promise.all([
-        api(
-          `/v0.1/agents/${encodeURIComponent(agent.agentId)}/threads/${encodeURIComponent(thread.threadId)}`,
-        ),
-        api(
-          `/v0.1/agents/${encodeURIComponent(agent.agentId)}/threads/${encodeURIComponent(thread.threadId)}/read`,
-          { method: 'POST' },
-        ),
-      ])) as [Record<string, any>, unknown];
-      setSelected(detail);
-      setSelectedAgentId(String(agent.agentId));
-      await refreshDashboard();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not open conversation');
-    } finally {
-      setWorking(false);
-    }
-  };
-  const reply = async () => {
-    if (!selected || !draft.trim() || !selectedAgentId) return;
-    setWorking(true);
-    setError('');
-    try {
-      await api(`/v0.1/agents/${encodeURIComponent(selectedAgentId)}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({
-          interactionId: selected.thread.interactionId,
-          content: draft.trim(),
-        }),
-      });
-      setDraft('');
-      await openThread(selected.thread);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not send reply');
-      setWorking(false);
-    }
-  };
-  return (
-    <>
-      <PageHead page="conversations" />
-      <div className="notice">
-        <strong>Temporary only.</strong> Encrypted 30 days. Persistent runtime messages stay direct.
-      </div>
-      {error ? (
-        <div className="errorBar" role="alert">
-          {error}
-        </div>
-      ) : null}
-      <section className="conversationLayout">
-        <Panel title="Threads" subtitle="Temporary chat identities only">
-          <div className="threadList">
-            {data.hostedThreads.length ? (
-              data.hostedThreads.map((thread) => {
-                const agent = temporaryAgentFor(thread);
-                const peer = thread.participantAgentIds?.find(
-                  (value: string) => value !== agent?.agentId,
-                );
-                return (
-                  <button
-                    type="button"
-                    key={thread.threadId}
-                    className={selected?.thread?.threadId === thread.threadId ? 'active' : ''}
-                    onClick={() => void openThread(thread)}
-                    disabled={working}
-                  >
-                    <span>
-                      <strong>{peer ?? 'Counterparty'}</strong>
-                      <small>{agent?.name ?? agent?.agentId}</small>
-                    </span>
-                    <b>{thread.unreadCount ? `${thread.unreadCount} NEW` : thread.status}</b>
-                  </button>
-                );
-              })
-            ) : (
-              <Empty
-                title="No temporary conversations"
-                text="Messages appear after a temporary chat identity accepts an interaction with a persistent runtime."
-              />
-            )}
-          </div>
-        </Panel>
-        <Panel
-          title={selected ? 'Conversation' : 'Select a thread'}
-          subtitle="Private insights are attributable and task-specific"
-        >
-          {selected ? (
-            <div className="conversationDetail">
-              {!!selected.insights?.length && (
-                <div className="conversationInsights">
-                  {selected.insights.map((insight: Record<string, any>) => (
-                    <p key={insight.code}>
-                      <b>{String(insight.severity).toUpperCase()}</b> {insight.message}
-                    </p>
-                  ))}
-                </div>
-              )}
-              <div className="messageList">
-                {selected.messages.map((message: Record<string, any>) => (
-                  <article
-                    key={message.messageId}
-                    className={message.senderAgentId === selectedAgentId ? 'sent' : 'received'}
-                  >
-                    <small>{message.senderAgentId === selectedAgentId ? 'You' : 'Peer'}</small>
-                    <p>{message.content}</p>
-                    <span>{new Date(message.createdAt).toLocaleString()}</span>
-                  </article>
-                ))}
-              </div>
-              <div className="replyBox">
-                <textarea
-                  aria-label="Temporary chat reply"
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  maxLength={20_000}
-                  placeholder="Reply through the temporary OpenClasp A2A adapter"
-                />
-                <button
-                  className="primary"
-                  type="button"
-                  disabled={working || !draft.trim() || selected.thread.status !== 'open'}
-                  onClick={() => void reply()}
-                >
-                  {working ? 'Sending…' : 'Send reply'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <Empty title="Nothing selected" text="Choose a thread to read its hosted history." />
           )}
         </Panel>
       </section>
@@ -2538,7 +2330,7 @@ function interactionTimeline(journey: InteractionJourneyModel) {
             at: String(journey.session.activatedAt),
             title: 'A2A session activated',
             detail:
-              'Scoped credentials were issued. Persistent runtimes exchange content directly; temporary mode uses the hosted adapter.',
+              'Scoped credentials were issued. Agent runtimes exchange conversation content directly.',
             status: 'active',
             tone: 'good',
           },
@@ -2737,7 +2529,7 @@ function Agents({
     const agentId = String(agent.agentId);
     if (
       !window.confirm(
-        `Delete “${String(agent.name ?? agentId)}”?\n\nIts runtime, publication, presence, MCP binding and hosted temporary messages will be removed. Signed interaction and receipt history will be retained.`,
+        `Delete “${String(agent.name ?? agentId)}”?\n\nIts runtime, publication, presence and MCP binding will be removed. Signed interaction and receipt history will be retained.`,
       )
     )
       return;
@@ -2756,9 +2548,8 @@ function Agents({
     <>
       <PageHead page="agents" action="Connect agent" onAction={() => navigate('connect')} />
       <div className="notice">
-        <strong>Two explicit modes.</strong> Persistent runtimes talk directly over A2A. Temporary
-        chats use an OpenClasp-hosted endpoint with encrypted-at-rest history. There is no offline
-        relay for persistent runtimes.
+        <strong>Direct A2A only.</strong> Conversation bodies travel between agent-owned runtimes.
+        OpenClasp does not proxy or retain them.
       </div>
       {error && (
         <div className="errorBar" role="alert">
@@ -3039,7 +2830,7 @@ function Insights({ data }: { data: DashboardData }) {
         ) : (
           <Empty
             title="Not enough verified evidence"
-            text="Insights grow only from signed outcomes, eligible feedback, corrections, disputes, and version-aware history."
+            text="Insights grow only from authenticated outcomes, eligible feedback, corrections, disputes, and version-aware history."
           />
         )}
       </section>
@@ -3189,12 +2980,10 @@ function Connect({
                   <small>Limitations: {request.limitations.join(' · ')}</small>
                 )}
                 <div className="automationPreview">
-                  <span>{request.autoPublish ? 'Public after approval' : 'Private'}</span>
                   <span>
-                    {(request.agentMode ?? 'temporary_chat') === 'temporary_chat'
-                      ? 'Hosted temporary A2A · encrypted history'
-                      : 'Persistent runtime · direct A2A'}
+                    {request.autoPublish ? 'Public after runtime verification' : 'Private'}
                   </span>
+                  <span>Agent-owned runtime · direct A2A</span>
                   <span>
                     {request.autoAcceptPolicy === 'safe_matching'
                       ? 'Auto-accept safe matches'
@@ -3493,16 +3282,16 @@ function Connect({
               </div>
               <div className="connectStep">
                 <b>3</b>
-                <span>Approve the proposed identity and mode here.</span>
+                <span>Approve the proposed identity here.</span>
               </div>
             </div>
           </Panel>
-          <Panel title="Interactive clients" subtitle="Best for temporary user-driven sessions">
+          <Panel title="MCP clients" subtitle="Identity and control plane only">
             <ul className="checkList">
               <li>OAuth opens in the browser</li>
               <li>Each installation is explicitly approved</li>
-              <li>Temporary chats receive hosted A2A history</li>
-              <li>Persistent runtimes can switch to direct A2A</li>
+              <li>OpenClasp does not proxy conversation messages</li>
+              <li>Connect your cloud runtime before publishing</li>
             </ul>
           </Panel>
         </section>
@@ -3566,45 +3355,10 @@ function SettingsPage({
           />
         </Setting>
         <Setting
-          label="Evidence sharing"
-          description="Controls when permitted evidence references may be shared with interaction participants."
+          label="Conversation data"
+          description="Agent runtimes exchange messages directly. OpenClasp does not receive or store conversation bodies."
         >
-          <select
-            value={settings.evidenceSharing}
-            onChange={(event) =>
-              setSettings((value) => ({
-                ...value,
-                evidenceSharing: event.target.value as Settings['evidenceSharing'],
-              }))
-            }
-          >
-            <option value="never">Never</option>
-            <option value="ask">Ask every time</option>
-            <option value="contract_only">When contract permits</option>
-          </select>
-        </Setting>
-        <Setting
-          label="Structured record retention"
-          description="Retention for hosted account records. Signed protocol records may require separate revocation markers."
-        >
-          <select
-            value={settings.retentionDays}
-            onChange={(event) =>
-              setSettings((value) => ({ ...value, retentionDays: Number(event.target.value) }))
-            }
-          >
-            <option value={7}>7 days</option>
-            <option value={30}>30 days</option>
-            <option value={90}>90 days</option>
-            <option value={365}>1 year</option>
-            <option value={0}>No automatic deletion</option>
-          </select>
-        </Setting>
-        <Setting
-          label="Raw agent messages"
-          description="Persistent runtimes remain direct and are not stored. Temporary chat messages pass through OpenClasp and are encrypted at rest for 30 days."
-        >
-          <span className="locked">MODE DEPENDENT</span>
+          <span className="locked">NOT COLLECTED</span>
         </Setting>
         <div className="saveRow">
           <button className="primary" type="button" onClick={() => void save()} disabled={saving}>
@@ -3689,7 +3443,7 @@ function Timeline({ events }: { events: Record<string, any>[] }) {
   ) : (
     <Empty
       title="Nothing recorded yet"
-      text="Activity appears after your connected agents submit signed structured events."
+      text="Activity appears after your connected agents submit authenticated structured events."
     />
   );
 }
@@ -3756,20 +3510,14 @@ function AgentCard({
     ).join(', '),
   );
   const [runtimeEndpoint, setRuntimeEndpoint] = useState(String(runtime?.endpoint ?? ''));
-  const mode = agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat');
-  const temporary = mode === 'temporary_chat';
-  const ready = published && (temporary || runtime?.status === 'verified');
+  const ready = published && runtime?.status === 'verified';
   const online = agent.presence?.status === 'online';
   const providerConnected = accessTokens.length > 0;
-  const endpoint = String(
-    temporary
-      ? `/a2a/temporary/${encodeURIComponent(agent.agentId)}`
-      : (runtime?.a2aEndpoint ?? agent.a2aEndpoint ?? 'Connect a runtime first'),
-  );
+  const endpoint = String(runtime?.a2aEndpoint ?? agent.a2aEndpoint ?? 'Connect a runtime first');
   const identityLabel = agent.revoked
     ? 'REVOKED'
     : agent.identityMode === 'owner_managed'
-      ? 'OWNER VERIFIED'
+      ? 'OWNER CREATED'
       : agent.identityMode === 'oauth_installation'
         ? 'AUTHENTICATED'
         : 'VERIFIED';
@@ -3778,16 +3526,12 @@ function AgentCard({
       <div className="agentTop">
         <AgentMark name={String(agent.name ?? agent.agentId)} online={online} size="sm" />
         <div className="agentBadges">
-          <b className={online && temporary ? 'onlineBadge' : 'offlineBadge'}>
-            {temporary
-              ? online
-                ? 'CHAT ACTIVE'
-                : 'CHAT IDLE'
-              : runtime?.status === 'verified'
-                ? 'ENDPOINT VERIFIED'
-                : providerConnected
-                  ? 'TOKEN ONLY'
-                  : 'ENDPOINT MISSING'}
+          <b className={runtime?.status === 'verified' ? 'onlineBadge' : 'offlineBadge'}>
+            {runtime?.status === 'verified'
+              ? 'ENDPOINT VERIFIED'
+              : providerConnected
+                ? 'TOKEN ONLY'
+                : 'ENDPOINT MISSING'}
           </b>
           <b className={agent.revoked ? 'bad' : ''}>{identityLabel}</b>
           <b className={ready ? 'readyBadge' : 'needsBadge'}>{ready ? 'READY' : 'SETUP NEEDED'}</b>
@@ -3830,34 +3574,24 @@ function AgentCard({
       ) : null}
       <div className="automationSummary">
         <span>{published ? 'Public discovery' : 'Private'}</span>
-        <span>{temporary ? 'Hosted temporary A2A' : 'Direct agent-owned A2A'}</span>
+        <span>Direct agent-owned A2A</span>
         <span>
           {agent.autoAcceptPolicy === 'safe_matching' ? 'Safe tasks automatic' : 'Manual approval'}
         </span>
       </div>
       <div className="runtimeBox">
         <div>
-          <strong>{temporary ? 'Temporary chat endpoint' : 'Autonomous runtime'}</strong>
-          <span
-            className={
-              temporary || runtime?.status === 'verified' ? 'runtimeLive' : 'runtimeMissing'
-            }
-          >
-            {temporary
-              ? 'HOSTED BY OPENCLASP'
-              : runtime?.status === 'verified'
-                ? 'VERIFIED'
-                : 'NOT CONNECTED'}
+          <strong>Autonomous runtime</strong>
+          <span className={runtime?.status === 'verified' ? 'runtimeLive' : 'runtimeMissing'}>
+            {runtime?.status === 'verified' ? 'VERIFIED' : 'NOT CONNECTED'}
           </span>
         </div>
         <p>
-          {temporary
-            ? 'OpenClasp receives A2A for this temporary identity and encrypts its history at rest. Connect a runtime below to switch to direct A2A.'
-            : runtime?.status === 'verified'
-              ? 'The agent runtime registered itself successfully. Live message bodies travel directly between agents.'
-              : providerConnected
-                ? 'MCP is connected, but inbound A2A is not. Install the provider connector or deploy the sidecar; it registers this endpoint automatically.'
-                : 'Install a provider connector, deploy the sidecar, or register a native A2A endpoint.'}
+          {runtime?.status === 'verified'
+            ? 'The agent runtime registered itself successfully. Conversation bodies travel directly between agents.'
+            : providerConnected
+              ? 'MCP is connected, but inbound A2A is not. Install the provider connector or deploy the sidecar; it registers this endpoint automatically.'
+              : 'Install a provider connector, deploy the sidecar, or register a native A2A endpoint.'}
         </p>
         <input
           type="url"
@@ -3931,9 +3665,7 @@ function AgentCard({
       {editing ? (
         <div className="automationForm">
           <label>
-            <span>
-              {temporary ? 'OpenClasp temporary A2A endpoint' : 'Agent-owned A2A endpoint'}
-            </span>
+            <span>Agent-owned A2A endpoint</span>
             <input type="url" value={endpoint} readOnly />
           </label>
           <label>

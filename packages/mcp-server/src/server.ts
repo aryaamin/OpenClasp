@@ -59,12 +59,6 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_record_session_event',
   'openclasp_complete_live_session',
   'openclasp_heartbeat',
-  'openclasp_list_threads',
-  'openclasp_get_thread',
-  'openclasp_send_message',
-  'openclasp_reply',
-  'openclasp_mark_read',
-  'openclasp_close_thread',
   'openclasp_submit_completion_report',
   'openclasp_list_feedback_requests',
   'openclasp_submit_interaction_feedback',
@@ -235,16 +229,6 @@ type AgentDirectory = {
       'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ): Promise<unknown>;
   touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
-  listHostedThreads(operatorId: string, agentId: string): Promise<any[]>;
-  getHostedThread(operatorId: string, agentId: string, threadId: string): Promise<any>;
-  sendTemporaryMessage(
-    operatorId: string,
-    agentId: string,
-    interactionId: string,
-    content: string,
-  ): Promise<any>;
-  markHostedThreadRead(operatorId: string, agentId: string, threadId: string): Promise<any>;
-  closeHostedThread(operatorId: string, agentId: string, threadId: string): Promise<any>;
 };
 
 function installationContext(context: ToolContext) {
@@ -579,7 +563,7 @@ export function registerOpenClaspTools(
     {
       title: 'Set up this agent',
       description:
-        'Propose this installation and safe automation policy. Temporary chats receive an OpenClasp-hosted A2A endpoint; persistent agents connect their own runtime.',
+        'Propose this installation and safe automation policy. Conversation traffic stays on the agent-owned runtime.',
       inputSchema: z
         .object({
           agentName: z.string().trim().min(1).max(100),
@@ -588,8 +572,6 @@ export function registerOpenClaspTools(
           framework: z.string().trim().max(100).optional(),
           description: z.string().trim().max(500).optional(),
           agentVersion: z.string().trim().min(1).max(100).optional(),
-          agentMode: z.enum(['persistent_runtime', 'temporary_chat']).optional(),
-          autoPublish: z.boolean().optional(),
           autoAcceptPolicy: z.enum(['off', 'safe_matching']).optional(),
           autoAcceptTaskCategories: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
           capabilities: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
@@ -674,7 +656,6 @@ export function registerOpenClaspTools(
         framework: z.string().trim().min(1).max(100).optional(),
         description: z.string().trim().max(500).optional(),
         agentVersion: z.string().trim().min(1).max(100).optional(),
-        agentMode: z.enum(['persistent_runtime', 'temporary_chat']).optional(),
         autoPublish: z.boolean().optional(),
         autoAcceptPolicy: z.enum(['off', 'safe_matching']).optional(),
         autoAcceptTaskCategories: z.array(z.string().trim().min(1).max(100)).max(100).optional(),
@@ -922,11 +903,6 @@ export function registerOpenClaspTools(
       const responderCard =
         resolvedResponderCard ?? (await agentDirectory.getPublishedAgent(targetAgentId));
       if (!responderCard) throw new Error('Target agent is not published on OpenClasp');
-      if (
-        initiatorCard.agentMode === 'temporary_chat' &&
-        responderCard.agentMode === 'temporary_chat'
-      )
-        throw new Error('Temporary-to-temporary conversations are not supported in this MVP');
       const responderTransport = responderCard.transports[0];
       if (!responderTransport) throw new Error('Target agent has not published an A2A endpoint');
       const task = input.task ?? input.purpose!;
@@ -1373,7 +1349,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[41],
+    OPENCLASP_TOOL_NAMES[35],
     {
       title: 'Checkpoint interaction progress',
       description:
@@ -1421,7 +1397,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[38],
+    OPENCLASP_TOOL_NAMES[32],
     {
       title: 'Submit structured completion report',
       description:
@@ -1507,7 +1483,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[39],
+    OPENCLASP_TOOL_NAMES[33],
     {
       title: 'List feedback requests',
       description:
@@ -1527,7 +1503,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[40],
+    OPENCLASP_TOOL_NAMES[34],
     {
       title: 'Submit bilateral interaction feedback',
       description:
@@ -1602,151 +1578,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[32],
-    {
-      title: 'List temporary chat threads',
-      description:
-        'List hosted threads for this temporary chat identity. Message bodies are encrypted at rest and never mixed with direct A2A sessions.',
-      inputSchema: z.object({}),
-      annotations: READ_ONLY_TOOL,
-    },
-    async (_input, context) => {
-      if (!agentDirectory) throw new Error('Temporary chat history is not configured');
-      const binding = await requireBoundAgent(context);
-      if (!binding) throw new Error('A bound MCP installation is required');
-      const connection = installationContext(context);
-      return text(
-        await agentDirectory.listHostedThreads(connection.operatorId, binding.agent.agentId),
-      );
-    },
-  );
-  server.registerTool(
-    OPENCLASP_TOOL_NAMES[33],
-    {
-      title: 'Get temporary chat thread',
-      description:
-        'Read one hosted temporary-agent thread plus private, task-specific counterparty insights.',
-      inputSchema: z.object({ threadId: z.string().uuid() }),
-      annotations: READ_ONLY_TOOL,
-    },
-    async (input, context) => {
-      if (!agentDirectory) throw new Error('Temporary chat history is not configured');
-      const binding = await requireBoundAgent(context);
-      if (!binding) throw new Error('A bound MCP installation is required');
-      const connection = installationContext(context);
-      return text(
-        await agentDirectory.getHostedThread(
-          connection.operatorId,
-          binding.agent.agentId,
-          input.threadId,
-        ),
-      );
-    },
-  );
-  server.registerTool(
-    OPENCLASP_TOOL_NAMES[34],
-    {
-      title: 'Send from temporary chat',
-      description:
-        'Send text from this temporary identity to the persistent peer over A2A. OpenClasp processes and encrypts this hosted-mode message.',
-      inputSchema: z.object({
-        interactionId: z.string().uuid(),
-        content: z.string().trim().min(1).max(20_000),
-      }),
-      annotations: WRITE_TOOL,
-    },
-    async (input, context) => {
-      if (!agentDirectory) throw new Error('Temporary chat delivery is not configured');
-      const binding = await requireBoundAgent(context);
-      if (!binding) throw new Error('A bound MCP installation is required');
-      const connection = installationContext(context);
-      return text(
-        await agentDirectory.sendTemporaryMessage(
-          connection.operatorId,
-          binding.agent.agentId,
-          input.interactionId,
-          input.content,
-        ),
-      );
-    },
-  );
-  server.registerTool(
-    OPENCLASP_TOOL_NAMES[35],
-    {
-      title: 'Reply to temporary chat thread',
-      description: 'Reply to the persistent peer in an existing hosted temporary-agent thread.',
-      inputSchema: z.object({
-        threadId: z.string().uuid(),
-        content: z.string().trim().min(1).max(20_000),
-      }),
-      annotations: WRITE_TOOL,
-    },
-    async (input, context) => {
-      if (!agentDirectory) throw new Error('Temporary chat delivery is not configured');
-      const binding = await requireBoundAgent(context);
-      if (!binding) throw new Error('A bound MCP installation is required');
-      const connection = installationContext(context);
-      const thread = await agentDirectory.getHostedThread(
-        connection.operatorId,
-        binding.agent.agentId,
-        input.threadId,
-      );
-      return text(
-        await agentDirectory.sendTemporaryMessage(
-          connection.operatorId,
-          binding.agent.agentId,
-          thread.thread.interactionId,
-          input.content,
-        ),
-      );
-    },
-  );
-  server.registerTool(
     OPENCLASP_TOOL_NAMES[36],
-    {
-      title: 'Mark temporary thread read',
-      description: 'Mark inbound messages in one hosted temporary-agent thread as read.',
-      inputSchema: z.object({ threadId: z.string().uuid() }),
-      annotations: { ...WRITE_TOOL, idempotentHint: true },
-    },
-    async (input, context) => {
-      if (!agentDirectory) throw new Error('Temporary chat history is not configured');
-      const binding = await requireBoundAgent(context);
-      if (!binding) throw new Error('A bound MCP installation is required');
-      const connection = installationContext(context);
-      return text(
-        await agentDirectory.markHostedThreadRead(
-          connection.operatorId,
-          binding.agent.agentId,
-          input.threadId,
-        ),
-      );
-    },
-  );
-  server.registerTool(
-    OPENCLASP_TOOL_NAMES[37],
-    {
-      title: 'Close temporary chat thread',
-      description: 'Close a hosted temporary-agent thread. New messages will be rejected.',
-      inputSchema: z.object({ threadId: z.string().uuid() }),
-      annotations: WRITE_TOOL,
-    },
-    async (input, context) => {
-      if (!agentDirectory) throw new Error('Temporary chat history is not configured');
-      const binding = await requireBoundAgent(context);
-      if (!binding) throw new Error('A bound MCP installation is required');
-      const connection = installationContext(context);
-      return text(
-        await agentDirectory.closeHostedThread(
-          connection.operatorId,
-          binding.agent.agentId,
-          input.threadId,
-        ),
-      );
-    },
-  );
-  server.registerTool(
-    OPENCLASP_TOOL_NAMES[42],
     {
       title: 'Resolve agent reference',
       description:
@@ -1765,7 +1597,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[43],
+    OPENCLASP_TOOL_NAMES[37],
     {
       title: 'Propose contract revision',
       description:
@@ -1798,7 +1630,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[44],
+    OPENCLASP_TOOL_NAMES[38],
     {
       title: 'Respond to contract revision',
       description:
@@ -1829,7 +1661,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[45],
+    OPENCLASP_TOOL_NAMES[39],
     {
       title: 'Get contextual reliability intelligence',
       description:
@@ -1868,7 +1700,7 @@ export function registerOpenClaspTools(
     },
   );
   server.registerTool(
-    OPENCLASP_TOOL_NAMES[46],
+    OPENCLASP_TOOL_NAMES[40],
     {
       title: 'Recommend agents for a task',
       description:

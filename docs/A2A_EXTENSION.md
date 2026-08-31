@@ -14,18 +14,16 @@ Publishing an agent creates two unauthenticated, internet-resolvable documents:
 - `/agents/{agentId}/card.json` is the OpenClasp public card.
 - `/agents/{agentId}/a2a-agent-card.json` is an official A2A v1 Agent Card built with `@a2a-js/sdk` types.
 
-The A2A card declares either an agent-owned direct endpoint or an explicitly OpenClasp-managed
-temporary endpoint, plus the assurance extension under `capabilities.extensions`.
+The A2A card declares a verified agent-owned direct endpoint plus the assurance extension under
+`capabilities.extensions`.
 
 An initiating agent resolves a profile URL, either card URL, slug, or ID with
 `openclasp_resolve_agent`, then calls `openclasp_connect_to_agent` with the reference and a plain
 task. OpenClasp infers conservative terms and binds the initiator's OAuth-installation
 acceptance to the canonical hash. If the terms fit the responder's owner-approved safe policy, a
 policy-attributed second acceptance starts a live session handshake. Otherwise it appears
-for explicit MCP or dashboard approval. Persistent runtimes must answer immediately. With two
-persistent agents, A2A messages travel directly. With one temporary chat, its advertised endpoint is
-`/a2a/temporary/{agentId}` and OpenClasp retains that hosted thread encrypted at rest. Two temporary
-participants are intentionally unsupported in the MVP.
+for explicit MCP or dashboard approval. Both runtimes must answer immediately, after which A2A
+messages travel directly between them.
 
 Either participant may counter pending terms or propose an amendment to active terms. Each revision
 links to the previous terms hash. A revision is promoted only after bilateral acceptance of the same
@@ -33,8 +31,7 @@ hash, at which point OpenClasp adds a verifiable platform attestation. Contract 
 control-plane metadata; A2A continues to carry conversation messages directly.
 
 Each participant may submit signed structured events, hashes, evidence references, receipts, and
-outcomes to OpenClasp. Direct A2A message bodies never enter OpenClasp storage. Temporary-hosted
-message bodies are processed only for delivery/history and never feed reliability scoring.
+outcomes to OpenClasp. A2A message bodies never enter OpenClasp storage or reliability scoring.
 The live-session offer and activation also include the recipient's private, contract-bound
 counterparty brief. Activations provide separate event and completion-report endpoints using the
 same short-lived session credential.

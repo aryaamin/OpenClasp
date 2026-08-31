@@ -1,7 +1,6 @@
 import {
   BarChart3,
   History,
-  Inbox,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -40,7 +39,6 @@ import { initials } from '@/lib/utils';
 const navIcons = {
   dashboard: LayoutDashboard,
   history: History,
-  conversations: Inbox,
   agents: ScanLine,
   insights: BarChart3,
   connect: Plus,
@@ -55,7 +53,6 @@ export type ShellUser = {
 
 export type NavBadges = {
   dashboard: number;
-  conversations: number;
   connect: number;
 };
 
@@ -115,9 +112,7 @@ export function AppSidebar({
                       <Icon />
                       <span>{pageMeta[item].label}</span>
                     </SidebarMenuButton>
-                    {count > 0 ? (
-                      <SidebarMenuBadge>{count}</SidebarMenuBadge>
-                    ) : null}
+                    {count > 0 ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
                   </SidebarMenuItem>
                 );
               })}

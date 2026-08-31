@@ -93,7 +93,7 @@ describe('agent self-onboarding', () => {
 
     expect(request.status).toBe('pending');
     expect(request).toMatchObject({
-      autoPublish: true,
+      autoPublish: false,
       autoAcceptPolicy: 'safe_matching',
       autoAcceptTaskCategories: ['research'],
     });
@@ -109,7 +109,7 @@ describe('agent self-onboarding', () => {
         capabilities: ['research'],
         agentVersion: '2.0.0',
         transport: 'direct_a2a',
-        agentMode: 'temporary_chat',
+        agentMode: 'persistent_runtime',
       },
       project: { name: 'Market research' },
     });
@@ -170,7 +170,7 @@ describe('agent self-onboarding', () => {
     });
     expect(updated.capabilities).toEqual(['planning', 'coordination']);
     expect(updated.transport).toBe('direct_a2a');
-    expect(updated.agentMode).toBe('temporary_chat');
+    expect(updated.agentMode).toBe('persistent_runtime');
     await expect(
       updateAgentProfile(store, 'owner', 'different-client', { name: 'Hijacked' }),
     ).rejects.toThrow('not connected');

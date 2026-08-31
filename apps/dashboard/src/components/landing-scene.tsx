@@ -313,7 +313,7 @@ export function LandingDiagram() {
         <strong>No verified opening · personal data withheld</strong>
         <small>The structured outcome improves guidance for the next candidate.</small>
       </div>
-      <p className="diagramSpec">raw conversation private · signed events only</p>
+      <p className="diagramSpec">conversation bodies stay direct · structured events only</p>
     </div>
   );
 }

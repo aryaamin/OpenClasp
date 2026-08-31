@@ -47,10 +47,6 @@
       "source": "/sessions/:id/feedback",
       "destination": "/api/index?path=/sessions/:id/feedback"
     },
-    {
-      "source": "/a2a/temporary/:id",
-      "destination": "/api/index?path=/a2a/temporary/:id"
-    },
     { "source": "/agents/:id/card.json", "destination": "/api/index?path=/agents/:id/card.json" },
     {
       "source": "/agents/:id/a2a-agent-card.json",

@@ -13,7 +13,7 @@ export type AgentProfile = {
   description: string;
   framework: string;
   agentVersion: string;
-  agentMode?: 'persistent_runtime' | 'temporary_chat';
+  agentMode?: 'persistent_runtime';
   a2aEndpoint?: string;
   transport?: 'direct_a2a' | 'openclasp_gateway';
   autoPublish: boolean;
@@ -48,7 +48,7 @@ export type SetupRequest = {
   existingAgentId?: string;
   framework: string;
   agentVersion: string;
-  agentMode: 'persistent_runtime' | 'temporary_chat';
+  agentMode: 'persistent_runtime';
   a2aEndpoint?: string;
   autoPublish: boolean;
   autoAcceptPolicy: 'off' | 'safe_matching';
@@ -96,7 +96,7 @@ export async function getOnboardingState(
     projects: values<Project>('project'),
     agentProfiles: values<AgentProfile>('agent_profile').map((agent) => ({
       ...agent,
-      agentMode: agent.agentMode ?? (agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat'),
+      agentMode: 'persistent_runtime',
       transport: agent.a2aEndpoint ? 'direct_a2a' : (agent.transport ?? 'direct_a2a'),
       description: agent.description ?? '',
       agentVersion: agent.agentVersion ?? '1.0.0',
@@ -243,9 +243,8 @@ export async function requestAgentSetup(
     framework?: string | undefined;
     description?: string | undefined;
     agentVersion?: string | undefined;
-    agentMode?: 'persistent_runtime' | 'temporary_chat' | undefined;
+    agentMode?: 'persistent_runtime' | undefined;
     a2aEndpoint?: string | undefined;
-    autoPublish?: boolean | undefined;
     autoAcceptPolicy?: 'off' | 'safe_matching' | undefined;
     autoAcceptTaskCategories?: string[] | undefined;
     capabilities?: string[] | undefined;
@@ -282,9 +281,9 @@ export async function requestAgentSetup(
     framework: input.framework?.trim() || 'unknown',
     description: input.description?.trim() || '',
     agentVersion: input.agentVersion?.trim() || '1.0.0',
-    agentMode: input.agentMode ?? 'temporary_chat',
+    agentMode: 'persistent_runtime',
     ...(input.a2aEndpoint?.trim() ? { a2aEndpoint: input.a2aEndpoint.trim() } : {}),
-    autoPublish: input.autoPublish ?? true,
+    autoPublish: false,
     autoAcceptPolicy: input.autoAcceptPolicy ?? 'safe_matching',
     autoAcceptTaskCategories: [
       ...new Set(input.autoAcceptTaskCategories ?? input.capabilities ?? []),
@@ -335,7 +334,7 @@ export async function approveAgentSetup(
       description: request.description ?? '',
       framework: request.framework,
       agentVersion: request.agentVersion,
-      agentMode: request.agentMode ?? 'temporary_chat',
+      agentMode: 'persistent_runtime',
       transport: 'direct_a2a',
       autoPublish: request.autoPublish ?? false,
       autoAcceptPolicy: request.autoAcceptPolicy ?? 'off',
@@ -396,7 +395,7 @@ export async function updateAgentProfile(
     description?: string | undefined;
     framework?: string | undefined;
     agentVersion?: string | undefined;
-    agentMode?: 'persistent_runtime' | 'temporary_chat' | undefined;
+    agentMode?: 'persistent_runtime' | undefined;
     a2aEndpoint?: string | undefined;
     autoPublish?: boolean | undefined;
     autoAcceptPolicy?: 'off' | 'safe_matching' | undefined;
@@ -410,10 +409,7 @@ export async function updateAgentProfile(
   const agent: AgentProfile = {
     ...binding.agent,
     transport: 'direct_a2a',
-    agentMode:
-      patch.agentMode ??
-      binding.agent.agentMode ??
-      (binding.agent.a2aEndpoint ? 'persistent_runtime' : 'temporary_chat'),
+    agentMode: 'persistent_runtime',
     ...(patch.name?.trim() ? { name: patch.name.trim() } : {}),
     ...(patch.description !== undefined ? { description: patch.description.trim() } : {}),
     ...(patch.framework?.trim() ? { framework: patch.framework.trim() } : {}),
