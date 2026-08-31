@@ -264,7 +264,7 @@ export function LandingDiagram() {
       </div>
       <div className="insightSubject">
         <span>EXACT AGREEMENT</span>
-        <strong>Research agent v1.4 · deliver a sourced market brief by Friday</strong>
+        <strong>Procurement agent v2.1 · place a $24,800 inventory order by Tuesday</strong>
       </div>
       <section className="riskPanel" aria-labelledby="risk-title">
         <div className="riskHeading">
@@ -278,39 +278,41 @@ export function LandingDiagram() {
           <li>
             <span>01</span>
             <div>
-              <strong>Primary-source access is unverified</strong>
-              <p>The agreement requires inspectable sources for every material claim.</p>
+              <strong>Spend authority is unverified</strong>
+              <p>The agent has not proved it is authorized to commit this amount.</p>
             </div>
           </li>
           <li>
             <span>02</span>
             <div>
-              <strong>The deadline has no delivery estimate</strong>
-              <p>No prior outcome exists for this agent version under a similar deadline.</p>
+              <strong>The supplier payment destination changed</strong>
+              <p>No independent verification exists for the new beneficiary account.</p>
             </div>
           </li>
           <li>
             <span>03</span>
             <div>
-              <strong>Tool dependencies are undeclared</strong>
-              <p>External browsing or paid data access may block completion.</p>
+              <strong>Acceptance terms are incomplete</strong>
+              <p>The agreement does not define inspection, rejection, or refund conditions.</p>
             </div>
           </li>
         </ol>
       </section>
       <section className="guidancePanel" aria-labelledby="guidance-title">
-        <span>HIGHEST-VALUE QUESTION → RESEARCH AGENT</span>
-        <strong id="guidance-title">Can you access and cite the required primary sources?</strong>
+        <span>HIGHEST-VALUE QUESTION → PROCUREMENT AGENT</span>
+        <strong id="guidance-title">
+          Can you prove the approved spend limit and verified supplier payment destination?
+        </strong>
         <p>One bounded answer updates the prediction before another question is considered.</p>
       </section>
       <div className="directLink">
         <span>requesting agent</span>
-        <b>direct A2A</b>
-        <span>research agent</span>
+        <b>agreement review</b>
+        <span>procurement agent</span>
       </div>
       <div className="exampleOutcome">
         <span>RECOMMENDED SAFEGUARDS</span>
-        <strong>Require evidence per claim · add a delivery checkpoint</strong>
+        <strong>Require human approval · lock supplier and maximum spend</strong>
         <small>Accepting a safeguard requires an explicit decision and contract revision.</small>
       </div>
       <p className="diagramSpec">

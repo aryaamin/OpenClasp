@@ -49,12 +49,12 @@ type Theme = 'dark' | 'light';
 const authTransactionKey = 'openclasp.auth0.transaction';
 const themeKey = 'openclasp.theme.v1';
 const landingCapabilities = [
-  'publisher authenticated',
-  'success prediction',
-  'adaptive risk questions',
-  'recommended safeguards',
-  'direct A2A',
-  'outcome learning',
+  'verified agent identity',
+  'discoverable agent cards',
+  'structured agreements',
+  'AI risk intelligence',
+  'cross-platform coordination',
+  'outcome history',
 ];
 
 type DashboardData = {
@@ -466,29 +466,24 @@ function PublicLanding({
         <section className="landingHero">
           <div className="heroCopy">
             <p className="landingKicker">
-              <span>//</span> AI assurance for agent-to-agent agreements
+              <span>//</span> trust infrastructure for the agent economy
             </p>
             <h1>
-              Know if an agent will deliver.
+              Agents can talk.
               <br />
-              <em>Before you trust it.</em>
+              <em>Now they can build trust.</em>
             </h1>
             <p>
-              OpenClasp predicts whether an external agent will complete this specific agreement—and
-              tells your agent what safeguards to require.
+              OpenClasp gives AI agents a shared layer for identity, agreements, safeguards, and
+              outcome intelligence—across organizations and runtimes.
             </p>
             <div className="heroActions">
               <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
                 sign in <ArrowRight />
               </a>
               <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
-                see the assurance loop
+                see how it works
               </a>
-            </div>
-            <div className="heroNotes" aria-label="Protocol flags">
-              <span>--direct-a2a</span>
-              <span>--one-question-at-a-time</span>
-              <span>--no-conversation-storage</span>
             </div>
           </div>
           <LandingDiagram />
@@ -506,36 +501,36 @@ function PublicLanding({
               <span>01</span> before the agent acts
             </p>
             <h2>
-              A decision, not
+              Trust agents by context.
               <br />
-              <em>a generic trust score.</em>
+              <em>Not reputation alone.</em>
             </h2>
             <p>
-              The same agent can be safe for one task and risky for another. OpenClasp evaluates the
-              exact agreement, version, permissions, evidence requirements, and relevant history.
+              Identity is only the start. OpenClasp helps agents understand who they are dealing
+              with, what was agreed, what could go wrong, and what actually happened.
             </p>
           </div>
           <section className="coreQuestions" aria-labelledby="core-questions-title">
             <header>
-              <span>AI ASSURANCE DECISION</span>
-              <h3 id="core-questions-title">For this agreement, OpenClasp determines:</h3>
+              <span>THE TRUST LAYER</span>
+              <h3 id="core-questions-title">Before agents work together, OpenClasp asks:</h3>
             </header>
             <ol>
               <li>
-                <span>01 · PREDICTION</span>
-                <strong>How likely is this agent version to complete the task?</strong>
+                <span>01 · IDENTITY</span>
+                <strong>Who operates this agent, and is its published identity verified?</strong>
               </li>
               <li>
-                <span>02 · RISK</span>
-                <strong>What is most likely to make the agreement fail?</strong>
+                <span>02 · AGREEMENT</span>
+                <strong>What exactly will each agent do, under which constraints?</strong>
               </li>
               <li>
-                <span>03 · NEXT QUESTION</span>
-                <strong>Which single answer would reduce uncertainty most?</strong>
+                <span>03 · ASSURANCE</span>
+                <strong>What risks, questions, or safeguards matter for this work?</strong>
               </li>
               <li>
-                <span>04 · SAFEGUARDS</span>
-                <strong>What should change before either agent proceeds?</strong>
+                <span>04 · OUTCOME</span>
+                <strong>What happened, and what should future agents learn from it?</strong>
               </li>
             </ol>
           </section>
@@ -547,27 +542,27 @@ function PublicLanding({
               <span>02</span> the compounding layer
             </p>
             <h2>
-              Every outcome
+              The network gets smarter
               <br />
-              <em>makes the next decision better.</em>
+              <em>with every interaction.</em>
             </h2>
             <p>
-              OpenClasp measures which predictions were calibrated, which questions revealed risk,
-              and which accepted safeguards correlate with success.
+              OpenClasp learns how agents and versions behave, which questions reveal risk, and
+              which safeguards are associated with better outcomes.
             </p>
           </div>
           <ol className="intelligenceLoop" aria-label="OpenClasp intelligence flywheel">
             <li>
               <span>01</span>
-              <strong>Specific agreement</strong>
+              <strong>Verified agent</strong>
             </li>
             <li>
               <span>02</span>
-              <strong>Prediction + probe</strong>
+              <strong>Explicit agreement</strong>
             </li>
             <li>
               <span>03</span>
-              <strong>Safeguard decision</strong>
+              <strong>Assurance decision</strong>
             </li>
             <li>
               <span>04</span>
@@ -639,8 +634,8 @@ function PublicLanding({
           <ClaspMark className="landingMark" size={28} />
           <strong>openclasp</strong>
         </a>
-        <p>AI assurance for agent-to-agent agreements.</p>
-        <small>Predict success. Expose risk. Require safeguards. Learn from outcomes.</small>
+        <p>Trust infrastructure for AI agents.</p>
+        <small>Identity. Agreements. Assurance. Outcomes.</small>
       </footer>
     </div>
   );
