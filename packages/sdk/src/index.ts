@@ -1,5 +1,8 @@
 import {
   DEFAULT_EXTENSION_URI,
+  AssuranceProbeA2APayloadSchema,
+  AssuranceProbeResponseSchema,
+  AssuranceResponseA2APayloadSchema,
   canonicalHash,
   signObject,
   verifyRecordAttestation,
@@ -8,6 +11,10 @@ import {
   type TrustEnvelope,
   type FederatedInteraction,
   type AgentResolution,
+  type AssuranceClaimOutcomeComparison,
+  type AssurancePredictionSnapshot,
+  type AssuranceProbePlan,
+  type AssuranceProbeResponse,
   type InteractionContract,
   LiveSessionActivationSchema,
   LiveSessionEventSchema,
@@ -161,6 +168,53 @@ export class OpenClaspClient {
   getLiveSession(interactionId: string, agentId: string): Promise<LiveSessionActivation> {
     return this.request(
       `/federated-interactions/${encodeURIComponent(interactionId)}/session?agentId=${encodeURIComponent(agentId)}`,
+    );
+  }
+  listAssuranceProbes(interactionId: string, agentId: string): Promise<AssuranceProbePlan[]> {
+    return this.request(
+      `/federated-interactions/${encodeURIComponent(interactionId)}/assurance-probes?agentId=${encodeURIComponent(agentId)}`,
+    );
+  }
+  submitAssuranceResponse(interactionId: string, response: AssuranceProbeResponse) {
+    return this.request<{
+      response: AssuranceProbeResponse;
+      prediction?: AssurancePredictionSnapshot;
+      comparison?: AssuranceClaimOutcomeComparison;
+    }>(`/federated-interactions/${encodeURIComponent(interactionId)}/assurance-responses`, {
+      method: 'POST',
+      body: JSON.stringify(response),
+    });
+  }
+  listAssuranceComparisons(
+    interactionId: string,
+    agentId: string,
+  ): Promise<AssuranceClaimOutcomeComparison[]> {
+    return this.request(
+      `/federated-interactions/${encodeURIComponent(interactionId)}/assurance-comparisons?agentId=${encodeURIComponent(agentId)}`,
+    );
+  }
+  getAssuranceBrief(interactionId: string, agentId: string) {
+    return this.request(
+      `/federated-interactions/${encodeURIComponent(interactionId)}/assurance-brief?agentId=${encodeURIComponent(agentId)}`,
+    );
+  }
+  decideAssuranceSafeguard(
+    interactionId: string,
+    safeguardId: string,
+    status: 'accepted' | 'rejected' | 'modified',
+    decisionReason?: string,
+    agentId?: string,
+  ) {
+    return this.request(
+      `/federated-interactions/${encodeURIComponent(interactionId)}/assurance-safeguards/${encodeURIComponent(safeguardId)}/decision`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          status,
+          ...(decisionReason ? { decisionReason } : {}),
+          ...(agentId ? { agentId } : {}),
+        }),
+      },
     );
   }
   respondToFederatedInteraction(
@@ -616,6 +670,45 @@ export async function sendOpenClaspDirectMessage(
   const result = (await response.json()) as unknown;
   if (!response.ok) throw new Error(`Direct agent request failed with HTTP ${response.status}`);
   return result;
+}
+
+export function createAssuranceProbeA2AMessage(plan: AssuranceProbePlan) {
+  const payload = AssuranceProbeA2APayloadSchema.parse({
+    kind: 'openclasp.assurance.probe',
+    plan,
+  });
+  return { role: 'user' as const, parts: [{ kind: 'data' as const, data: payload }] };
+}
+
+export function createAssuranceResponseA2AMessage(response: AssuranceProbeResponse) {
+  const payload = AssuranceResponseA2APayloadSchema.parse({
+    kind: 'openclasp.assurance.response',
+    response,
+  });
+  return { role: 'agent' as const, parts: [{ kind: 'data' as const, data: payload }] };
+}
+
+export async function reportOpenClaspAssuranceResponse(
+  session: LiveSessionActivation,
+  response: AssuranceProbeResponse,
+) {
+  const value = AssuranceProbeResponseSchema.parse(response);
+  if (value.interactionId !== session.interactionId || value.agentId !== session.agentId)
+    throw new Error('Assurance response does not match the active session');
+  if (!session.reporting.assuranceResponseEndpoint)
+    throw new Error('This OpenClasp session does not support assurance response reporting');
+  const result = await fetch(session.reporting.assuranceResponseEndpoint, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${session.reporting.bearerToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(value),
+  });
+  const body = (await result.json()) as unknown;
+  if (!result.ok)
+    throw new Error(`OpenClasp assurance response report failed with HTTP ${result.status}`);
+  return body;
 }
 
 export async function reportOpenClaspSessionEvent(

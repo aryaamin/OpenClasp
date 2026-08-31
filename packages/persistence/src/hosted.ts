@@ -11,6 +11,13 @@ import {
 import {
   AgentIdentitySchema,
   AgentResolutionSchema,
+  AssuranceDecisionSchema,
+  AssuranceEffectivenessEvaluationSchema,
+  AssuranceClaimOutcomeComparisonSchema,
+  AssurancePredictionSnapshotSchema,
+  AssuranceProbePlanSchema,
+  AssuranceProbeResponseSchema,
+  AssuranceSafeguardSchema,
   BehaviouralProfileDeltaSchema,
   DEFAULT_AGENT_AUTH_SCOPES,
   DEFAULT_EXTENSION_URI,
@@ -36,6 +43,12 @@ import {
   type FederatedInteraction,
   type AgentPresence,
   type AgentResolution,
+  type AssuranceDecision,
+  type AssuranceEffectivenessEvaluation,
+  type AssuranceClaimOutcomeComparison,
+  type AssurancePredictionSnapshot,
+  type AssuranceProbePlan,
+  type AssuranceProbeResponse,
   type BehaviouralProfileDelta,
   type CounterpartyBrief,
   type ContractRevision,
@@ -164,6 +177,179 @@ function deterministicUuid(value: string): string {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = bytes.toString('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+type AssuranceLearningSummary = {
+  sampleSize: number;
+  averageBrierScore?: number;
+  questionFamilies: Array<{
+    questionFamily: AssuranceEffectivenessEvaluation['questionScores'][number]['questionFamily'];
+    sampleSize: number;
+    riskRevealRate: number;
+    predictiveAccuracy: number;
+    averageAbsolutePredictionDelta: number;
+    utilityScore: number;
+  }>;
+  safeguardTypes: Array<{
+    type: AssuranceEffectivenessEvaluation['safeguardScores'][number]['type'];
+    sampleSize: number;
+    positiveOutcomeRate: number;
+  }>;
+};
+
+function summarizeAssuranceLearning(
+  evaluations: AssuranceEffectivenessEvaluation[],
+): AssuranceLearningSummary {
+  const predictionScores = evaluations.flatMap((evaluation) => evaluation.predictionScores);
+  const questionGroups = new Map<
+    string,
+    {
+      questionFamily: AssuranceLearningSummary['questionFamilies'][number]['questionFamily'];
+      sampleSize: number;
+      riskReveals: number;
+      predictiveScore: number;
+      absolutePredictionDelta: number;
+    }
+  >();
+  for (const evaluation of evaluations) {
+    for (const question of evaluation.questionScores) {
+      const group = questionGroups.get(question.questionFamily) ?? {
+        questionFamily: question.questionFamily,
+        sampleSize: 0,
+        riskReveals: 0,
+        predictiveScore: 0,
+        absolutePredictionDelta: 0,
+      };
+      group.sampleSize += 1;
+      if (question.exposedMaterialRisk) group.riskReveals += 1;
+      const predictedOutcome = question.exposedMaterialRisk ? 0 : 1;
+      group.predictiveScore += 1 - Math.abs(predictedOutcome - evaluation.outcomeValue);
+      group.absolutePredictionDelta += Math.abs(question.predictionDelta);
+      questionGroups.set(question.questionFamily, group);
+    }
+  }
+  const safeguardGroups = new Map<
+    string,
+    {
+      type: AssuranceLearningSummary['safeguardTypes'][number]['type'];
+      sampleSize: number;
+      positive: number;
+    }
+  >();
+  for (const safeguard of evaluations.flatMap((evaluation) => evaluation.safeguardScores)) {
+    if (safeguard.status !== 'accepted' && safeguard.status !== 'modified') continue;
+    const group = safeguardGroups.get(safeguard.type) ?? {
+      type: safeguard.type,
+      sampleSize: 0,
+      positive: 0,
+    };
+    group.sampleSize += 1;
+    if (safeguard.outcomeAssociation === 'positive') group.positive += 1;
+    safeguardGroups.set(safeguard.type, group);
+  }
+  return {
+    sampleSize: evaluations.length,
+    ...(predictionScores.length
+      ? {
+          averageBrierScore:
+            predictionScores.reduce((sum, score) => sum + score.brierScore, 0) /
+            predictionScores.length,
+        }
+      : {}),
+    questionFamilies: [...questionGroups.values()]
+      .map((group) => {
+        const riskRevealRate = (group.riskReveals + 1) / (group.sampleSize + 2);
+        const predictiveAccuracy = (group.predictiveScore + 1) / (group.sampleSize + 2);
+        const averageAbsolutePredictionDelta = group.absolutePredictionDelta / group.sampleSize;
+        return {
+          questionFamily: group.questionFamily,
+          sampleSize: group.sampleSize,
+          riskRevealRate,
+          predictiveAccuracy,
+          averageAbsolutePredictionDelta,
+          utilityScore: Math.min(
+            1,
+            riskRevealRate * 0.4 +
+              predictiveAccuracy * 0.5 +
+              Math.min(1, averageAbsolutePredictionDelta * 4) * 0.1,
+          ),
+        };
+      })
+      .sort((left, right) => right.utilityScore - left.utilityScore),
+    safeguardTypes: [...safeguardGroups.values()]
+      .map((group) => ({
+        type: group.type,
+        sampleSize: group.sampleSize,
+        positiveOutcomeRate: (group.positive + 1) / (group.sampleSize + 2),
+      }))
+      .sort((left, right) => right.positiveOutcomeRate - left.positiveOutcomeRate),
+  };
+}
+
+function assuranceClaimComparison(
+  answer: AssuranceProbeResponse['answers'][number],
+  report: InteractionCompletionReport,
+) {
+  const code = answer.questionCode;
+  const claim = answer.answer;
+  const normalized = String(claim).toLowerCase();
+  const positive = ['true', 'yes', 'complete', 'all', 'accurate'].includes(normalized);
+  const partial = ['partially', 'partial', 'some'].includes(normalized);
+  const negative = ['false', 'no', 'none'].includes(normalized);
+  const observedOutcome = `${report.outcome}: ${report.summary}`.slice(0, 500);
+  let status: 'aligned' | 'partially_aligned' | 'contradicted' | 'unverifiable' = 'unverifiable';
+  if (/capability|commitment|complete|deliver|deadline/.test(code)) {
+    if (report.outcome === 'success')
+      status = positive
+        ? 'aligned'
+        : partial
+          ? 'partially_aligned'
+          : negative
+            ? 'contradicted'
+            : 'unverifiable';
+    if (report.outcome === 'partial')
+      status = partial ? 'aligned' : positive || negative ? 'partially_aligned' : 'unverifiable';
+    if (report.outcome === 'failure' || report.outcome === 'cancelled')
+      status = negative
+        ? 'aligned'
+        : partial
+          ? 'partially_aligned'
+          : positive
+            ? 'contradicted'
+            : 'unverifiable';
+  } else if (/evidence/.test(code)) {
+    const evidenceProvided = report.evidenceReferences.length > 0;
+    status = evidenceProvided
+      ? negative
+        ? 'contradicted'
+        : positive
+          ? 'aligned'
+          : 'partially_aligned'
+      : positive
+        ? 'contradicted'
+        : negative
+          ? 'aligned'
+          : 'unverifiable';
+  } else if (/depend|blocker|approval|tool/.test(code)) {
+    const blockersObserved = report.blockers.length > 0;
+    status =
+      normalized === 'none'
+        ? blockersObserved
+          ? 'contradicted'
+          : 'aligned'
+        : blockersObserved
+          ? 'aligned'
+          : 'unverifiable';
+  }
+  return {
+    questionCode: code,
+    preTaskClaim: claim,
+    observedOutcome,
+    status,
+    evidenceReferences: [
+      ...new Set([...answer.evidenceReferences, ...report.evidenceReferences]),
+    ].slice(0, 10),
+  };
 }
 
 function normalizePublicAgentCard(value: unknown): PublicAgentCard {
@@ -741,12 +927,23 @@ export class HostedRepository {
         await this.finalizeInteractionConclusion(interactionId).catch(() => undefined);
     }
     const rows = await this.list(operatorId);
-    const [federatedInteractions, runtimes, accessTokens, liveSessionRows, liveEventRows] =
-      await Promise.all([
-        this.listFederatedInteractions(operatorId),
-        this.listAgentRuntimes(operatorId),
-        this.listAgentAccessTokens(operatorId),
-        this.sql`
+    const [
+      federatedInteractions,
+      runtimes,
+      accessTokens,
+      liveSessionRows,
+      liveEventRows,
+      assuranceAssessmentRows,
+      assurancePredictionRows,
+      assuranceSafeguardRows,
+      assuranceEvaluationRows,
+      assurancePlanRows,
+      assuranceResponseRows,
+    ] = await Promise.all([
+      this.listFederatedInteractions(operatorId),
+      this.listAgentRuntimes(operatorId),
+      this.listAgentAccessTokens(operatorId),
+      this.sql`
         SELECT session.interaction_id, session.initiator_agent_id, session.responder_agent_id,
           session.status, session.created_at, session.activated_at, session.completed_at,
           session.expires_at, session.last_error
@@ -757,7 +954,7 @@ export class HostedRepository {
            OR interaction.responder_operator_id = ${operatorId}
         ORDER BY session.created_at DESC
       `,
-        this.sql`
+      this.sql`
         SELECT events.event
         FROM openclasp_live_session_events events
         INNER JOIN openclasp_federated_interactions interaction
@@ -766,7 +963,19 @@ export class HostedRepository {
            OR interaction.responder_operator_id = ${operatorId}
         ORDER BY events.created_at ASC
       `,
-      ]);
+      this
+        .sql`SELECT payload FROM openclasp_assurance_assessments WHERE operator_id = ${operatorId} ORDER BY created_at ASC`,
+      this
+        .sql`SELECT payload FROM openclasp_assurance_predictions WHERE operator_id = ${operatorId} ORDER BY created_at ASC`,
+      this
+        .sql`SELECT payload FROM openclasp_assurance_safeguards WHERE operator_id = ${operatorId} ORDER BY created_at ASC`,
+      this
+        .sql`SELECT payload FROM openclasp_assurance_evaluations WHERE operator_id = ${operatorId} ORDER BY created_at ASC`,
+      this
+        .sql`SELECT payload FROM openclasp_assurance_probe_plans WHERE operator_id = ${operatorId} ORDER BY created_at ASC`,
+      this
+        .sql`SELECT responses.payload FROM openclasp_assurance_probe_responses responses INNER JOIN openclasp_assurance_probe_plans plans ON plans.plan_id = responses.plan_id WHERE plans.operator_id = ${operatorId} ORDER BY responses.created_at ASC`,
+    ]);
     const ofKind = (kind: HostedRecordKind) =>
       rows.filter((row) => row.kind === kind).map((row) => row.payload);
     const presence = new Map(
@@ -797,6 +1006,12 @@ export class HostedRepository {
       learningEligibility: ofKind('learning_eligibility'),
       profileDeltas: ofKind('profile_delta'),
       intelligenceSummaries,
+      assuranceAssessments: assuranceAssessmentRows.map((row) => row.payload),
+      assurancePredictions: assurancePredictionRows.map((row) => row.payload),
+      assuranceSafeguards: assuranceSafeguardRows.map((row) => row.payload),
+      assuranceEvaluations: assuranceEvaluationRows.map((row) => row.payload),
+      assuranceProbePlans: assurancePlanRows.map((row) => row.payload),
+      assuranceProbeResponses: assuranceResponseRows.map((row) => row.payload),
       federatedInteractions,
       liveSessions: liveSessionRows.map((row) => ({
         interactionId: String(row.interaction_id),
@@ -1863,6 +2078,7 @@ export class HostedRepository {
           endpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/events`,
           completionEndpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/completion-reports`,
           feedbackEndpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/feedback`,
+          assuranceResponseEndpoint: `${baseUrl}/sessions/${encodeURIComponent(interaction.interactionId)}/assurance-responses`,
           bearerToken,
         },
         privateInsights,
@@ -2010,6 +2226,7 @@ export class HostedRepository {
         endpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/events`,
         completionEndpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/completion-reports`,
         feedbackEndpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/feedback`,
+        assuranceResponseEndpoint: `${(process.env.OPENCLASP_PUBLIC_URL ?? 'https://openclasp.vercel.app').replace(/\/$/, '')}/sessions/${encodeURIComponent(interactionId)}/assurance-responses`,
         bearerToken,
       },
       privateInsights: privateContext.insights,
@@ -2067,6 +2284,684 @@ export class HostedRepository {
     const parsed = CounterpartyBriefSchema.safeParse(rows[0]?.payload);
     if (!parsed.success) throw new Error('Counterparty brief is not available');
     return parsed.data;
+  }
+
+  private async getAssuranceLearning(
+    operatorId: string,
+    targetAgentId: string,
+    targetAgentVersion: string,
+    taskCategory: string,
+  ) {
+    const rows = await this.sql`
+      SELECT payload FROM openclasp_assurance_evaluations
+      WHERE operator_id = ${operatorId}
+        AND target_agent_id = ${targetAgentId}
+        AND target_agent_version = ${targetAgentVersion}
+        AND task_category = ${taskCategory}
+      ORDER BY created_at DESC
+      LIMIT 500
+    `;
+    const evaluations = rows
+      .map((row) => AssuranceEffectivenessEvaluationSchema.safeParse(row.payload))
+      .filter((parsed) => parsed.success)
+      .map((parsed) => parsed.data);
+    return summarizeAssuranceLearning(evaluations);
+  }
+
+  async getAssuranceProbeContext(
+    operatorId: string,
+    interactionId: string,
+    generatedForAgentId: string,
+    targetAgentId: string,
+  ) {
+    const participant = await this.interactionParticipant(
+      operatorId,
+      interactionId,
+      generatedForAgentId,
+    );
+    if (participant.counterpartyAgentId !== targetAgentId)
+      throw new Error('Assurance probe target must be the authenticated agent’s counterparty');
+    if (participant.interaction.status !== 'active')
+      throw new Error('Assurance probes require an active interaction');
+    const targetCard = await this.getPublishedAgent(targetAgentId);
+    if (!targetCard) throw new Error('Assurance probe target is no longer published');
+    const brief = await this.getCounterpartyBrief(
+      operatorId,
+      interactionId,
+      generatedForAgentId,
+    ).catch(() => undefined);
+    const reportRows = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'completion_report'
+        AND payload->>'interactionId' = ${interactionId}
+      ORDER BY updated_at DESC
+    `;
+    const completionReports = reportRows
+      .map((row) => InteractionCompletionReportSchema.safeParse(row.payload))
+      .filter((parsed) => parsed.success)
+      .map((parsed) => parsed.data);
+    const eventRows = await this.sql`
+      SELECT event FROM openclasp_live_session_events
+      WHERE interaction_id = ${interactionId}
+      ORDER BY created_at ASC
+      LIMIT 100
+    `;
+    const sessionEvents = eventRows
+      .map((row) => LiveSessionEventSchema.safeParse(row.event))
+      .filter((parsed) => parsed.success)
+      .map((parsed) => parsed.data);
+    const planRows = await this.sql`
+      SELECT payload FROM openclasp_assurance_probe_plans
+      WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId}
+        AND generated_for_agent_id = ${generatedForAgentId} AND target_agent_id = ${targetAgentId}
+      ORDER BY created_at ASC
+    `;
+    const previousPlans = planRows.map((row) => AssuranceProbePlanSchema.parse(row.payload));
+    const responseRows = await this.sql`
+      SELECT responses.payload FROM openclasp_assurance_probe_responses responses
+      INNER JOIN openclasp_assurance_probe_plans plans ON plans.plan_id = responses.plan_id
+      WHERE plans.operator_id = ${operatorId} AND responses.interaction_id = ${interactionId}
+        AND responses.agent_id = ${targetAgentId}
+      ORDER BY responses.created_at ASC
+    `;
+    const previousResponses = responseRows.map((row) =>
+      AssuranceProbeResponseSchema.parse(row.payload),
+    );
+    const predictionRows = await this.sql`
+      SELECT payload FROM openclasp_assurance_predictions
+      WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId}
+        AND target_agent_id = ${targetAgentId}
+      ORDER BY created_at ASC
+    `;
+    const previousPredictions = predictionRows.map((row) =>
+      AssurancePredictionSnapshotSchema.parse(row.payload),
+    );
+    const assuranceLearning = await this.getAssuranceLearning(
+      operatorId,
+      targetAgentId,
+      targetCard.agentVersion,
+      participant.interaction.contract.taskCategory,
+    );
+    return {
+      interaction: participant.interaction,
+      targetCard,
+      brief,
+      completionReports,
+      sessionEvents,
+      previousPlans,
+      previousResponses,
+      previousPredictions,
+      assuranceLearning,
+    };
+  }
+
+  async beginAssuranceGeneration(record: {
+    generationId: string;
+    operatorId: string;
+    interactionId: string;
+    phase: 'pre_task' | 'post_task';
+    model: string;
+    promptVersion: string;
+    input: Record<string, unknown>;
+  }) {
+    await this.ensureSchema();
+    const participants = await this.sql`
+      SELECT 1 FROM openclasp_federated_interactions
+      WHERE interaction_id = ${record.interactionId}
+        AND ${record.operatorId} IN (initiator_operator_id, responder_operator_id)
+      LIMIT 1
+    `;
+    if (!participants.length) throw new Error('Assurance generation interaction is not accessible');
+    await this.sql`
+      INSERT INTO openclasp_ai_generations(
+        generation_id, operator_id, interaction_id, phase, model, prompt_version,
+        status, input, input_digest
+      ) VALUES (
+        ${record.generationId}, ${record.operatorId}, ${record.interactionId}, ${record.phase},
+        ${record.model}, ${record.promptVersion}, 'pending', ${JSON.stringify(record.input)}::jsonb,
+        ${canonicalHash(record.input)}
+      )
+    `;
+  }
+
+  async finishAssuranceGeneration(
+    operatorId: string,
+    generationId: string,
+    value: {
+      status: 'complete' | 'fallback' | 'error';
+      output: AssuranceDecision;
+      tokenUsage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+      errorCode?: string;
+    },
+  ) {
+    const rows = await this.sql`
+      UPDATE openclasp_ai_generations
+      SET status = ${value.status}, output = ${JSON.stringify(value.output)}::jsonb,
+        token_usage = ${JSON.stringify(value.tokenUsage ?? {})}::jsonb,
+        error_code = ${value.errorCode ?? null}, completed_at = NOW()
+      WHERE generation_id = ${generationId} AND operator_id = ${operatorId} AND status = 'pending'
+      RETURNING generation_id
+    `;
+    if (!rows.length) throw new Error('Pending assurance generation not found');
+  }
+
+  async saveAssuranceProbePlan(operatorId: string, value: AssuranceProbePlan) {
+    const plan = AssuranceProbePlanSchema.parse(value);
+    const participant = await this.interactionParticipant(
+      operatorId,
+      plan.interactionId,
+      plan.generatedForAgentId,
+    );
+    if (participant.counterpartyAgentId !== plan.targetAgentId)
+      throw new Error('Assurance probe target does not match the interaction counterparty');
+    if (participant.interaction.termsHash !== plan.contractHash)
+      throw new Error('Assurance probe contract hash is stale');
+    const rows = await this.sql`
+      INSERT INTO openclasp_assurance_probe_plans(
+        plan_id, generation_id, operator_id, interaction_id, contract_hash, phase,
+        generated_for_agent_id, target_agent_id, payload, expires_at
+      ) VALUES (
+        ${plan.planId}, ${plan.generation.generationId}, ${operatorId}, ${plan.interactionId},
+        ${plan.contractHash}, ${plan.phase}, ${plan.generatedForAgentId}, ${plan.targetAgentId},
+        ${JSON.stringify(plan)}::jsonb, ${plan.expiresAt}
+      )
+      ON CONFLICT (plan_id) DO NOTHING
+      RETURNING payload
+    `;
+    if (!rows.length) throw new Error('Assurance probe plan already exists');
+    return AssuranceProbePlanSchema.parse(rows[0]!.payload);
+  }
+
+  async saveAssuranceDecision(
+    operatorId: string,
+    decisionValue: AssuranceDecision,
+    planValue: AssuranceProbePlan,
+  ) {
+    const decision = AssuranceDecisionSchema.parse(decisionValue);
+    const plan = AssuranceProbePlanSchema.parse(planValue);
+    if (
+      decision.assessmentId !== plan.assessmentId ||
+      decision.prediction.predictionId !== plan.predictionBeforeId ||
+      decision.generation.generationId !== plan.generation.generationId
+    )
+      throw new Error('Assurance decision and probe plan are not linked');
+    await this.interactionParticipant(
+      operatorId,
+      decision.interactionId,
+      decision.generatedForAgentId,
+    );
+    await this.sql`
+      INSERT INTO openclasp_assurance_assessments(
+        assessment_id, generation_id, operator_id, interaction_id, phase, round,
+        target_agent_id, target_agent_version, payload
+      ) VALUES (
+        ${decision.assessmentId}, ${decision.generation.generationId}, ${operatorId},
+        ${decision.interactionId}, ${decision.phase}, ${decision.round}, ${decision.targetAgentId},
+        ${decision.targetAgentVersion}, ${JSON.stringify(decision)}::jsonb
+      )
+    `;
+    await this.sql`
+      INSERT INTO openclasp_assurance_predictions(
+        prediction_id, assessment_id, operator_id, interaction_id, target_agent_id,
+        target_agent_version, task_category, stage, success_probability, payload
+      ) VALUES (
+        ${decision.prediction.predictionId}, ${decision.assessmentId}, ${operatorId},
+        ${decision.interactionId}, ${decision.targetAgentId}, ${decision.targetAgentVersion},
+        ${decision.prediction.taskCategory}, ${decision.prediction.stage},
+        ${decision.prediction.successProbability}, ${JSON.stringify(decision.prediction)}::jsonb
+      )
+    `;
+    for (const safeguard of decision.safeguards) {
+      await this.sql`
+        INSERT INTO openclasp_assurance_safeguards(
+          safeguard_id, assessment_id, operator_id, interaction_id, target_agent_id, status, payload
+        ) VALUES (
+          ${safeguard.safeguardId}, ${decision.assessmentId}, ${operatorId},
+          ${decision.interactionId}, ${decision.targetAgentId}, ${safeguard.status},
+          ${JSON.stringify(safeguard)}::jsonb
+        )
+      `;
+    }
+    const savedPlan = await this.saveAssuranceProbePlan(operatorId, plan);
+    return { decision, plan: savedPlan };
+  }
+
+  async listAssuranceProbePlans(operatorId: string, interactionId: string, agentId: string) {
+    await this.interactionParticipant(operatorId, interactionId, agentId);
+    const rows = await this.sql`
+      SELECT payload FROM openclasp_assurance_probe_plans
+      WHERE interaction_id = ${interactionId}
+        AND (generated_for_agent_id = ${agentId} OR target_agent_id = ${agentId})
+      ORDER BY created_at DESC
+    `;
+    return rows.map((row) => AssuranceProbePlanSchema.parse(row.payload));
+  }
+
+  async getAssuranceBrief(operatorId: string, interactionId: string, agentId: string) {
+    await this.interactionParticipant(operatorId, interactionId, agentId);
+    const [assessments, predictions, safeguards, evaluations, plans, responses] = await Promise.all(
+      [
+        this
+          .sql`SELECT payload FROM openclasp_assurance_assessments WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId} ORDER BY created_at ASC`,
+        this
+          .sql`SELECT payload FROM openclasp_assurance_predictions WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId} ORDER BY created_at ASC`,
+        this
+          .sql`SELECT payload FROM openclasp_assurance_safeguards WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId} ORDER BY created_at ASC`,
+        this
+          .sql`SELECT payload FROM openclasp_assurance_evaluations WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId} ORDER BY created_at ASC`,
+        this
+          .sql`SELECT payload FROM openclasp_assurance_probe_plans WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId} ORDER BY created_at ASC`,
+        this
+          .sql`SELECT responses.payload FROM openclasp_assurance_probe_responses responses INNER JOIN openclasp_assurance_probe_plans plans ON plans.plan_id = responses.plan_id WHERE plans.operator_id = ${operatorId} AND responses.interaction_id = ${interactionId} ORDER BY responses.created_at ASC`,
+      ],
+    );
+    const parsedAssessments = assessments.map((row) => AssuranceDecisionSchema.parse(row.payload));
+    const latestAssessment = parsedAssessments.at(-1);
+    const assuranceLearning = latestAssessment
+      ? await this.getAssuranceLearning(
+          operatorId,
+          latestAssessment.targetAgentId,
+          latestAssessment.targetAgentVersion,
+          latestAssessment.prediction.taskCategory,
+        )
+      : summarizeAssuranceLearning([]);
+    return {
+      assessments: parsedAssessments,
+      predictions: predictions.map((row) => AssurancePredictionSnapshotSchema.parse(row.payload)),
+      safeguards: safeguards.map((row) => AssuranceSafeguardSchema.parse(row.payload)),
+      evaluations: evaluations.map((row) =>
+        AssuranceEffectivenessEvaluationSchema.parse(row.payload),
+      ),
+      plans: plans.map((row) => AssuranceProbePlanSchema.parse(row.payload)),
+      responses: responses.map((row) => AssuranceProbeResponseSchema.parse(row.payload)),
+      assuranceLearning,
+      advisoryNotice: 'experimental_estimate_not_a_guarantee' as const,
+    };
+  }
+
+  private async predictionAfterProbe(
+    operatorId: string,
+    plan: AssuranceProbePlan,
+    response: AssuranceProbeResponse,
+  ) {
+    const rows = await this.sql`
+      SELECT payload FROM openclasp_assurance_predictions
+      WHERE operator_id = ${operatorId} AND interaction_id = ${plan.interactionId}
+        AND target_agent_id = ${plan.targetAgentId}
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    const prior = AssurancePredictionSnapshotSchema.safeParse(rows[0]?.payload);
+    if (!prior.success) return undefined;
+    const question = plan.questions[0];
+    const answer = response.answers.find((candidate) => candidate.probeId === question?.probeId);
+    if (!question || !answer) return undefined;
+    const normalized = String(answer.answer).trim().toLowerCase();
+    const signal = question.expectedSignals.find(
+      (candidate) => candidate.answer.trim().toLowerCase() === normalized,
+    );
+    const delta = signal?.probabilityDelta ?? 0;
+    const prediction = AssurancePredictionSnapshotSchema.parse({
+      ...prior.data,
+      predictionId: crypto.randomUUID(),
+      stage: 'after_probe',
+      successProbability: Math.max(0.05, Math.min(0.95, prior.data.successProbability + delta)),
+      confidence: Math.min(0.9, prior.data.confidence + 0.05 * answer.confidence),
+      priorPredictionId: prior.data.predictionId,
+      triggerResponseId: response.responseId,
+      createdAt: new Date().toISOString(),
+    });
+    await this.sql`
+      INSERT INTO openclasp_assurance_predictions(
+        prediction_id, assessment_id, operator_id, interaction_id, target_agent_id,
+        target_agent_version, task_category, stage, success_probability, payload
+      ) VALUES (
+        ${prediction.predictionId}, ${plan.assessmentId}, ${operatorId}, ${prediction.interactionId},
+        ${prediction.targetAgentId}, ${prediction.targetAgentVersion}, ${prediction.taskCategory},
+        ${prediction.stage}, ${prediction.successProbability}, ${JSON.stringify(prediction)}::jsonb
+      )
+    `;
+    return prediction;
+  }
+
+  async decideAssuranceSafeguard(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+    safeguardId: string,
+    status: 'accepted' | 'rejected' | 'modified',
+    decisionReason?: string,
+  ) {
+    await this.interactionParticipant(operatorId, interactionId, agentId);
+    const rows = await this.sql`
+      SELECT safeguard.payload, safeguard.assessment_id, assessment.payload AS assessment
+      FROM openclasp_assurance_safeguards safeguard
+      INNER JOIN openclasp_assurance_assessments assessment
+        ON assessment.assessment_id = safeguard.assessment_id
+      WHERE safeguard.operator_id = ${operatorId} AND safeguard.interaction_id = ${interactionId}
+        AND safeguard.safeguard_id = ${safeguardId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) throw new Error('Assurance safeguard not found');
+    const assessment = AssuranceDecisionSchema.parse(row.assessment);
+    if (assessment.generatedForAgentId !== agentId)
+      throw new Error('Only the agent that requested the assessment may decide its safeguard');
+    const current = AssuranceSafeguardSchema.parse(row.payload);
+    if (current.status !== 'recommended')
+      throw new Error('Assurance safeguard was already decided');
+    const safeguard = AssuranceSafeguardSchema.parse({
+      ...current,
+      status,
+      ...(decisionReason ? { decisionReason } : {}),
+      decidedAt: new Date().toISOString(),
+    });
+    await this.sql`
+      UPDATE openclasp_assurance_safeguards
+      SET status = ${status}, payload = ${JSON.stringify(safeguard)}::jsonb, updated_at = NOW()
+      WHERE safeguard_id = ${safeguardId} AND operator_id = ${operatorId}
+    `;
+    let prediction: AssurancePredictionSnapshot | undefined;
+    if (status !== 'rejected') {
+      const priorRows = await this.sql`
+        SELECT payload FROM openclasp_assurance_predictions
+        WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId}
+          AND target_agent_id = ${safeguard.targetAgentId}
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      const prior = AssurancePredictionSnapshotSchema.safeParse(priorRows[0]?.payload);
+      if (prior.success) {
+        prediction = AssurancePredictionSnapshotSchema.parse({
+          ...prior.data,
+          predictionId: crypto.randomUUID(),
+          stage: 'after_safeguard',
+          successProbability: Math.min(
+            0.95,
+            prior.data.successProbability + Math.min(0.15, safeguard.expectedImpact),
+          ),
+          confidence: Math.min(0.9, prior.data.confidence + 0.03),
+          priorPredictionId: prior.data.predictionId,
+          createdAt: new Date().toISOString(),
+        });
+        await this.sql`
+          INSERT INTO openclasp_assurance_predictions(
+            prediction_id, assessment_id, operator_id, interaction_id, target_agent_id,
+            target_agent_version, task_category, stage, success_probability, payload
+          ) VALUES (
+            ${prediction.predictionId}, ${String(row.assessment_id)}, ${operatorId},
+            ${prediction.interactionId}, ${prediction.targetAgentId}, ${prediction.targetAgentVersion},
+            ${prediction.taskCategory}, ${prediction.stage}, ${prediction.successProbability},
+            ${JSON.stringify(prediction)}::jsonb
+          )
+        `;
+      }
+    }
+    return { safeguard, prediction, contractRevisionRequired: status !== 'rejected' };
+  }
+
+  private async recalculateAssuranceComparison(
+    operatorId: string,
+    interactionId: string,
+    targetAgentId: string,
+  ): Promise<AssuranceClaimOutcomeComparison | undefined> {
+    const responseRows = await this.sql`
+      SELECT responses.response_id, responses.phase, responses.payload
+      FROM openclasp_assurance_probe_responses responses
+      INNER JOIN openclasp_assurance_probe_plans plans ON plans.plan_id = responses.plan_id
+      WHERE responses.interaction_id = ${interactionId}
+        AND responses.agent_id = ${targetAgentId}
+        AND plans.operator_id = ${operatorId}
+      ORDER BY responses.created_at DESC
+    `;
+    const preRow = responseRows.find((row) => row.phase === 'pre_task');
+    if (!preRow) return undefined;
+    const pre = AssuranceProbeResponseSchema.parse(preRow.payload);
+    const postRow = responseRows.find((row) => row.phase === 'post_task');
+    const post = postRow ? AssuranceProbeResponseSchema.parse(postRow.payload) : undefined;
+    const reportRows = await this.sql`
+      SELECT payload FROM openclasp_records
+      WHERE operator_id = ${operatorId}
+        AND kind = 'completion_report'
+        AND payload->>'interactionId' = ${interactionId}
+        AND payload->>'reportingAgentId' = ${targetAgentId}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `;
+    const report = InteractionCompletionReportSchema.safeParse(reportRows[0]?.payload);
+    if (!report.success) return undefined;
+    const comparison = AssuranceClaimOutcomeComparisonSchema.parse({
+      protocolVersion: '0.1',
+      comparisonId: deterministicUuid(`assurance-comparison:${operatorId}:${pre.responseId}`),
+      interactionId,
+      contractHash: pre.contractHash,
+      targetAgentId,
+      preTaskResponseId: pre.responseId,
+      ...(post ? { postTaskResponseId: post.responseId } : {}),
+      completionReportIds: [report.data.reportId],
+      comparisons: pre.answers.map((answer) => assuranceClaimComparison(answer, report.data)),
+      calculatedAt: new Date().toISOString(),
+    });
+    await this.sql`
+      INSERT INTO openclasp_assurance_claim_comparisons(
+        comparison_id, operator_id, interaction_id, target_agent_id,
+        pre_task_response_id, post_task_response_id, payload
+      ) VALUES (
+        ${comparison.comparisonId}, ${operatorId}, ${interactionId}, ${targetAgentId},
+        ${comparison.preTaskResponseId}, ${comparison.postTaskResponseId ?? null},
+        ${JSON.stringify(comparison)}::jsonb
+      )
+      ON CONFLICT (operator_id, interaction_id, target_agent_id, pre_task_response_id)
+      DO UPDATE SET post_task_response_id = EXCLUDED.post_task_response_id,
+        payload = EXCLUDED.payload, created_at = NOW()
+    `;
+    return comparison;
+  }
+
+  async submitAssuranceProbeResponse(
+    operatorId: string,
+    agentId: string,
+    value: AssuranceProbeResponse,
+  ) {
+    const response = AssuranceProbeResponseSchema.parse(value);
+    const participant = await this.interactionParticipant(
+      operatorId,
+      response.interactionId,
+      agentId,
+    );
+    if (response.agentId !== agentId)
+      throw new Error('Assurance response identity does not match the authenticated agent');
+    if (participant.interaction.termsHash !== response.contractHash)
+      throw new Error('Assurance response contract hash is stale');
+    const planRows = await this.sql`
+      SELECT operator_id, target_agent_id, phase, payload, expires_at
+      FROM openclasp_assurance_probe_plans
+      WHERE plan_id = ${response.planId} AND interaction_id = ${response.interactionId}
+      LIMIT 1
+    `;
+    const row = planRows[0];
+    if (!row) throw new Error('Assurance probe plan not found');
+    const plan = AssuranceProbePlanSchema.parse(row.payload);
+    if (row.target_agent_id !== agentId || response.phase !== row.phase)
+      throw new Error('Assurance response does not match the targeted probe plan');
+    if (response.agentVersion !== plan.targetAgentVersion)
+      throw new Error('Assurance response agent version does not match the probe plan');
+    if (Date.parse(String(row.expires_at)) <= Date.now())
+      throw new Error('Assurance probe plan expired');
+    const answerIds = new Set(response.answers.map((answer) => answer.probeId));
+    for (const question of plan.questions) {
+      const answer = response.answers.find((candidate) => candidate.probeId === question.probeId);
+      if (question.required && !answer)
+        throw new Error(`Required assurance probe ${question.questionCode} is unanswered`);
+      if (!answer) continue;
+      if (
+        answer.questionCode !== question.questionCode ||
+        answer.responseType !== question.responseType ||
+        (question.responseType === 'enum' && !question.choices?.includes(String(answer.answer)))
+      )
+        throw new Error(`Assurance answer does not match probe ${question.questionCode}`);
+    }
+    if (
+      answerIds.size !== response.answers.length ||
+      response.answers.some(
+        (answer) => !plan.questions.some((question) => question.probeId === answer.probeId),
+      )
+    )
+      throw new Error('Assurance response contains duplicate or unknown probes');
+    const rows = await this.sql`
+      INSERT INTO openclasp_assurance_probe_responses(
+        response_id, plan_id, operator_id, interaction_id, contract_hash, phase, agent_id, payload
+      ) VALUES (
+        ${response.responseId}, ${response.planId}, ${operatorId}, ${response.interactionId},
+        ${response.contractHash}, ${response.phase}, ${agentId}, ${JSON.stringify(response)}::jsonb
+      )
+      ON CONFLICT (plan_id, agent_id) DO NOTHING
+      RETURNING payload
+    `;
+    if (!rows.length) throw new Error('This agent already answered the assurance probe plan');
+    const storedResponse = AssuranceProbeResponseSchema.parse(rows[0]!.payload);
+    const prediction = await this.predictionAfterProbe(
+      String(row.operator_id),
+      plan,
+      storedResponse,
+    );
+    const comparison = await this.recalculateAssuranceComparison(
+      String(row.operator_id),
+      response.interactionId,
+      agentId,
+    );
+    return { response: storedResponse, prediction, comparison };
+  }
+
+  async recordSessionAssuranceResponse(token: string, value: AssuranceProbeResponse) {
+    const response = AssuranceProbeResponseSchema.parse(value);
+    const grant = this.verifySessionGrant(token);
+    if (grant.interactionId !== response.interactionId || grant.senderAgentId !== response.agentId)
+      throw new Error('Session credential does not match the assurance response');
+    const owners = await this.sql`
+      SELECT initiator_operator_id, responder_operator_id, initiator_agent_id
+      FROM openclasp_federated_interactions
+      WHERE interaction_id = ${response.interactionId}
+      LIMIT 1
+    `;
+    const row = owners[0];
+    if (!row) throw new Error('Interaction not found');
+    const operatorId = String(
+      row.initiator_agent_id === response.agentId
+        ? row.initiator_operator_id
+        : row.responder_operator_id,
+    );
+    return this.submitAssuranceProbeResponse(operatorId, response.agentId, response);
+  }
+
+  async listAssuranceComparisons(operatorId: string, interactionId: string, agentId: string) {
+    await this.interactionParticipant(operatorId, interactionId, agentId);
+    const rows = await this.sql`
+      SELECT payload FROM openclasp_assurance_claim_comparisons
+      WHERE operator_id = ${operatorId} AND interaction_id = ${interactionId}
+      ORDER BY created_at DESC
+    `;
+    return rows.map((row) => AssuranceClaimOutcomeComparisonSchema.parse(row.payload));
+  }
+
+  private async evaluateAssuranceOutcome(
+    operatorId: string,
+    report: InteractionCompletionReport,
+  ): Promise<AssuranceEffectivenessEvaluation | undefined> {
+    const [predictionRows, planRows, responseRows, safeguardRows] = await Promise.all([
+      this
+        .sql`SELECT payload FROM openclasp_assurance_predictions WHERE operator_id = ${operatorId} AND interaction_id = ${report.interactionId} AND target_agent_id = ${report.reportingAgentId} ORDER BY created_at ASC`,
+      this
+        .sql`SELECT payload FROM openclasp_assurance_probe_plans WHERE operator_id = ${operatorId} AND interaction_id = ${report.interactionId} AND target_agent_id = ${report.reportingAgentId} ORDER BY created_at ASC`,
+      this
+        .sql`SELECT responses.payload FROM openclasp_assurance_probe_responses responses INNER JOIN openclasp_assurance_probe_plans plans ON plans.plan_id = responses.plan_id WHERE plans.operator_id = ${operatorId} AND responses.interaction_id = ${report.interactionId} AND responses.agent_id = ${report.reportingAgentId} ORDER BY responses.created_at ASC`,
+      this
+        .sql`SELECT payload FROM openclasp_assurance_safeguards WHERE operator_id = ${operatorId} AND interaction_id = ${report.interactionId} AND target_agent_id = ${report.reportingAgentId} ORDER BY created_at ASC`,
+    ]);
+    if (!predictionRows.length && !planRows.length) return undefined;
+    const predictions = predictionRows.map((row) =>
+      AssurancePredictionSnapshotSchema.parse(row.payload),
+    );
+    const plans = planRows.map((row) => AssuranceProbePlanSchema.parse(row.payload));
+    const responses = responseRows.map((row) => AssuranceProbeResponseSchema.parse(row.payload));
+    const safeguards = safeguardRows.map((row) => AssuranceSafeguardSchema.parse(row.payload));
+    const outcomeValue = report.outcome === 'success' ? 1 : report.outcome === 'partial' ? 0.5 : 0;
+    const evaluation = AssuranceEffectivenessEvaluationSchema.parse({
+      protocolVersion: '0.1',
+      evaluationId: deterministicUuid(`assurance-evaluation:${operatorId}:${report.reportId}`),
+      interactionId: report.interactionId,
+      contractHash: report.contractHash,
+      targetAgentId: report.reportingAgentId,
+      targetAgentVersion: report.agentVersion,
+      taskCategory: predictions[0]?.taskCategory ?? 'general',
+      completionReportId: report.reportId,
+      outcomeValue,
+      predictionScores: predictions.map((prediction) => ({
+        predictionId: prediction.predictionId,
+        stage: prediction.stage,
+        probability: prediction.successProbability,
+        brierScore: (prediction.successProbability - outcomeValue) ** 2,
+      })),
+      questionScores: plans.flatMap((plan) =>
+        plan.questions.map((question) => {
+          const response = responses.find((candidate) => candidate.planId === plan.planId);
+          const answer = response?.answers.find(
+            (candidate) => candidate.probeId === question.probeId,
+          );
+          const signal = answer
+            ? question.expectedSignals.find(
+                (candidate) =>
+                  candidate.answer.toLowerCase() === String(answer.answer).toLowerCase(),
+              )
+            : undefined;
+          const before = predictions.find(
+            (prediction) => prediction.predictionId === plan.predictionBeforeId,
+          );
+          const after = response
+            ? predictions.find((prediction) => prediction.triggerResponseId === response.responseId)
+            : undefined;
+          return {
+            probeId: question.probeId,
+            questionCode: question.questionCode,
+            questionFamily: question.questionFamily,
+            answered: Boolean(answer),
+            exposedMaterialRisk:
+              signal?.effect === 'reduce_success' ||
+              Boolean(answer?.limitations.length) ||
+              report.blockers.length > 0,
+            predictionDelta:
+              before && after ? after.successProbability - before.successProbability : 0,
+          };
+        }),
+      ),
+      safeguardScores: safeguards.map((safeguard) => ({
+        safeguardId: safeguard.safeguardId,
+        type: safeguard.type,
+        status: safeguard.status,
+        outcomeAssociation:
+          safeguard.status === 'accepted' || safeguard.status === 'modified'
+            ? outcomeValue >= 0.75
+              ? 'positive'
+              : outcomeValue <= 0.25
+                ? 'negative'
+                : 'unclear'
+            : 'unclear',
+        causalClaim: false,
+      })),
+      evaluatedAt: new Date().toISOString(),
+    });
+    await this.sql`
+      INSERT INTO openclasp_assurance_evaluations(
+        evaluation_id, operator_id, interaction_id, target_agent_id, target_agent_version,
+        task_category, completion_report_id, payload
+      ) VALUES (
+        ${evaluation.evaluationId}, ${operatorId}, ${evaluation.interactionId},
+        ${evaluation.targetAgentId}, ${evaluation.targetAgentVersion}, ${evaluation.taskCategory},
+        ${evaluation.completionReportId}, ${JSON.stringify(evaluation)}::jsonb
+      )
+      ON CONFLICT (operator_id, completion_report_id)
+      DO UPDATE SET payload = EXCLUDED.payload, created_at = NOW()
+    `;
+    return evaluation;
   }
 
   private async ensureFeedbackRequest(
@@ -2221,6 +3116,30 @@ export class HostedRepository {
       this.upsert(participant.participantOperatorId, 'completion_report', stored.reportId, stored),
       this.upsert(participant.counterpartyOperatorId, 'completion_report', stored.reportId, stored),
     ]);
+    const assuranceComparisons = (
+      await Promise.all([
+        this.recalculateAssuranceComparison(
+          participant.participantOperatorId,
+          stored.interactionId,
+          stored.reportingAgentId,
+        ).catch(() => undefined),
+        this.recalculateAssuranceComparison(
+          participant.counterpartyOperatorId,
+          stored.interactionId,
+          stored.reportingAgentId,
+        ).catch(() => undefined),
+      ])
+    ).filter((comparison) => comparison !== undefined);
+    const assuranceEvaluations = (
+      await Promise.all([
+        this.evaluateAssuranceOutcome(participant.participantOperatorId, stored).catch(
+          () => undefined,
+        ),
+        this.evaluateAssuranceOutcome(participant.counterpartyOperatorId, stored).catch(
+          () => undefined,
+        ),
+      ])
+    ).filter((evaluation) => evaluation !== undefined);
     const [feedbackRequest] = await Promise.all([
       this.ensureFeedbackRequest(
         participant.participantOperatorId,
@@ -2280,6 +3199,8 @@ export class HostedRepository {
       report: stored,
       feedbackRequest,
       peerReportRequested: peerReportStatus === 'awaiting',
+      assuranceComparisons,
+      assuranceEvaluations,
       ...(conclusion.released ? { conclusion: conclusion.conclusion } : {}),
     };
   }

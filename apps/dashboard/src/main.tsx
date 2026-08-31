@@ -50,11 +50,11 @@ const authTransactionKey = 'openclasp.auth0.transaction';
 const themeKey = 'openclasp.theme.v1';
 const landingCapabilities = [
   'publisher authenticated',
-  'contextual intelligence',
-  'attested agreements',
+  'success prediction',
+  'adaptive risk questions',
+  'recommended safeguards',
   'direct A2A',
-  'authenticated outcomes',
-  'behavioural profiles',
+  'outcome learning',
 ];
 
 type DashboardData = {
@@ -80,6 +80,12 @@ type DashboardData = {
   intelligenceSummaries: Record<string, any>[];
   runtimes: Record<string, any>[];
   accessTokens: Record<string, any>[];
+  assuranceAssessments: Record<string, any>[];
+  assurancePredictions: Record<string, any>[];
+  assuranceSafeguards: Record<string, any>[];
+  assuranceEvaluations: Record<string, any>[];
+  assuranceProbePlans: Record<string, any>[];
+  assuranceProbeResponses: Record<string, any>[];
 };
 
 type Settings = {
@@ -111,6 +117,12 @@ const emptyData: DashboardData = {
   intelligenceSummaries: [],
   runtimes: [],
   accessTokens: [],
+  assuranceAssessments: [],
+  assurancePredictions: [],
+  assuranceSafeguards: [],
+  assuranceEvaluations: [],
+  assuranceProbePlans: [],
+  assuranceProbeResponses: [],
 };
 const defaultSettings: Settings = {
   displayName: '',
@@ -234,7 +246,7 @@ function App() {
     document.title = session
       ? `${pageMeta[page].title} · OpenClasp`
       : session === null
-        ? 'OpenClasp · Trust for agent communication'
+        ? 'OpenClasp · AI assurance for agent agreements'
         : 'OpenClasp';
   }, [page, session]);
 
@@ -454,29 +466,29 @@ function PublicLanding({
         <section className="landingHero">
           <div className="heroCopy">
             <p className="landingKicker">
-              <span>//</span> assurance and behavioural intelligence for AI agents
+              <span>//</span> AI assurance for agent-to-agent agreements
             </p>
             <h1>
-              Agents can talk.
+              Know if an agent will deliver.
               <br />
-              <em>Now they can build trust.</em>
+              <em>Before you trust it.</em>
             </h1>
             <p>
-              OpenClasp authenticates agent publishers, records agreed terms, and turns structured
-              outcome reports into contextual reliability signals while agents communicate directly.
+              OpenClasp predicts whether an external agent will complete this specific agreement—and
+              tells your agent what safeguards to require.
             </p>
             <div className="heroActions">
               <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
                 sign in <ArrowRight />
               </a>
               <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
-                see what OpenClasp knows
+                see the assurance loop
               </a>
             </div>
             <div className="heroNotes" aria-label="Protocol flags">
               <span>--direct-a2a</span>
-              <span>--authenticated-outcomes</span>
-              <span>--no-universal-score</span>
+              <span>--one-question-at-a-time</span>
+              <span>--no-conversation-storage</span>
             </div>
           </div>
           <LandingDiagram />
@@ -491,39 +503,39 @@ function PublicLanding({
         <section className="productSection" id="product">
           <div className="sectionIntro">
             <p className="landingKicker">
-              <span>01</span> questions that matter
+              <span>01</span> before the agent acts
             </p>
             <h2>
-              Trust infrastructure
+              A decision, not
               <br />
-              <em>for the agent economy.</em>
+              <em>a generic trust score.</em>
             </h2>
             <p>
-              Ask about a counterparty in the context of the actual task—not through a generic trust
-              score.
+              The same agent can be safe for one task and risky for another. OpenClasp evaluates the
+              exact agreement, version, permissions, evidence requirements, and relevant history.
             </p>
           </div>
           <section className="coreQuestions" aria-labelledby="core-questions-title">
             <header>
-              <span>CORE INTELLIGENCE</span>
-              <h3 id="core-questions-title">Before your agent acts, OpenClasp answers:</h3>
+              <span>AI ASSURANCE DECISION</span>
+              <h3 id="core-questions-title">For this agreement, OpenClasp determines:</h3>
             </header>
             <ol>
               <li>
-                <span>01 · IDENTITY</span>
-                <strong>Who published and controls this agent?</strong>
+                <span>01 · PREDICTION</span>
+                <strong>How likely is this agent version to complete the task?</strong>
               </li>
               <li>
-                <span>02 · YOUR QUESTION</span>
-                <strong>What safeguards should this task require?</strong>
+                <span>02 · RISK</span>
+                <strong>What is most likely to make the agreement fail?</strong>
               </li>
               <li>
-                <span>03 · RELEVANT HISTORY</span>
-                <strong>Has this agent met similar terms before?</strong>
+                <span>03 · NEXT QUESTION</span>
+                <strong>Which single answer would reduce uncertainty most?</strong>
               </li>
               <li>
-                <span>04 · CONTRACT</span>
-                <strong>What terms should both agents accept?</strong>
+                <span>04 · SAFEGUARDS</span>
+                <strong>What should change before either agent proceeds?</strong>
               </li>
             </ol>
           </section>
@@ -535,36 +547,37 @@ function PublicLanding({
               <span>02</span> the compounding layer
             </p>
             <h2>
-              Eligible outcomes
+              Every outcome
               <br />
-              <em>build better context.</em>
+              <em>makes the next decision better.</em>
             </h2>
             <p>
-              With participant permission, OpenClasp uses authenticated structured reports—not
-              conversations—to improve task-specific reliability signals.
+              OpenClasp measures which predictions were calibrated, which questions revealed risk,
+              and which accepted safeguards correlate with success.
             </p>
           </div>
           <ol className="intelligenceLoop" aria-label="OpenClasp intelligence flywheel">
             <li>
               <span>01</span>
-              <strong>Attested agreements</strong>
+              <strong>Specific agreement</strong>
             </li>
             <li>
               <span>02</span>
-              <strong>Structured outcomes</strong>
+              <strong>Prediction + probe</strong>
             </li>
             <li>
               <span>03</span>
-              <strong>Behavioural profiles</strong>
+              <strong>Safeguard decision</strong>
             </li>
             <li>
               <span>04</span>
-              <strong>Better agent decisions</strong>
+              <strong>Scored outcome</strong>
             </li>
           </ol>
           <p className="intelligenceBoundary">
-            Conversation bodies stay between agent runtimes. Intelligence stays contextual. Network
-            contribution is opt-in.
+            Conversation bodies stay between agent runtimes. Learning uses explicit structured
+            records, stays scoped to task and version, and never claims safeguards caused an
+            outcome.
           </p>
         </section>
 
@@ -626,8 +639,8 @@ function PublicLanding({
           <ClaspMark className="landingMark" size={28} />
           <strong>openclasp</strong>
         </a>
-        <p>assurance and behavioural intelligence for AI agents.</p>
-        <small>Authenticated outcomes, contextual intelligence, and direct agent communication.</small>
+        <p>AI assurance for agent-to-agent agreements.</p>
+        <small>Predict success. Expose risk. Require safeguards. Learn from outcomes.</small>
       </footer>
     </div>
   );
@@ -712,7 +725,8 @@ function PageContent({
   if (page === 'marketplace') return <Marketplace data={data} />;
   if (page === 'settings')
     return <SettingsPage settings={settings} setSettings={setSettings} api={api} />;
-  if (page === 'history') return <History data={data} />;
+  if (page === 'history')
+    return <History data={data} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'agents')
     return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'insights') return <Insights data={data} />;
@@ -775,6 +789,10 @@ function AgentWorkspace({
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
   const pendingSetups = data.setupRequests.filter((request) => request.status === 'pending');
+  const latestAssurancePrediction = data.assurancePredictions.at(-1);
+  const pendingAssuranceSafeguards = data.assuranceSafeguards.filter(
+    (item) => item.status === 'recommended',
+  ).length;
   const toggleAgent = (agentId: string, isOpen: boolean) => {
     setExpandedAgent(isOpen ? '' : agentId);
     setExpandedHistoryId('');
@@ -829,6 +847,42 @@ function AgentWorkspace({
       </header>
 
       <FirstRunGuide data={data} api={api} refreshDashboard={refreshDashboard} />
+
+      <section className="assuranceOverview" aria-label="AI assurance overview">
+        <div>
+          <span className="eyebrow">AI ASSURANCE · EXPERIMENTAL</span>
+          <h2>Predict success before your agents commit.</h2>
+          <p>
+            One risk-revealing question at a time. Explicit safeguards. Outcomes that improve the
+            next decision.
+          </p>
+        </div>
+        <div className="assuranceOverviewStats">
+          <span>
+            <strong>{data.assuranceAssessments.length}</strong>
+            decisions
+          </span>
+          <span>
+            <strong>
+              {latestAssurancePrediction
+                ? `${Math.round(Number(latestAssurancePrediction.successProbability) * 100)}%`
+                : '—'}
+            </strong>
+            latest prediction
+          </span>
+          <span>
+            <strong>{data.assuranceProbeResponses.length}</strong>
+            probes answered
+          </span>
+          <span>
+            <strong>{pendingAssuranceSafeguards}</strong>
+            safeguards pending
+          </span>
+        </div>
+        <button type="button" onClick={() => navigate('history')}>
+          view assurance decisions <ArrowRight />
+        </button>
+      </section>
 
       {error ? (
         <div className="errorBar" role="alert">
@@ -1857,7 +1911,15 @@ function Overview({
   );
 }
 
-function History({ data }: { data: DashboardData }) {
+function History({
+  data,
+  refreshDashboard,
+  api,
+}: {
+  data: DashboardData;
+  refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
+}) {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<
     'all' | 'pending' | 'active' | 'provisional' | 'finalizing' | 'completed'
@@ -1945,7 +2007,9 @@ function History({ data }: { data: DashboardData }) {
               </button>
             ))}
           </div>
-          {selected ? <InteractionJourney journey={selected} /> : null}
+          {selected ? (
+            <InteractionJourney journey={selected} refreshDashboard={refreshDashboard} api={api} />
+          ) : null}
         </section>
       ) : (
         <section className="panel">
@@ -1983,6 +2047,12 @@ type InteractionJourneyModel = {
   eligibility?: Record<string, any>;
   deltas: Record<string, any>[];
   conflicts: Record<string, any>[];
+  assuranceAssessments: Record<string, any>[];
+  assurancePredictions: Record<string, any>[];
+  assuranceSafeguards: Record<string, any>[];
+  assuranceEvaluations: Record<string, any>[];
+  assuranceProbePlans: Record<string, any>[];
+  assuranceProbeResponses: Record<string, any>[];
 };
 
 function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
@@ -2001,6 +2071,12 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
     data.learningEligibility,
     data.profileDeltas,
     data.conflicts,
+    data.assuranceAssessments,
+    data.assurancePredictions,
+    data.assuranceSafeguards,
+    data.assuranceEvaluations,
+    data.assuranceProbePlans,
+    data.assuranceProbeResponses,
   ];
   for (const collection of collections)
     for (const item of collection) if (item.interactionId) ids.add(String(item.interactionId));
@@ -2029,6 +2105,24 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
       );
       const deltas = data.profileDeltas.filter((item) => item.interactionId === interactionId);
       const conflicts = data.conflicts.filter((item) => item.interactionId === interactionId);
+      const assuranceAssessments = data.assuranceAssessments.filter(
+        (item) => item.interactionId === interactionId,
+      );
+      const assurancePredictions = data.assurancePredictions.filter(
+        (item) => item.interactionId === interactionId,
+      );
+      const assuranceSafeguards = data.assuranceSafeguards.filter(
+        (item) => item.interactionId === interactionId,
+      );
+      const assuranceEvaluations = data.assuranceEvaluations.filter(
+        (item) => item.interactionId === interactionId,
+      );
+      const assuranceProbePlans = data.assuranceProbePlans.filter(
+        (item) => item.interactionId === interactionId,
+      );
+      const assuranceProbeResponses = data.assuranceProbeResponses.filter(
+        (item) => item.interactionId === interactionId,
+      );
       const participants = [
         interaction.initiatorAgentId,
         interaction.responderAgentId,
@@ -2045,6 +2139,8 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
         ...events.map(timestamp),
         ...reports.map(timestamp),
         ...feedback.map(timestamp),
+        ...assuranceAssessments.map(timestamp),
+        ...assurancePredictions.map(timestamp),
         conclusion?.generatedAt,
         receipt?.completedAt,
         eligibility?.decidedAt,
@@ -2083,7 +2179,10 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
           Number(Boolean(conclusion)) +
           Number(Boolean(receipt)) +
           Number(Boolean(eligibility)) +
-          deltas.length,
+          deltas.length +
+          assuranceAssessments.length +
+          assuranceProbeResponses.length +
+          assuranceSafeguards.filter((item) => item.status !== 'recommended').length,
         interaction,
         ...(session ? { session } : {}),
         events,
@@ -2096,12 +2195,28 @@ function interactionJourneys(data: DashboardData): InteractionJourneyModel[] {
         ...(eligibility ? { eligibility } : {}),
         deltas,
         conflicts,
+        assuranceAssessments,
+        assurancePredictions,
+        assuranceSafeguards,
+        assuranceEvaluations,
+        assuranceProbePlans,
+        assuranceProbeResponses,
       };
     })
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
 
-function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
+function InteractionJourney({
+  journey,
+  refreshDashboard,
+  api,
+}: {
+  journey: InteractionJourneyModel;
+  refreshDashboard: () => Promise<void>;
+  api: (path: string, init?: RequestInit) => Promise<unknown>;
+}) {
+  const [assuranceWorking, setAssuranceWorking] = useState('');
+  const [assuranceError, setAssuranceError] = useState('');
   const timeline = interactionTimeline(journey);
   const conclusion = journey.conclusion;
   const checkpoints = journey.events.filter(
@@ -2112,6 +2227,53 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
   const submittedFeedback = new Set(
     journey.feedback.map((item) => item.reviewerAgentId).filter(Boolean),
   ).size;
+  const latestPrediction = journey.assurancePredictions.at(-1);
+  const latestAssessment = journey.assuranceAssessments.at(-1);
+  const activeSafeguards = journey.assuranceSafeguards.filter(
+    (item) => item.status === 'recommended',
+  );
+  const latestPlan = journey.assuranceProbePlans.at(-1);
+  const latestProbe = latestPlan?.questions?.[0];
+  const latestProbeResponse = journey.assuranceProbeResponses.find(
+    (item) => item.planId === latestPlan?.planId,
+  );
+  const latestEvaluation = journey.assuranceEvaluations.at(-1);
+  const averageBrier = latestEvaluation?.predictionScores?.length
+    ? latestEvaluation.predictionScores.reduce(
+        (sum: number, item: Record<string, any>) => sum + Number(item.brierScore ?? 0),
+        0,
+      ) / latestEvaluation.predictionScores.length
+    : undefined;
+  const decideSafeguard = async (
+    safeguard: Record<string, any>,
+    status: 'accepted' | 'rejected',
+  ) => {
+    const assessment =
+      journey.assuranceAssessments.find((item) => item.assessmentId === safeguard.assessmentId) ??
+      latestAssessment;
+    if (!assessment?.generatedForAgentId) {
+      setAssuranceError('The requesting agent for this safeguard is unavailable.');
+      return;
+    }
+    setAssuranceWorking(String(safeguard.safeguardId));
+    setAssuranceError('');
+    try {
+      await api(
+        `/v0.1/federated-interactions/${encodeURIComponent(journey.interactionId)}/assurance-safeguards/${encodeURIComponent(String(safeguard.safeguardId))}/decision`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ status, agentId: assessment.generatedForAgentId }),
+        },
+      );
+      await refreshDashboard();
+    } catch (reason) {
+      setAssuranceError(
+        reason instanceof Error ? reason.message : 'Could not update the safeguard decision',
+      );
+    } finally {
+      setAssuranceWorking('');
+    }
+  };
   return (
     <article className="journeyDetail">
       <header className="journeyHero">
@@ -2179,6 +2341,103 @@ function InteractionJourney({ journey }: { journey: InteractionJourneyModel }) {
           <small>{humanize(journey.eligibility?.contributionMode ?? 'Local only')}</small>
         </section>
       </div>
+
+      {latestPrediction ? (
+        <section className="progressCard">
+          <div className="progressCardTop">
+            <div>
+              <span className="eyebrow">AI ASSURANCE · EXPERIMENTAL</span>
+              <h3>
+                {Math.round(Number(latestPrediction.successProbability) * 100)}% likely to complete
+              </h3>
+            </div>
+            <StatusPill value={latestPrediction.basis ?? 'experimental'} />
+          </div>
+          <div className="progressFacts">
+            <span>{Math.round(Number(latestPrediction.confidence ?? 0) * 100)}% confidence</span>
+            <span>{humanize(latestPrediction.stage ?? 'baseline')} prediction</span>
+            <span>{latestAssessment?.risks?.length ?? 0} material risks</span>
+            <span>
+              {journey.assuranceProbeResponses.length}/{journey.assuranceProbePlans.length} probes
+              answered
+            </span>
+            <span>{activeSafeguards.length} safeguards awaiting decision</span>
+          </div>
+          <div className="assuranceDecisionGrid">
+            <section>
+              <span className="eyebrow">TOP RISKS</span>
+              {latestAssessment?.risks?.slice(0, 3).map((risk: Record<string, any>) => (
+                <div className="assuranceRisk" key={risk.riskCode}>
+                  <strong>{risk.title}</strong>
+                  <small>
+                    {Math.round(Number(risk.likelihood ?? 0) * 100)}% likelihood ·{' '}
+                    {Math.round(Number(risk.impact ?? 0) * 100)}% impact
+                  </small>
+                </div>
+              ))}
+            </section>
+            <section>
+              <span className="eyebrow">SELECTED QUESTION · ROUND {latestPlan?.round ?? 1}</span>
+              {latestProbe ? (
+                <div className="assuranceProbe">
+                  <strong>{latestProbe.prompt}</strong>
+                  <small>
+                    {latestProbeResponse
+                      ? `Answered · prediction updated`
+                      : `Awaiting ${latestAssessment?.targetAgentId ?? 'counterparty'} response`}
+                  </small>
+                </div>
+              ) : (
+                <small>No probe generated.</small>
+              )}
+            </section>
+          </div>
+          {activeSafeguards.length ? (
+            <div className="assuranceSafeguards">
+              <span className="eyebrow">RECOMMENDED SAFEGUARDS</span>
+              {activeSafeguards.map((safeguard) => (
+                <div className="assuranceSafeguard" key={safeguard.safeguardId}>
+                  <div>
+                    <strong>{safeguard.description}</strong>
+                    <small>{safeguard.rationale}</small>
+                  </div>
+                  <div className="assuranceDecisionActions">
+                    <button
+                      type="button"
+                      disabled={assuranceWorking === safeguard.safeguardId}
+                      onClick={() => void decideSafeguard(safeguard, 'rejected')}
+                    >
+                      reject
+                    </button>
+                    <button
+                      className="approve"
+                      type="button"
+                      disabled={assuranceWorking === safeguard.safeguardId}
+                      onClick={() => void decideSafeguard(safeguard, 'accepted')}
+                    >
+                      accept
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {averageBrier !== undefined ? (
+            <p className="assuranceCalibration">
+              Outcome scored · Brier error {averageBrier.toFixed(3)} · lower is better
+            </p>
+          ) : null}
+          {assuranceError ? (
+            <p className="progressWarning" role="alert">
+              {assuranceError}
+            </p>
+          ) : null}
+          <p className="assuranceNotice">
+            Advisory, not a guarantee. Accepted safeguards that change terms require a contract
+            revision.
+          </p>
+        </section>
+      ) : null}
 
       {latestCheckpoint ? (
         <section className="progressCard">

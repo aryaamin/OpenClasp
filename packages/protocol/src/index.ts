@@ -390,6 +390,7 @@ export const LiveSessionActivationSchema = z.object({
     endpoint: z.string().url(),
     completionEndpoint: z.string().url().optional(),
     feedbackEndpoint: z.string().url().optional(),
+    assuranceResponseEndpoint: z.string().url().optional(),
     bearerToken: z.string().min(1),
   }),
   privateInsights: z.array(LiveSessionInsightSchema).optional(),
@@ -421,6 +422,328 @@ export const ProgressCheckpointSchema = z
     expectedRemainingTurns: z.number().int().nonnegative().max(1000).optional(),
     needsHuman: z.boolean().default(false),
     confidence: z.number().min(0).max(1),
+  })
+  .strict();
+
+export const AssuranceProbePhaseSchema = z.enum(['pre_task', 'post_task']);
+export const AssuranceProbeResponseTypeSchema = z.enum(['boolean', 'enum', 'number', 'short_text']);
+export const AssuranceRiskDimensionSchema = z.enum([
+  'capability',
+  'scope',
+  'deadline',
+  'tool_access',
+  'data_access',
+  'evidence',
+  'dependency',
+  'authority',
+  'safety',
+  'delivery',
+]);
+export const AssuranceSignalEffectSchema = z.enum([
+  'increase_success',
+  'reduce_success',
+  'neutral',
+]);
+export const AssuranceExpectedSignalSchema = z
+  .object({
+    answer: z.string().trim().min(1).max(80),
+    effect: AssuranceSignalEffectSchema,
+    probabilityDelta: z.number().min(-0.5).max(0.5),
+  })
+  .strict();
+
+export const AssuranceProbeQuestionSchema = z
+  .object({
+    probeId: z.string().uuid(),
+    questionCode: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    prompt: z.string().trim().min(1).max(240),
+    responseType: AssuranceProbeResponseTypeSchema,
+    choices: z.array(z.string().trim().min(1).max(80)).min(2).max(6).optional(),
+    evidenceRequested: z.boolean().default(false),
+    required: z.boolean().default(true),
+    questionFamily: AssuranceRiskDimensionSchema,
+    riskHypothesis: z.string().trim().min(1).max(280),
+    expectedSignals: z.array(AssuranceExpectedSignalSchema).min(1).max(6),
+    expectedInformationGain: z.number().min(0).max(1),
+    selectionReason: z.string().trim().min(1).max(280),
+    recommendedSafeguardCodes: z
+      .array(z.string().regex(/^[a-z][a-z0-9_]{1,63}$/))
+      .max(5)
+      .default([]),
+  })
+  .strict()
+  .superRefine((question, context) => {
+    if (question.responseType === 'enum' && !question.choices)
+      context.addIssue({
+        code: 'custom',
+        path: ['choices'],
+        message: 'Enum assurance probes require bounded choices',
+      });
+    if (question.responseType !== 'enum' && question.choices)
+      context.addIssue({
+        code: 'custom',
+        path: ['choices'],
+        message: 'Choices are only valid for enum assurance probes',
+      });
+  });
+
+export const AssuranceProbePlanSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    planId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    phase: AssuranceProbePhaseSchema,
+    generatedForAgentId: z.string().min(1),
+    targetAgentId: z.string().min(1),
+    targetAgentVersion: z.string().min(1).max(200),
+    round: z.number().int().min(1).max(3),
+    assessmentId: z.string().uuid(),
+    predictionBeforeId: z.string().uuid(),
+    questions: z.array(AssuranceProbeQuestionSchema).length(1),
+    generation: z
+      .object({
+        generationId: z.string().uuid(),
+        mode: z.enum(['ai', 'fallback']),
+        model: z.string().min(1),
+        promptVersion: z.string().min(1),
+      })
+      .strict(),
+    generatedAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+  })
+  .strict();
+
+export const AssuranceRiskSchema = z
+  .object({
+    riskCode: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    dimension: AssuranceRiskDimensionSchema,
+    title: z.string().trim().min(1).max(160),
+    rationale: z.string().trim().min(1).max(500),
+    likelihood: z.number().min(0).max(1),
+    impact: z.number().min(0).max(1),
+    confidence: z.number().min(0).max(1),
+    evidenceReferences: z.array(z.string().trim().min(1).max(2048)).max(10).default([]),
+  })
+  .strict();
+
+export const AssurancePredictionSnapshotSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    predictionId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    targetAgentId: z.string().min(1),
+    targetAgentVersion: z.string().min(1).max(200),
+    taskCategory: z.string().trim().min(1).max(100),
+    stage: z.enum(['baseline', 'after_probe', 'after_safeguard', 'final']),
+    successProbability: z.number().min(0.05).max(0.95),
+    confidence: z.number().min(0).max(1),
+    basis: z.enum(['cold_start_hybrid', 'historical_hybrid', 'deterministic_fallback']),
+    sampleSize: z.number().int().nonnegative(),
+    topRiskCodes: z.array(z.string().regex(/^[a-z][a-z0-9_]{1,63}$/)).max(5),
+    featureVersion: z.string().min(1).max(100),
+    generationId: z.string().uuid().optional(),
+    priorPredictionId: z.string().uuid().optional(),
+    triggerResponseId: z.string().uuid().optional(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const AssuranceSafeguardSchema = z
+  .object({
+    safeguardId: z.string().uuid(),
+    assessmentId: z.string().uuid(),
+    safeguardCode: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    targetAgentId: z.string().min(1),
+    targetAgentVersion: z.string().min(1).max(200),
+    type: z.enum([
+      'require_evidence',
+      'narrow_scope',
+      'extend_deadline',
+      'grant_tool_access',
+      'require_human_approval',
+      'limit_delegation',
+      'add_checkpoint',
+      'choose_another_agent',
+    ]),
+    description: z.string().trim().min(1).max(500),
+    rationale: z.string().trim().min(1).max(500),
+    riskCodes: z
+      .array(z.string().regex(/^[a-z][a-z0-9_]{1,63}$/))
+      .min(1)
+      .max(5),
+    expectedImpact: z.number().min(0).max(0.5),
+    status: z.enum(['recommended', 'accepted', 'rejected', 'modified']),
+    decisionReason: z.string().trim().max(500).optional(),
+    decidedAt: z.string().datetime().optional(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const AssuranceDecisionSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    assessmentId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    phase: AssuranceProbePhaseSchema,
+    round: z.number().int().min(1).max(3),
+    generatedForAgentId: z.string().min(1),
+    targetAgentId: z.string().min(1),
+    targetAgentVersion: z.string().min(1).max(200),
+    prediction: AssurancePredictionSnapshotSchema,
+    risks: z.array(AssuranceRiskSchema).max(5),
+    candidateQuestions: z.array(AssuranceProbeQuestionSchema).max(5),
+    selectedProbeId: z.string().uuid().optional(),
+    safeguards: z.array(AssuranceSafeguardSchema).max(5),
+    advisoryNotice: z.literal('experimental_estimate_not_a_guarantee'),
+    generation: z
+      .object({
+        generationId: z.string().uuid(),
+        mode: z.enum(['ai', 'fallback']),
+        model: z.string().min(1),
+        promptVersion: z.string().min(1),
+      })
+      .strict(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const AssuranceEffectivenessEvaluationSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    evaluationId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    targetAgentId: z.string().min(1),
+    targetAgentVersion: z.string().min(1).max(200),
+    taskCategory: z.string().trim().min(1).max(100),
+    completionReportId: z.string().uuid(),
+    outcomeValue: z.number().min(0).max(1),
+    predictionScores: z
+      .array(
+        z
+          .object({
+            predictionId: z.string().uuid(),
+            stage: AssurancePredictionSnapshotSchema.shape.stage,
+            probability: z.number().min(0.05).max(0.95),
+            brierScore: z.number().min(0).max(1),
+          })
+          .strict(),
+      )
+      .max(20),
+    questionScores: z
+      .array(
+        z
+          .object({
+            probeId: z.string().uuid(),
+            questionCode: z.string().min(1),
+            questionFamily: AssuranceRiskDimensionSchema,
+            answered: z.boolean(),
+            exposedMaterialRisk: z.boolean(),
+            predictionDelta: z.number().min(-0.9).max(0.9),
+          })
+          .strict(),
+      )
+      .max(6),
+    safeguardScores: z
+      .array(
+        z
+          .object({
+            safeguardId: z.string().uuid(),
+            type: AssuranceSafeguardSchema.shape.type,
+            status: AssuranceSafeguardSchema.shape.status,
+            outcomeAssociation: z.enum(['positive', 'negative', 'unclear']),
+            causalClaim: z.literal(false),
+          })
+          .strict(),
+      )
+      .max(10),
+    evaluatedAt: z.string().datetime(),
+  })
+  .strict();
+
+const AssuranceProbeAnswerBaseSchema = z.object({
+  probeId: z.string().uuid(),
+  questionCode: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+  confidence: z.number().min(0).max(1),
+  evidenceReferences: z.array(z.string().trim().min(1).max(2048)).max(5).default([]),
+  limitations: z.array(z.string().trim().min(1).max(240)).max(3).default([]),
+});
+
+export const AssuranceProbeAnswerSchema = z.discriminatedUnion('responseType', [
+  AssuranceProbeAnswerBaseSchema.extend({
+    responseType: z.literal('boolean'),
+    answer: z.boolean(),
+  }).strict(),
+  AssuranceProbeAnswerBaseSchema.extend({
+    responseType: z.literal('enum'),
+    answer: z.string().trim().min(1).max(80),
+  }).strict(),
+  AssuranceProbeAnswerBaseSchema.extend({
+    responseType: z.literal('number'),
+    answer: z.number().finite(),
+  }).strict(),
+  AssuranceProbeAnswerBaseSchema.extend({
+    responseType: z.literal('short_text'),
+    answer: z.string().trim().min(1).max(280),
+  }).strict(),
+]);
+
+export const AssuranceProbeResponseSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    responseId: z.string().uuid(),
+    planId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    phase: AssuranceProbePhaseSchema,
+    agentId: z.string().min(1),
+    agentVersion: z.string().min(1).max(200),
+    answers: z.array(AssuranceProbeAnswerSchema).length(1),
+    respondedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const AssuranceClaimComparisonSchema = z
+  .object({
+    questionCode: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/),
+    preTaskClaim: z.union([z.boolean(), z.number(), z.string().max(280)]),
+    observedOutcome: z.string().trim().min(1).max(500),
+    status: z.enum(['aligned', 'partially_aligned', 'contradicted', 'unverifiable']),
+    evidenceReferences: z.array(z.string().trim().min(1).max(2048)).max(10).default([]),
+  })
+  .strict();
+
+export const AssuranceClaimOutcomeComparisonSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    comparisonId: z.string().uuid(),
+    interactionId: z.string().uuid(),
+    contractHash: z.string().min(1),
+    targetAgentId: z.string().min(1),
+    preTaskResponseId: z.string().uuid(),
+    postTaskResponseId: z.string().uuid().optional(),
+    completionReportIds: z.array(z.string().uuid()).max(2).default([]),
+    comparisons: z.array(AssuranceClaimComparisonSchema).max(3),
+    calculatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const AssuranceProbeA2APayloadSchema = z
+  .object({
+    kind: z.literal('openclasp.assurance.probe'),
+    plan: AssuranceProbePlanSchema,
+  })
+  .strict();
+
+export const AssuranceResponseA2APayloadSchema = z
+  .object({
+    kind: z.literal('openclasp.assurance.response'),
+    response: AssuranceProbeResponseSchema,
   })
   .strict();
 
@@ -879,6 +1202,20 @@ export type LiveSessionAcceptance = z.infer<typeof LiveSessionAcceptanceSchema>;
 export type LiveSessionActivation = z.infer<typeof LiveSessionActivationSchema>;
 export type LiveSessionEvent = z.infer<typeof LiveSessionEventSchema>;
 export type LiveSessionStateRecord = z.infer<typeof LiveSessionStateRecordSchema>;
+export type AssuranceProbePhase = z.infer<typeof AssuranceProbePhaseSchema>;
+export type AssuranceProbeQuestion = z.infer<typeof AssuranceProbeQuestionSchema>;
+export type AssuranceProbePlan = z.infer<typeof AssuranceProbePlanSchema>;
+export type AssuranceProbeAnswer = z.infer<typeof AssuranceProbeAnswerSchema>;
+export type AssuranceProbeResponse = z.infer<typeof AssuranceProbeResponseSchema>;
+export type AssuranceClaimOutcomeComparison = z.infer<typeof AssuranceClaimOutcomeComparisonSchema>;
+export type AssuranceRiskDimension = z.infer<typeof AssuranceRiskDimensionSchema>;
+export type AssurancePredictionSnapshot = z.infer<typeof AssurancePredictionSnapshotSchema>;
+export type AssuranceRisk = z.infer<typeof AssuranceRiskSchema>;
+export type AssuranceSafeguard = z.infer<typeof AssuranceSafeguardSchema>;
+export type AssuranceDecision = z.infer<typeof AssuranceDecisionSchema>;
+export type AssuranceEffectivenessEvaluation = z.infer<
+  typeof AssuranceEffectivenessEvaluationSchema
+>;
 export type RequirementAssessment = z.infer<typeof RequirementAssessmentSchema>;
 export type CounterpartyBrief = z.infer<typeof CounterpartyBriefSchema>;
 export type CompletionOutcome = z.infer<typeof CompletionOutcomeSchema>;

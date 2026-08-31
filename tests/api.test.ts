@@ -236,6 +236,45 @@ describe('HTTP API', () => {
         calls.push(`session-feedback:${token}:${feedback.interactionId}`);
         return { feedbackId: feedback.feedbackId, status: 'submitted' as const, revealed: false };
       },
+      recordSessionAssuranceResponse: async (token: string, response: any) => {
+        calls.push(`session-assurance:${token}:${response.interactionId}`);
+        return { response, prediction: undefined, comparison: undefined };
+      },
+      listAssuranceProbePlans: async (operatorId: string, id: string, agentId: string) => {
+        calls.push(`assurance-plans:${operatorId}:${id}:${agentId}`);
+        return [];
+      },
+      submitAssuranceProbeResponse: async (operatorId: string, agentId: string, response: any) => {
+        calls.push(`assurance-response:${operatorId}:${agentId}:${response.interactionId}`);
+        return { response, prediction: undefined, comparison: undefined };
+      },
+      listAssuranceComparisons: async (operatorId: string, id: string, agentId: string) => {
+        calls.push(`assurance-comparisons:${operatorId}:${id}:${agentId}`);
+        return [];
+      },
+      getAssuranceBrief: async (operatorId: string, id: string, agentId: string) => {
+        calls.push(`assurance-brief:${operatorId}:${id}:${agentId}`);
+        return {
+          assessments: [],
+          predictions: [],
+          safeguards: [],
+          evaluations: [],
+          plans: [],
+          responses: [],
+          assuranceLearning: { sampleSize: 0, questionFamilies: [], safeguardTypes: [] },
+          advisoryNotice: 'experimental_estimate_not_a_guarantee' as const,
+        };
+      },
+      decideAssuranceSafeguard: async (
+        operatorId: string,
+        id: string,
+        agentId: string,
+        safeguardId: string,
+        status: 'accepted' | 'rejected' | 'modified',
+      ): Promise<any> => {
+        calls.push(`assurance-safeguard:${operatorId}:${id}:${agentId}:${safeguardId}:${status}`);
+        return { safeguard: { safeguardId, status }, contractRevisionRequired: true };
+      },
     };
     const app = buildApi(undefined, undefined, repository);
     await app.ready();
@@ -551,6 +590,75 @@ describe('HTTP API', () => {
       ).statusCode,
     ).toBe(200);
     expect(calls.at(-1)).toBe(`session-feedback:scoped-session-token:${interactionId}`);
+    const assuranceResponse = {
+      protocolVersion: '0.1',
+      responseId: crypto.randomUUID(),
+      planId: crypto.randomUUID(),
+      interactionId,
+      contractHash: 'contract-hash',
+      phase: 'pre_task',
+      agentId: 'agent-a',
+      agentVersion: '1.0.0',
+      answers: [
+        {
+          probeId: crypto.randomUUID(),
+          questionCode: 'deadline_risk',
+          responseType: 'enum',
+          answer: 'yes',
+          confidence: 0.9,
+        },
+      ],
+      respondedAt: '2026-08-29T00:05:00.000Z',
+    };
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/sessions/${interactionId}/assurance-responses`,
+          payload: assuranceResponse,
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/sessions/${interactionId}/assurance-responses`,
+          headers: { authorization: 'Bearer scoped-session-token' },
+          payload: assuranceResponse,
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(calls.at(-1)).toBe(`session-assurance:scoped-session-token:${interactionId}`);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/v0.1/federated-interactions/${interactionId}/assurance-brief?agentId=agent-a`,
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+        })
+      ).json(),
+    ).toMatchObject({ advisoryNotice: 'experimental_estimate_not_a_guarantee' });
+    const safeguardId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/v0.1/federated-interactions/${interactionId}/assurance-safeguards/${safeguardId}/decision`,
+          headers: {
+            'x-openclasp-operator': 'user-a',
+            'x-openclasp-bound-agent': 'agent-a',
+          },
+          payload: { status: 'accepted' },
+        })
+      ).json(),
+    ).toMatchObject({ safeguard: { safeguardId, status: 'accepted' } });
+    expect(calls.at(-1)).toBe(
+      `assurance-safeguard:user-a:${interactionId}:agent-a:${safeguardId}:accepted`,
+    );
     const providerConnection = await app.inject({
       method: 'POST',
       url: '/v0.1/provider-connections',

@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "planId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "interactionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "contractHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "pre_task",
+        "post_task"
+      ]
+    },
+    "generatedForAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetAgentVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "assessmentId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "predictionBeforeId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "questions": {
+      "minItems": 1,
+      "maxItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "probeId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "questionCode": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "responseType": {
+            "type": "string",
+            "enum": [
+              "boolean",
+              "enum",
+              "number",
+              "short_text"
+            ]
+          },
+          "choices": {
+            "minItems": 2,
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "evidenceRequested": {
+            "default": false,
+            "type": "boolean"
+          },
+          "required": {
+            "default": true,
+            "type": "boolean"
+          },
+          "questionFamily": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "scope",
+              "deadline",
+              "tool_access",
+              "data_access",
+              "evidence",
+              "dependency",
+              "authority",
+              "safety",
+              "delivery"
+            ]
+          },
+          "riskHypothesis": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          },
+          "expectedSignals": {
+            "minItems": 1,
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "answer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "effect": {
+                  "type": "string",
+                  "enum": [
+                    "increase_success",
+                    "reduce_success",
+                    "neutral"
+                  ]
+                },
+                "probabilityDelta": {
+                  "type": "number",
+                  "minimum": -0.5,
+                  "maximum": 0.5
+                }
+              },
+              "required": [
+                "answer",
+                "effect",
+                "probabilityDelta"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "expectedInformationGain": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "selectionReason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          },
+          "recommendedSafeguardCodes": {
+            "default": [],
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,63}$"
+            }
+          }
+        },
+        "required": [
+          "probeId",
+          "questionCode",
+          "prompt",
+          "responseType",
+          "evidenceRequested",
+          "required",
+          "questionFamily",
+          "riskHypothesis",
+          "expectedSignals",
+          "expectedInformationGain",
+          "selectionReason",
+          "recommendedSafeguardCodes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "generation": {
+      "type": "object",
+      "properties": {
+        "generationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "ai",
+            "fallback"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "promptVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "generationId",
+        "mode",
+        "model",
+        "promptVersion"
+      ],
+      "additionalProperties": false
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "planId",
+    "interactionId",
+    "contractHash",
+    "phase",
+    "generatedForAgentId",
+    "targetAgentId",
+    "targetAgentVersion",
+    "round",
+    "assessmentId",
+    "predictionBeforeId",
+    "questions",
+    "generation",
+    "generatedAt",
+    "expiresAt"
+  ],
+  "additionalProperties": false
+}

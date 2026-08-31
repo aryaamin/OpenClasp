@@ -1,0 +1,564 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "assessmentId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "interactionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "contractHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "pre_task",
+        "post_task"
+      ]
+    },
+    "round": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "generatedForAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetAgentVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "prediction": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "string",
+          "const": "0.1"
+        },
+        "predictionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "interactionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "contractHash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetAgentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetAgentVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "taskCategory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "baseline",
+            "after_probe",
+            "after_safeguard",
+            "final"
+          ]
+        },
+        "successProbability": {
+          "type": "number",
+          "minimum": 0.05,
+          "maximum": 0.95
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "basis": {
+          "type": "string",
+          "enum": [
+            "cold_start_hybrid",
+            "historical_hybrid",
+            "deterministic_fallback"
+          ]
+        },
+        "sampleSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "topRiskCodes": {
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+          }
+        },
+        "featureVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "generationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "priorPredictionId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "triggerResponseId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "predictionId",
+        "interactionId",
+        "contractHash",
+        "targetAgentId",
+        "targetAgentVersion",
+        "taskCategory",
+        "stage",
+        "successProbability",
+        "confidence",
+        "basis",
+        "sampleSize",
+        "topRiskCodes",
+        "featureVersion",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "risks": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "riskCode": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+          },
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "scope",
+              "deadline",
+              "tool_access",
+              "data_access",
+              "evidence",
+              "dependency",
+              "authority",
+              "safety",
+              "delivery"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "likelihood": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "impact": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "evidenceReferences": {
+            "default": [],
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        },
+        "required": [
+          "riskCode",
+          "dimension",
+          "title",
+          "rationale",
+          "likelihood",
+          "impact",
+          "confidence",
+          "evidenceReferences"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "candidateQuestions": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "probeId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "questionCode": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "responseType": {
+            "type": "string",
+            "enum": [
+              "boolean",
+              "enum",
+              "number",
+              "short_text"
+            ]
+          },
+          "choices": {
+            "minItems": 2,
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          },
+          "evidenceRequested": {
+            "default": false,
+            "type": "boolean"
+          },
+          "required": {
+            "default": true,
+            "type": "boolean"
+          },
+          "questionFamily": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "scope",
+              "deadline",
+              "tool_access",
+              "data_access",
+              "evidence",
+              "dependency",
+              "authority",
+              "safety",
+              "delivery"
+            ]
+          },
+          "riskHypothesis": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          },
+          "expectedSignals": {
+            "minItems": 1,
+            "maxItems": 6,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "answer": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "effect": {
+                  "type": "string",
+                  "enum": [
+                    "increase_success",
+                    "reduce_success",
+                    "neutral"
+                  ]
+                },
+                "probabilityDelta": {
+                  "type": "number",
+                  "minimum": -0.5,
+                  "maximum": 0.5
+                }
+              },
+              "required": [
+                "answer",
+                "effect",
+                "probabilityDelta"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "expectedInformationGain": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "selectionReason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 280
+          },
+          "recommendedSafeguardCodes": {
+            "default": [],
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,63}$"
+            }
+          }
+        },
+        "required": [
+          "probeId",
+          "questionCode",
+          "prompt",
+          "responseType",
+          "evidenceRequested",
+          "required",
+          "questionFamily",
+          "riskHypothesis",
+          "expectedSignals",
+          "expectedInformationGain",
+          "selectionReason",
+          "recommendedSafeguardCodes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "selectedProbeId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "safeguards": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "safeguardId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "assessmentId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "safeguardCode": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+          },
+          "interactionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "contractHash": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetAgentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetAgentVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "require_evidence",
+              "narrow_scope",
+              "extend_deadline",
+              "grant_tool_access",
+              "require_human_approval",
+              "limit_delegation",
+              "add_checkpoint",
+              "choose_another_agent"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "riskCodes": {
+            "minItems": 1,
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{1,63}$"
+            }
+          },
+          "expectedImpact": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 0.5
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recommended",
+              "accepted",
+              "rejected",
+              "modified"
+            ]
+          },
+          "decisionReason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "decidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "safeguardId",
+          "assessmentId",
+          "safeguardCode",
+          "interactionId",
+          "contractHash",
+          "targetAgentId",
+          "targetAgentVersion",
+          "type",
+          "description",
+          "rationale",
+          "riskCodes",
+          "expectedImpact",
+          "status",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "advisoryNotice": {
+      "type": "string",
+      "const": "experimental_estimate_not_a_guarantee"
+    },
+    "generation": {
+      "type": "object",
+      "properties": {
+        "generationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "ai",
+            "fallback"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "promptVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "generationId",
+        "mode",
+        "model",
+        "promptVersion"
+      ],
+      "additionalProperties": false
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "assessmentId",
+    "interactionId",
+    "contractHash",
+    "phase",
+    "round",
+    "generatedForAgentId",
+    "targetAgentId",
+    "targetAgentVersion",
+    "prediction",
+    "risks",
+    "candidateQuestions",
+    "safeguards",
+    "advisoryNotice",
+    "generation",
+    "createdAt"
+  ],
+  "additionalProperties": false
+}

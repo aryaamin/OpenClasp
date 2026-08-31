@@ -4,6 +4,7 @@ import swagger from '@fastify/swagger';
 import { z } from 'zod';
 import {
   AgentIdentitySchema,
+  AssuranceProbeResponseSchema,
   DelegationCredentialSchema,
   FeedbackSchema,
   InteractionContractSchema,
@@ -61,6 +62,12 @@ type DashboardRepository = Pick<
       | 'recordSessionCompletionReport'
       | 'submitInteractionFeedback'
       | 'recordSessionFeedback'
+      | 'recordSessionAssuranceResponse'
+      | 'listAssuranceProbePlans'
+      | 'submitAssuranceProbeResponse'
+      | 'listAssuranceComparisons'
+      | 'getAssuranceBrief'
+      | 'decideAssuranceSafeguard'
       | 'listFeedbackRequests'
       | 'recordLiveSessionEvent'
       | 'touchAgentPresence'
@@ -291,6 +298,19 @@ export function buildApi(
       if (feedback.interactionId !== (request.params as { id: string }).id)
         throw new Error('Interaction path does not match the feedback');
       return repository.recordSessionFeedback(authorization.slice(7), feedback);
+    });
+    router.post('/sessions/:id/assurance-responses', async (request, reply) => {
+      if (!repository?.recordSessionAssuranceResponse)
+        throw new Error('Assurance response reporting is not configured');
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith('Bearer ')) {
+        reply.status(401);
+        return { error: 'session_credential_required' };
+      }
+      const response = AssuranceProbeResponseSchema.parse(request.body);
+      if (response.interactionId !== (request.params as { id: string }).id)
+        throw new Error('Interaction path does not match the assurance response');
+      return repository.recordSessionAssuranceResponse(authorization.slice(7), response);
     });
     router.get('/agents/:id/card.json', async (request) => {
       if (!repository) throw new Error('Hosted persistence is not configured');
@@ -818,6 +838,78 @@ export function buildApi(
         value.agentId,
       );
     });
+    router.get('/v0.1/federated-interactions/:id/assurance-probes', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listAssuranceProbePlans || !owner)
+        throw new Error('Assurance probes are not configured');
+      const value = z.object({ agentId: z.string().min(1) }).parse(request.query);
+      enforceBoundAgent(request, value.agentId);
+      return repository.listAssuranceProbePlans(
+        owner,
+        (request.params as { id: string }).id,
+        value.agentId,
+      );
+    });
+    router.post('/v0.1/federated-interactions/:id/assurance-responses', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.submitAssuranceProbeResponse || !owner)
+        throw new Error('Assurance responses are not configured');
+      const response = AssuranceProbeResponseSchema.parse(request.body);
+      if (response.interactionId !== (request.params as { id: string }).id)
+        throw new Error('Interaction path does not match the assurance response');
+      return repository.submitAssuranceProbeResponse(owner, boundAgentId(request), response);
+    });
+    router.get('/v0.1/federated-interactions/:id/assurance-comparisons', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listAssuranceComparisons || !owner)
+        throw new Error('Assurance comparisons are not configured');
+      const value = z.object({ agentId: z.string().min(1) }).parse(request.query);
+      enforceBoundAgent(request, value.agentId);
+      return repository.listAssuranceComparisons(
+        owner,
+        (request.params as { id: string }).id,
+        value.agentId,
+      );
+    });
+    router.get('/v0.1/federated-interactions/:id/assurance-brief', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getAssuranceBrief || !owner)
+        throw new Error('Assurance decision briefs are not configured');
+      const value = z.object({ agentId: z.string().min(1) }).parse(request.query);
+      enforceBoundAgent(request, value.agentId);
+      return repository.getAssuranceBrief(
+        owner,
+        (request.params as { id: string }).id,
+        value.agentId,
+      );
+    });
+    router.post(
+      '/v0.1/federated-interactions/:id/assurance-safeguards/:safeguardId/decision',
+      async (request) => {
+        const owner = operatorId(request);
+        if (!repository?.decideAssuranceSafeguard || !owner)
+          throw new Error('Assurance safeguard decisions are not configured');
+        const value = z
+          .object({
+            agentId: z.string().min(1).optional(),
+            status: z.enum(['accepted', 'rejected', 'modified']),
+            decisionReason: z.string().trim().max(500).optional(),
+          })
+          .strict()
+          .parse(request.body);
+        const params = request.params as { id: string; safeguardId: string };
+        const agentId = value.agentId ?? boundAgentId(request);
+        if (value.agentId) enforceBoundAgent(request, value.agentId);
+        return repository.decideAssuranceSafeguard(
+          owner,
+          params.id,
+          agentId,
+          params.safeguardId,
+          value.status,
+          value.decisionReason,
+        );
+      },
+    );
     router.post('/v0.1/federated-interactions/:id/completion-reports', async (request) => {
       const owner = operatorId(request);
       if (!repository?.submitCompletionReport || !owner)

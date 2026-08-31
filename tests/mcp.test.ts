@@ -12,8 +12,8 @@ describe('MCP surface', () => {
   });
 
   it('exposes the complete documented tool set', () => {
-    expect(OPENCLASP_TOOL_NAMES).toHaveLength(41);
-    expect(HOSTED_OPENCLASP_TOOL_NAMES).toHaveLength(40);
+    expect(OPENCLASP_TOOL_NAMES).toHaveLength(47);
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toHaveLength(46);
     expect(HOSTED_OPENCLASP_TOOL_NAMES).not.toContain('openclasp_create_identity');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_connect_to_agent');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_respond_invitation');
@@ -31,6 +31,12 @@ describe('MCP surface', () => {
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_respond_contract_revision');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_get_contextual_intelligence');
     expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_recommend_agents');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_generate_assurance_probe');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_list_assurance_probes');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_submit_assurance_response');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_get_assurance_comparisons');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_get_assurance_brief');
+    expect(HOSTED_OPENCLASP_TOOL_NAMES).toContain('openclasp_decide_assurance_safeguard');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_assess_counterparty');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_verify_receipt');
     expect(OPENCLASP_TOOL_NAMES).toContain('openclasp_setup');

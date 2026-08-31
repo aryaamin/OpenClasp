@@ -18,6 +18,10 @@ describe('production security boundaries', () => {
     expect(requiredMcpToolScope('openclasp_connect_to_agent')).toBe('interaction:write');
     expect(requiredMcpToolScope('openclasp_submit_interaction_feedback')).toBe('feedback:write');
     expect(requiredMcpToolScope('openclasp_update_profile')).toBe('agent:manage');
+    expect(requiredMcpToolScope('openclasp_list_assurance_probes')).toBe('profile:read');
+    expect(requiredMcpToolScope('openclasp_generate_assurance_probe')).toBe('interaction:write');
+    expect(requiredMcpToolScope('openclasp_get_assurance_brief')).toBe('profile:read');
+    expect(requiredMcpToolScope('openclasp_decide_assurance_safeguard')).toBe('interaction:write');
     expect(
       await requiredMcpRequestScopes(
         new Request('https://openclasp.example/mcp', {
@@ -37,6 +41,24 @@ describe('production security boundaries', () => {
       ),
     ).toEqual(['feedback:write']);
     expect(requiredAgentApiScopes('GET', '/v0.1/dashboard')).toBeUndefined();
+    expect(
+      requiredAgentApiScopes('GET', '/v0.1/federated-interactions/interaction-id/assurance-probes'),
+    ).toEqual(['profile:read']);
+    expect(
+      requiredAgentApiScopes(
+        'POST',
+        '/v0.1/federated-interactions/interaction-id/assurance-responses',
+      ),
+    ).toEqual(['interaction:write']);
+    expect(
+      requiredAgentApiScopes('GET', '/v0.1/federated-interactions/interaction-id/assurance-brief'),
+    ).toEqual(['profile:read']);
+    expect(
+      requiredAgentApiScopes(
+        'POST',
+        '/v0.1/federated-interactions/interaction-id/assurance-safeguards/id/decision',
+      ),
+    ).toEqual(['interaction:write']);
     expect(() => assertScopes(['mcp:access'], ['interaction:write'])).toThrow(ScopeError);
   });
 

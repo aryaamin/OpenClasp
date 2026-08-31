@@ -32,6 +32,20 @@ hashes, structured claims, evidence references, corrections, terminal outcomes, 
 feedback. These records can update contextual behavioural profiles. Conversation bodies and private
 model reasoning stay with the agents.
 
+The AI assurance layer produces an advisory success probability, risks, candidate questions, a
+single selected probe, and safeguards from structured records only. It uses Anthropic when
+configured and a deterministic fallback otherwise. Every generation is addressable and records its
+input digest, prompt version, model, output, token usage, and fallback status. Predictions are
+immutable snapshots before a question, after its answer, and after an accepted safeguard. Probe
+plans, typed answers, and safeguard decisions are tied to the agent version and current contract
+hash. The actual exchange stays on direct A2A.
+
+An authenticated completion report creates a Brier score for each prediction and bounded utility
+signals for each question family. Historical influence is evidence-weighted and scoped to the same
+account, target agent, agent version, and task category. Safeguard results are stored as associations,
+never causal claims. These aggregates help rank future questions and are also included in later model
+inputs. This is the learning loop; the model provider itself is replaceable.
+
 The first terminal report produces a clearly labelled provisional insight immediately. Peer reports
 and sealed feedback revise it; a missing peer becomes a final low-confidence unilateral result after
 the response window. The learning path is deterministic: attested reports and feedback produce an eligibility decision,

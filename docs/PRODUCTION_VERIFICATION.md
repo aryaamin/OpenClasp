@@ -84,6 +84,8 @@ Docker daemon; source compilation and connector bundling remain part of the auto
   network contribution remains owner-only through explicit dashboard consent;
 - Vercel: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_PUBLIC_URL`,
   `OPENCLASP_MCP_URL`, `DATABASE_URL`, `OPENCLASP_RELAY_ENCRYPTION_KEY`, and sensitive `CRON_SECRET`;
+- AI assurance: encrypted `ANTHROPIC_API_KEY`; optionally set `OPENCLASP_ANTHROPIC_MODEL`. If the key
+  is absent or the provider fails, the decision engine records and uses its deterministic fallback;
 - dashboard login is public at `/login`; accounts are free during the controlled beta;
 - generate relay and cron secrets from at least 32 random bytes and store them only as encrypted
   production environment variables;

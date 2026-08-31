@@ -31,6 +31,12 @@ export type DashboardData = {
   intelligenceSummaries: Record<string, any>[];
   runtimes: Record<string, any>[];
   accessTokens: Record<string, any>[];
+  assuranceAssessments: Record<string, any>[];
+  assurancePredictions: Record<string, any>[];
+  assuranceSafeguards: Record<string, any>[];
+  assuranceEvaluations: Record<string, any>[];
+  assuranceProbePlans: Record<string, any>[];
+  assuranceProbeResponses: Record<string, any>[];
 };
 
 export type Settings = {
@@ -543,6 +549,83 @@ export function createPreviewData(): DashboardData {
       },
     ],
     accessTokens: [],
+    assuranceAssessments: [
+      {
+        assessmentId: '11111111-1111-4111-8111-111111111111',
+        interactionId: 'ix_shared_ops',
+        phase: 'pre_task',
+        round: 1,
+        generatedForAgentId: 'agent_atlas',
+        targetAgentId: 'agent_peer_keel',
+        targetAgentVersion: '1.2.0',
+        selectedProbeId: '22222222-2222-4222-8222-222222222222',
+        risks: [
+          {
+            riskCode: 'evidence_delivery',
+            title: 'Evidence delivery is unproven',
+            likelihood: 0.42,
+            impact: 0.76,
+          },
+          {
+            riskCode: 'tool_dependency',
+            title: 'Required tool access may be unavailable',
+            likelihood: 0.31,
+            impact: 0.68,
+          },
+        ],
+        generation: {
+          mode: 'ai',
+          model: 'anthropic/claude-sonnet-5',
+          promptVersion: 'assurance-decision-v2',
+        },
+        createdAt: ago(84),
+      },
+    ],
+    assurancePredictions: [
+      {
+        predictionId: '33333333-3333-4333-8333-333333333333',
+        interactionId: 'ix_shared_ops',
+        targetAgentId: 'agent_peer_keel',
+        targetAgentVersion: '1.2.0',
+        stage: 'baseline',
+        successProbability: 0.64,
+        confidence: 0.42,
+        basis: 'cold_start_hybrid',
+        sampleSize: 0,
+        createdAt: ago(84),
+      },
+    ],
+    assuranceSafeguards: [
+      {
+        safeguardId: '44444444-4444-4444-8444-444444444444',
+        assessmentId: '11111111-1111-4111-8111-111111111111',
+        interactionId: 'ix_shared_ops',
+        safeguardCode: 'require_evidence',
+        status: 'recommended',
+        description: 'Require evidence references for every material claim.',
+        rationale: 'The agreement requires an inspectable sanitized incident timeline.',
+        expectedImpact: 0.1,
+        createdAt: ago(84),
+      },
+    ],
+    assuranceEvaluations: [],
+    assuranceProbePlans: [
+      {
+        planId: '55555555-5555-4555-8555-555555555555',
+        assessmentId: '11111111-1111-4111-8111-111111111111',
+        interactionId: 'ix_shared_ops',
+        round: 1,
+        questions: [
+          {
+            probeId: '22222222-2222-4222-8222-222222222222',
+            questionCode: 'evidence_capability',
+            prompt: 'Can you return inspectable evidence for every material claim?',
+          },
+        ],
+        generatedAt: ago(84),
+      },
+    ],
+    assuranceProbeResponses: [],
   };
 }
 
@@ -748,6 +831,26 @@ export function applyPreviewRequest(
       },
       settings,
       result: { ok: true },
+    };
+  }
+
+  const safeguardDecision = path.match(
+    /^\/v0\.1\/federated-interactions\/([^/]+)\/assurance-safeguards\/([^/]+)\/decision$/,
+  );
+  if (safeguardDecision && method === 'POST') {
+    const safeguardId = decodeURIComponent(safeguardDecision[2] ?? '');
+    const status = body.status === 'accepted' ? 'accepted' : 'rejected';
+    return {
+      data: {
+        ...data,
+        assuranceSafeguards: data.assuranceSafeguards.map((item) =>
+          item.safeguardId === safeguardId
+            ? { ...item, status, decidedAt: new Date().toISOString() }
+            : item,
+        ),
+      },
+      settings,
+      result: { safeguard: { safeguardId, status } },
     };
   }
 

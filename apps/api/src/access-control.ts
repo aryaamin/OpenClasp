@@ -26,6 +26,9 @@ const PROFILE_TOOLS = new Set([
   'openclasp_resolve_agent',
   'openclasp_get_contextual_intelligence',
   'openclasp_recommend_agents',
+  'openclasp_list_assurance_probes',
+  'openclasp_get_assurance_comparisons',
+  'openclasp_get_assurance_brief',
 ]);
 
 const AGENT_TOOLS = new Set([
@@ -82,6 +85,17 @@ export function requiredAgentApiScopes(
   if (path === '/v0.1/feedback-requests') return ['profile:read'];
   if (/^\/v0\.1\/federated-interactions\/[^/]+\/(?:brief|session)$/.test(path))
     return ['profile:read'];
+  if (
+    /^\/v0\.1\/federated-interactions\/[^/]+\/(?:assurance-probes|assurance-comparisons|assurance-brief)$/.test(
+      path,
+    ) &&
+    method === 'GET'
+  )
+    return ['profile:read'];
+  if (/^\/v0\.1\/federated-interactions\/[^/]+\/assurance-responses$/.test(path))
+    return ['interaction:write'];
+  if (/^\/v0\.1\/federated-interactions\/[^/]+\/assurance-safeguards\/[^/]+\/decision$/.test(path))
+    return ['interaction:write'];
   if (/^\/v0\.1\/federated-interactions\/[^/]+\/(?:completion-reports|feedback)$/.test(path))
     return ['feedback:write'];
   if (

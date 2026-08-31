@@ -6,6 +6,8 @@ export const HOSTED_MIGRATIONS = [
   { version: 1, name: 'hosted_baseline' },
   { version: 2, name: 'append_only_source_records' },
   { version: 3, name: 'remove_hosted_conversations' },
+  { version: 4, name: 'adaptive_assurance_probes' },
+  { version: 5, name: 'assurance_decision_learning' },
 ] as const;
 
 async function applyBaseline(sql: Sql) {
@@ -248,6 +250,161 @@ async function removeHostedConversations(sql: Sql) {
   await sql`DROP TABLE IF EXISTS openclasp_hosted_threads`;
 }
 
+async function addAdaptiveAssuranceProbes(sql: Sql) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_ai_generations (
+      generation_id UUID PRIMARY KEY,
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      phase TEXT NOT NULL CHECK (phase IN ('pre_task', 'post_task')),
+      model TEXT NOT NULL,
+      prompt_version TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'complete', 'fallback', 'error')),
+      input JSONB NOT NULL,
+      input_digest TEXT NOT NULL,
+      output JSONB,
+      token_usage JSONB,
+      error_code TEXT,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_ai_generations_interaction
+    ON openclasp_ai_generations(operator_id, interaction_id, started_at DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_assurance_probe_plans (
+      plan_id UUID PRIMARY KEY,
+      generation_id UUID NOT NULL REFERENCES openclasp_ai_generations(generation_id),
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      contract_hash TEXT NOT NULL,
+      phase TEXT NOT NULL CHECK (phase IN ('pre_task', 'post_task')),
+      generated_for_agent_id TEXT NOT NULL,
+      target_agent_id TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_assurance_probe_plans_interaction
+    ON openclasp_assurance_probe_plans(interaction_id, phase, created_at DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_assurance_probe_responses (
+      response_id UUID PRIMARY KEY,
+      plan_id UUID NOT NULL REFERENCES openclasp_assurance_probe_plans(plan_id),
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      contract_hash TEXT NOT NULL,
+      phase TEXT NOT NULL CHECK (phase IN ('pre_task', 'post_task')),
+      agent_id TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(plan_id, agent_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_assurance_probe_responses_interaction
+    ON openclasp_assurance_probe_responses(interaction_id, agent_id, created_at DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_assurance_claim_comparisons (
+      comparison_id UUID PRIMARY KEY,
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      target_agent_id TEXT NOT NULL,
+      pre_task_response_id UUID NOT NULL REFERENCES openclasp_assurance_probe_responses(response_id),
+      post_task_response_id UUID REFERENCES openclasp_assurance_probe_responses(response_id),
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(operator_id, interaction_id, target_agent_id, pre_task_response_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_assurance_claim_comparisons_interaction
+    ON openclasp_assurance_claim_comparisons(operator_id, interaction_id, created_at DESC)
+  `;
+}
+
+async function addAssuranceDecisionLearning(sql: Sql) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_assurance_assessments (
+      assessment_id UUID PRIMARY KEY,
+      generation_id UUID NOT NULL REFERENCES openclasp_ai_generations(generation_id),
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      phase TEXT NOT NULL CHECK (phase IN ('pre_task', 'post_task')),
+      round INTEGER NOT NULL CHECK (round BETWEEN 1 AND 3),
+      target_agent_id TEXT NOT NULL,
+      target_agent_version TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(operator_id, interaction_id, phase, round, target_agent_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_assurance_assessments_interaction
+    ON openclasp_assurance_assessments(operator_id, interaction_id, created_at DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_assurance_predictions (
+      prediction_id UUID PRIMARY KEY,
+      assessment_id UUID REFERENCES openclasp_assurance_assessments(assessment_id),
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      target_agent_id TEXT NOT NULL,
+      target_agent_version TEXT NOT NULL,
+      task_category TEXT NOT NULL,
+      stage TEXT NOT NULL CHECK (stage IN ('baseline', 'after_probe', 'after_safeguard', 'final')),
+      success_probability DOUBLE PRECISION NOT NULL CHECK (success_probability BETWEEN 0.05 AND 0.95),
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_assurance_predictions_context
+    ON openclasp_assurance_predictions(operator_id, target_agent_id, target_agent_version, task_category, created_at DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_assurance_safeguards (
+      safeguard_id UUID PRIMARY KEY,
+      assessment_id UUID NOT NULL REFERENCES openclasp_assurance_assessments(assessment_id),
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      target_agent_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('recommended', 'accepted', 'rejected', 'modified')),
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_assurance_safeguards_interaction
+    ON openclasp_assurance_safeguards(operator_id, interaction_id, created_at DESC)
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_assurance_evaluations (
+      evaluation_id UUID PRIMARY KEY,
+      operator_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      target_agent_id TEXT NOT NULL,
+      target_agent_version TEXT NOT NULL,
+      task_category TEXT NOT NULL,
+      completion_report_id UUID NOT NULL,
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(operator_id, completion_report_id)
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_assurance_evaluations_learning
+    ON openclasp_assurance_evaluations(operator_id, target_agent_id, target_agent_version, task_category, created_at DESC)
+  `;
+}
+
 export async function runHostedMigrations(sql: Sql): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS openclasp_schema_migrations (
@@ -270,6 +427,8 @@ export async function runHostedMigrations(sql: Sql): Promise<void> {
     if (migration.version === 1) await applyBaseline(sql);
     if (migration.version === 2) await applyAppendOnlySourceRecords(sql);
     if (migration.version === 3) await removeHostedConversations(sql);
+    if (migration.version === 4) await addAdaptiveAssuranceProbes(sql);
+    if (migration.version === 5) await addAssuranceDecisionLearning(sql);
     await sql`
       INSERT INTO openclasp_schema_migrations(version, name)
       VALUES (${migration.version}, ${migration.name})
@@ -302,4 +461,32 @@ export async function verifyHostedMigrations(sql: Sql): Promise<void> {
   `;
   if (removedConversationTables[0]?.messages || removedConversationTables[0]?.threads)
     throw new Error('Hosted conversation tables still exist; run `pnpm migrate`');
+  const assuranceTables = await sql`
+    SELECT
+      to_regclass('public.openclasp_ai_generations') AS generations,
+      to_regclass('public.openclasp_assurance_probe_plans') AS plans,
+      to_regclass('public.openclasp_assurance_probe_responses') AS responses,
+      to_regclass('public.openclasp_assurance_claim_comparisons') AS comparisons
+  `;
+  if (
+    !assuranceTables[0]?.generations ||
+    !assuranceTables[0]?.plans ||
+    !assuranceTables[0]?.responses ||
+    !assuranceTables[0]?.comparisons
+  )
+    throw new Error('Adaptive assurance probe tables are missing; run `pnpm migrate`');
+  const decisionTables = await sql`
+    SELECT
+      to_regclass('public.openclasp_assurance_assessments') AS assessments,
+      to_regclass('public.openclasp_assurance_predictions') AS predictions,
+      to_regclass('public.openclasp_assurance_safeguards') AS safeguards,
+      to_regclass('public.openclasp_assurance_evaluations') AS evaluations
+  `;
+  if (
+    !decisionTables[0]?.assessments ||
+    !decisionTables[0]?.predictions ||
+    !decisionTables[0]?.safeguards ||
+    !decisionTables[0]?.evaluations
+  )
+    throw new Error('Assurance decision learning tables are missing; run `pnpm migrate`');
 }

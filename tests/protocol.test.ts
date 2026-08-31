@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createIdentity, TrustEngine } from '@openclasp/core';
 import {
+  AssuranceProbePlanSchema,
+  AssuranceProbeResponseSchema,
   CounterpartyBriefSchema,
   FederatedInteractionSchema,
   InteractionCompletionReportSchema,
@@ -15,6 +17,87 @@ import {
 import { toA2AAgentCard } from '@openclasp/sidecar';
 
 describe('protocol cryptography and delegation', () => {
+  it('keeps adaptive assurance probes bounded and typed', () => {
+    const plan = AssuranceProbePlanSchema.parse({
+      protocolVersion: '0.1',
+      planId: crypto.randomUUID(),
+      interactionId: crypto.randomUUID(),
+      contractHash: 'sha256:terms',
+      phase: 'pre_task',
+      generatedForAgentId: 'agent:a',
+      targetAgentId: 'agent:b',
+      targetAgentVersion: '1.0.0',
+      round: 1,
+      assessmentId: crypto.randomUUID(),
+      predictionBeforeId: crypto.randomUUID(),
+      questions: [
+        {
+          probeId: crypto.randomUUID(),
+          questionCode: 'deadline_risk',
+          prompt: 'Can you complete this before the agreed deadline?',
+          responseType: 'enum',
+          choices: ['yes', 'at_risk', 'no'],
+          evidenceRequested: false,
+          required: true,
+          questionFamily: 'deadline',
+          riskHypothesis: 'The deadline may be infeasible.',
+          expectedSignals: [
+            { answer: 'yes', effect: 'increase_success', probabilityDelta: 0.05 },
+            { answer: 'at_risk', effect: 'reduce_success', probabilityDelta: -0.1 },
+            { answer: 'no', effect: 'reduce_success', probabilityDelta: -0.25 },
+          ],
+          expectedInformationGain: 0.8,
+          selectionReason: 'Deadline feasibility is material to success.',
+          recommendedSafeguardCodes: ['extend_deadline'],
+        },
+      ],
+      generation: {
+        generationId: crypto.randomUUID(),
+        mode: 'ai',
+        model: 'openai/gpt-5.6-luna',
+        promptVersion: 'assurance-probes-v1',
+      },
+      generatedAt: '2026-08-31T00:00:00.000Z',
+      expiresAt: '2026-08-31T00:10:00.000Z',
+    });
+    expect(plan.questions).toHaveLength(1);
+    expect(() =>
+      AssuranceProbePlanSchema.parse({
+        ...plan,
+        questions: Array.from({ length: 4 }, () => plan.questions[0]),
+      }),
+    ).toThrow();
+    expect(() =>
+      AssuranceProbePlanSchema.parse({
+        ...plan,
+        questions: [{ ...plan.questions[0], choices: undefined }],
+      }),
+    ).toThrow('bounded choices');
+
+    expect(() =>
+      AssuranceProbeResponseSchema.parse({
+        protocolVersion: '0.1',
+        responseId: crypto.randomUUID(),
+        planId: plan.planId,
+        interactionId: plan.interactionId,
+        contractHash: plan.contractHash,
+        phase: plan.phase,
+        agentId: plan.targetAgentId,
+        agentVersion: plan.targetAgentVersion,
+        answers: [
+          {
+            probeId: plan.questions[0]!.probeId,
+            questionCode: plan.questions[0]!.questionCode,
+            responseType: 'short_text',
+            answer: 'x'.repeat(281),
+            confidence: 0.8,
+          },
+        ],
+        respondedAt: '2026-08-31T00:01:00.000Z',
+      }),
+    ).toThrow();
+  });
+
   it('requires compact structured data for progress checkpoints', () => {
     const checkpoint = LiveSessionEventSchema.parse({
       eventId: '11111111-1111-4111-8111-111111111111',

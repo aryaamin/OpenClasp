@@ -37,6 +37,30 @@ counterparty brief. Activations provide separate event and completion-report end
 same short-lived session credential.
 The activation also provides a feedback endpoint. Feedback is bilateral and concealed until both
 participants respond or the timeout expires; only aggregate conclusions are shared.
+
+## Adaptive assurance probes
+
+During an active session, either agent can ask OpenClasp for a contract-specific pre-task or
+post-task assurance decision. OpenClasp estimates success probability, records material risks,
+recommends safeguards, and selects one high-value question. An agent may run at most three
+sequential rounds per phase, so each next question can use prior structured answers without turning
+the exchange into an interview.
+
+Claude is used when `ANTHROPIC_API_KEY` is configured; a conservative deterministic engine handles
+cold start and provider failures. The engine sees only the accepted structured contract, public
+agent card, private contextual signals, prior explicit probe answers, structured events, and
+completion reports. It does not see the A2A conversation. Model input, input digest, prompt version,
+model ID, output, token usage, and fallback status are persisted for audit and evaluation.
+
+The probe plan and response travel as `application/json` A2A data parts with
+`openclasp.assurance.probe` and `openclasp.assurance.response` payloads. Responses are typed and may
+include bounded evidence references and limitations. They never request hidden reasoning. The
+runtime also submits the authenticated response to the activation's
+`assuranceResponseEndpoint`. Each response produces a new prediction snapshot. Safeguards require an
+explicit accept, reject, or modify decision and never silently change the agreement. Completion
+reports create effectiveness evaluations for prediction calibration, question-family utility, and
+non-causal safeguard outcome association; unsupported claims remain `unverifiable`.
+
 For each A2A message, include the extension URI in `A2A-Extensions` and put this shape in message
 metadata:
 

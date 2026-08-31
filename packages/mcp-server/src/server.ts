@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { createIdentity, TrustEngine, UnavailableFactCheckProvider } from '../../core/src/index.js';
 import {
   AgentIdentitySchema,
+  AssuranceProbeAnswerSchema,
+  AssuranceProbeResponseSchema,
   DEFAULT_EXTENSION_URI,
   DelegationCredentialSchema,
   FeedbackSchema,
@@ -25,6 +27,7 @@ import {
   type OnboardingStore,
 } from '../../persistence/src/onboarding.js';
 import { buildPublicAgentCard } from '../../persistence/src/hosted.js';
+import { generateAssuranceProbePlan } from './assurance-ai.js';
 
 export const OPENCLASP_TOOL_NAMES = [
   'openclasp_create_identity',
@@ -68,6 +71,12 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_respond_contract_revision',
   'openclasp_get_contextual_intelligence',
   'openclasp_recommend_agents',
+  'openclasp_generate_assurance_probe',
+  'openclasp_list_assurance_probes',
+  'openclasp_submit_assurance_response',
+  'openclasp_get_assurance_comparisons',
+  'openclasp_get_assurance_brief',
+  'openclasp_decide_assurance_safeguard',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -125,7 +134,7 @@ const LiveSessionEventInputSchema = z
   });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Start with openclasp_connection_status and heartbeat while active. Use openclasp_recommend_agents and inspect contextual intelligence before choosing a peer. Keep persistent traffic on direct A2A. Agree or revise terms before high-stakes work. Checkpoint every five exchanges or when blocked, drifting, or nearly done. On any terminal outcome call openclasp_complete_live_session with honest structured feedback. Never upload transcripts or invent evidence.';
+  'Start with openclasp_connection_status and heartbeat while active. Inspect contextual intelligence before choosing a peer. Keep traffic on direct A2A. Agree terms, then generate a pre-task assurance probe before material work and a post-task probe after it. Checkpoint when blocked, drifting, or nearly done. On any terminal outcome call openclasp_complete_live_session with honest structured feedback. Never upload transcripts, chain-of-thought, or invented evidence.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -228,6 +237,36 @@ type AgentDirectory = {
     submissionMethod:
       'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ): Promise<unknown>;
+  getAssuranceProbeContext?(
+    operatorId: string,
+    interactionId: string,
+    generatedForAgentId: string,
+    targetAgentId: string,
+  ): Promise<any>;
+  beginAssuranceGeneration?(record: any): Promise<void>;
+  finishAssuranceGeneration?(operatorId: string, generationId: string, value: any): Promise<void>;
+  saveAssuranceProbePlan?(operatorId: string, plan: any): Promise<any>;
+  saveAssuranceDecision?(operatorId: string, decision: any, plan: any): Promise<any>;
+  listAssuranceProbePlans?(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+  ): Promise<any[]>;
+  submitAssuranceProbeResponse?(operatorId: string, agentId: string, value: any): Promise<any>;
+  listAssuranceComparisons?(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+  ): Promise<any[]>;
+  getAssuranceBrief?(operatorId: string, interactionId: string, agentId: string): Promise<any>;
+  decideAssuranceSafeguard?(
+    operatorId: string,
+    interactionId: string,
+    agentId: string,
+    safeguardId: string,
+    status: 'accepted' | 'rejected' | 'modified',
+    decisionReason?: string,
+  ): Promise<any>;
   touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
 };
 
@@ -1725,6 +1764,294 @@ export function registerOpenClaspTools(
           ...(input.query ? { query: input.query } : {}),
           limit: input.limit,
         }),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[41],
+    {
+      title: 'Generate adaptive assurance probe',
+      description:
+        'Estimate success and risk, select one bounded pre-task or post-task question, recommend safeguards, and return a direct A2A data request. Up to three sequential rounds are allowed. No task conversation or chain-of-thought is requested.',
+      inputSchema: z
+        .object({
+          interactionId: z.string().uuid(),
+          phase: z.enum(['pre_task', 'post_task']),
+        })
+        .strict(),
+      annotations: { ...WRITE_TOOL, openWorldHint: true },
+    },
+    async (input, context) => {
+      if (
+        !agentDirectory?.getAssuranceProbeContext ||
+        !agentDirectory.beginAssuranceGeneration ||
+        !agentDirectory.finishAssuranceGeneration ||
+        !agentDirectory.saveAssuranceDecision
+      )
+        throw new Error('Adaptive assurance probes are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const interaction = await agentDirectory.getFederatedInteraction(
+        connection.operatorId,
+        input.interactionId,
+      );
+      if (!interaction) throw new Error('Interaction not found');
+      const targetAgentId =
+        interaction.initiatorAgentId === binding.agent.agentId
+          ? interaction.responderAgentId
+          : interaction.responderAgentId === binding.agent.agentId
+            ? interaction.initiatorAgentId
+            : undefined;
+      if (!targetAgentId) throw new Error('Bound agent is not an interaction participant');
+      const generationContext = await agentDirectory.getAssuranceProbeContext(
+        connection.operatorId,
+        input.interactionId,
+        binding.agent.agentId,
+        targetAgentId,
+      );
+      const { decision, plan } = await generateAssuranceProbePlan(
+        {
+          operatorId: connection.operatorId,
+          interaction: generationContext.interaction,
+          phase: input.phase,
+          generatedForAgentId: binding.agent.agentId,
+          targetCard: generationContext.targetCard,
+          counterpartyBrief: generationContext.brief,
+          completionReports: generationContext.completionReports,
+          sessionEvents: generationContext.sessionEvents,
+          previousPlans: generationContext.previousPlans,
+          previousResponses: generationContext.previousResponses,
+          previousPredictions: generationContext.previousPredictions,
+          assuranceLearning: generationContext.assuranceLearning,
+        },
+        {
+          beginAssuranceGeneration: (record) => agentDirectory.beginAssuranceGeneration!(record),
+          finishAssuranceGeneration: (operatorId, generationId, value) =>
+            agentDirectory.finishAssuranceGeneration!(operatorId, generationId, value),
+          saveAssuranceDecision: (operatorId, decisionValue, planValue) =>
+            agentDirectory.saveAssuranceDecision!(operatorId, decisionValue, planValue),
+        },
+      );
+      const session = await agentDirectory.getLiveSession(
+        connection.operatorId,
+        input.interactionId,
+        binding.agent.agentId,
+      );
+      return text({
+        decision,
+        plan,
+        a2a: {
+          endpoint: session.peer.endpoint,
+          bearerToken: session.peer.bearerToken,
+          request: {
+            jsonrpc: '2.0',
+            id: crypto.randomUUID(),
+            method: 'message/send',
+            params: {
+              message: {
+                role: 'user',
+                parts: [{ kind: 'data', data: { kind: 'openclasp.assurance.probe', plan } }],
+                metadata: {
+                  [DEFAULT_EXTENSION_URI]: {
+                    interactionId: plan.interactionId,
+                    termsHash: plan.contractHash,
+                    assurancePlanId: plan.planId,
+                  },
+                },
+              },
+            },
+          },
+        },
+        next: 'Send this request directly to the peer A2A endpoint. The target should answer the bounded fields with openclasp_submit_assurance_response; do not send chain-of-thought or task conversation text.',
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[42],
+    {
+      title: 'List assurance probes',
+      description: 'List inbound and outbound bounded assurance probe plans for one interaction.',
+      inputSchema: z.object({ interactionId: z.string().uuid() }).strict(),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.listAssuranceProbePlans)
+        throw new Error('Assurance probes are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.listAssuranceProbePlans(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[43],
+    {
+      title: 'Submit assurance response',
+      description:
+        'Submit this authenticated agent’s bounded response to an assurance probe received through A2A. Answers must match the plan and cannot contain transcripts or chain-of-thought.',
+      inputSchema: z
+        .object({
+          interactionId: z.string().uuid(),
+          planId: z.string().uuid(),
+          answers: z.array(AssuranceProbeAnswerSchema).length(1),
+        })
+        .strict(),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.listAssuranceProbePlans || !agentDirectory.submitAssuranceProbeResponse)
+        throw new Error('Assurance responses are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const plans = await agentDirectory.listAssuranceProbePlans(
+        connection.operatorId,
+        input.interactionId,
+        binding.agent.agentId,
+      );
+      const plan = plans.find((candidate) => candidate.planId === input.planId);
+      if (!plan) throw new Error('Assurance probe plan not found for this agent');
+      const response = AssuranceProbeResponseSchema.parse({
+        protocolVersion: '0.1',
+        responseId: crypto.randomUUID(),
+        planId: plan.planId,
+        interactionId: plan.interactionId,
+        contractHash: plan.contractHash,
+        phase: plan.phase,
+        agentId: binding.agent.agentId,
+        agentVersion: binding.agent.agentVersion,
+        answers: input.answers,
+        respondedAt: new Date().toISOString(),
+      });
+      const stored = await agentDirectory.submitAssuranceProbeResponse(
+        connection.operatorId,
+        binding.agent.agentId,
+        response,
+      );
+      const session = await agentDirectory.getLiveSession(
+        connection.operatorId,
+        input.interactionId,
+        binding.agent.agentId,
+      );
+      return text({
+        ...stored,
+        a2a: {
+          endpoint: session.peer.endpoint,
+          bearerToken: session.peer.bearerToken,
+          request: {
+            jsonrpc: '2.0',
+            id: crypto.randomUUID(),
+            method: 'message/send',
+            params: {
+              message: {
+                role: 'agent',
+                parts: [
+                  {
+                    kind: 'data',
+                    data: { kind: 'openclasp.assurance.response', response },
+                  },
+                ],
+                metadata: {
+                  [DEFAULT_EXTENSION_URI]: {
+                    interactionId: response.interactionId,
+                    termsHash: response.contractHash,
+                    assurancePlanId: response.planId,
+                  },
+                },
+              },
+            },
+          },
+        },
+        next: 'Send this response directly to the peer A2A endpoint.',
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[44],
+    {
+      title: 'Get assurance comparisons',
+      description:
+        'Compare a counterparty’s authenticated pre-task claims with its later structured completion report. Unverifiable claims remain explicitly unverifiable.',
+      inputSchema: z.object({ interactionId: z.string().uuid() }).strict(),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.listAssuranceComparisons)
+        throw new Error('Assurance comparisons are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.listAssuranceComparisons(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[45],
+    {
+      title: 'Get assurance decision brief',
+      description:
+        'Return private experimental predictions, risks, adaptive probes, safeguards, and outcome evaluations for one interaction.',
+      inputSchema: z.object({ interactionId: z.string().uuid() }).strict(),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.getAssuranceBrief)
+        throw new Error('Assurance briefs are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.getAssuranceBrief(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+        ),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[46],
+    {
+      title: 'Decide assurance safeguard',
+      description:
+        'Accept, reject, or modify an advisory safeguard. Accepted changes still require an explicit bilateral contract revision.',
+      inputSchema: z
+        .object({
+          interactionId: z.string().uuid(),
+          safeguardId: z.string().uuid(),
+          status: z.enum(['accepted', 'rejected', 'modified']),
+          decisionReason: z.string().trim().max(500).optional(),
+        })
+        .strict(),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.decideAssuranceSafeguard)
+        throw new Error('Assurance safeguard decisions are not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.decideAssuranceSafeguard(
+          connection.operatorId,
+          input.interactionId,
+          binding.agent.agentId,
+          input.safeguardId,
+          input.status,
+          input.decisionReason,
+        ),
       );
     },
   );

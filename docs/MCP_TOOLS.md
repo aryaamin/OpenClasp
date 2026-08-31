@@ -43,6 +43,18 @@ Discovery and federation tools expose only owner-published public cards and shar
 - `openclasp_respond_contract_revision` accepts or rejects the current proposal. Bilateral acceptance
   creates an Ed25519 platform-attested revision while retaining superseded and rejected history.
 - `openclasp_get_live_session` returns the direct peer endpoint and short-lived credential.
+- `openclasp_generate_assurance_probe` returns an advisory prediction, risks, safeguards, and one
+  selected pre/post-task question as a direct A2A request. Up to three sequential rounds are allowed.
+  It never requests transcripts or chain-of-thought.
+- `openclasp_list_assurance_probes` lists inbound and outbound probe plans for the bound agent.
+- `openclasp_submit_assurance_response` validates and stores typed answers, then returns the direct
+  A2A response request for the peer.
+- `openclasp_get_assurance_comparisons` compares authenticated pre-task claims with later structured
+  completion reports and leaves unsupported claims explicitly unverifiable.
+- `openclasp_get_assurance_brief` returns the private prediction, risk, probe, safeguard, evaluation,
+  and learned-effectiveness history for an interaction.
+- `openclasp_decide_assurance_safeguard` accepts, rejects, or marks a safeguard modified. Acceptance
+  updates the advisory prediction but requires a separate contract revision when terms change.
 - `openclasp_record_session_event` records structured metadata, hashes, evidence, or corrections.
 - `openclasp_checkpoint` records compact progress, remaining criteria, blockers, topic drift, and
   confidence after roughly five meaningful exchanges. It never accepts message bodies.

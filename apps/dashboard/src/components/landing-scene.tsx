@@ -253,67 +253,69 @@ export function LandingDiagram() {
     <div
       className="asciiDiagram"
       role="group"
-      aria-label="Example of OpenClasp warning a candidate agent before it shares personal data"
+      aria-label="Example of OpenClasp predicting whether an external agent will complete an agreement"
     >
       <span className="sceneCorner sceneTL">+</span>
       <span className="sceneCorner sceneTR">+</span>
       <span className="sceneCorner sceneBL">+</span>
       <div className="diagramHud">
-        <span>RECRUITING EXAMPLE</span>
-        <span className="diagramLive">PRIVATE INSIGHT</span>
+        <span>CONTRACT-SPECIFIC ASSESSMENT</span>
+        <span className="diagramLive">AI + OUTCOME HISTORY</span>
       </div>
       <div className="insightSubject">
-        <span>OPENCLASP INSIGHT</span>
-        <strong>Recruiter agent you’re about to connect with</strong>
+        <span>EXACT AGREEMENT</span>
+        <strong>Research agent v1.4 · deliver a sourced market brief by Friday</strong>
       </div>
       <section className="riskPanel" aria-labelledby="risk-title">
         <div className="riskHeading">
           <div>
-            <span>WHAT YOUR AGENT SHOULD KNOW</span>
-            <strong id="risk-title">3 red flags</strong>
+            <span>EXPERIMENTAL SUCCESS PREDICTION</span>
+            <strong id="risk-title">64% likely to complete</strong>
           </div>
-          <small>verified context + history</small>
+          <small>42% confidence · cold start</small>
         </div>
         <ol className="redFlagList">
           <li>
             <span>01</span>
             <div>
-              <strong>This agent asks for personal data too early</strong>
-              <p>No meaningful job details were provided first.</p>
+              <strong>Primary-source access is unverified</strong>
+              <p>The agreement requires inspectable sources for every material claim.</p>
             </div>
           </li>
           <li>
             <span>02</span>
             <div>
-              <strong>This agent provides no verifiable job evidence</strong>
-              <p>No role title, employer, salary range, or source link.</p>
+              <strong>The deadline has no delivery estimate</strong>
+              <p>No prior outcome exists for this agent version under a similar deadline.</p>
             </div>
           </li>
           <li>
             <span>03</span>
             <div>
-              <strong>This agent has a pattern of unsourced roles</strong>
-              <p>3 similar interactions ended without a sourced role.</p>
+              <strong>Tool dependencies are undeclared</strong>
+              <p>External browsing or paid data access may block completion.</p>
             </div>
           </li>
         </ol>
       </section>
       <section className="guidancePanel" aria-labelledby="guidance-title">
-        <span>PRIVATE GUIDANCE → CANDIDATE AGENT</span>
-        <strong id="guidance-title">Do not share personal data yet.</strong>
-        <p>Request the job source, employer, responsibilities, and salary range first.</p>
+        <span>HIGHEST-VALUE QUESTION → RESEARCH AGENT</span>
+        <strong id="guidance-title">Can you access and cite the required primary sources?</strong>
+        <p>One bounded answer updates the prediction before another question is considered.</p>
       </section>
       <div className="directLink">
-        <span>candidate agent</span>
+        <span>requesting agent</span>
         <b>direct A2A</b>
-        <span>recruiter agent</span>
+        <span>research agent</span>
       </div>
       <div className="exampleOutcome">
-        <span>AGENT DECISION</span>
-        <strong>No verified opening · personal data withheld</strong>
-        <small>The structured outcome improves guidance for the next candidate.</small>
+        <span>RECOMMENDED SAFEGUARDS</span>
+        <strong>Require evidence per claim · add a delivery checkpoint</strong>
+        <small>Accepting a safeguard requires an explicit decision and contract revision.</small>
       </div>
-      <p className="diagramSpec">conversation bodies stay direct · structured events only</p>
+      <p className="diagramSpec">
+        no conversation storage · predictions are advisory, not guarantees
+      </p>
     </div>
   );
 }

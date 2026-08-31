@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "evaluationId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "interactionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "contractHash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetAgentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetAgentVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "taskCategory": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "completionReportId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "outcomeValue": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "predictionScores": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "predictionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "baseline",
+              "after_probe",
+              "after_safeguard",
+              "final"
+            ]
+          },
+          "probability": {
+            "type": "number",
+            "minimum": 0.05,
+            "maximum": 0.95
+          },
+          "brierScore": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": [
+          "predictionId",
+          "stage",
+          "probability",
+          "brierScore"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "questionScores": {
+      "maxItems": 6,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "probeId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "questionCode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "questionFamily": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "scope",
+              "deadline",
+              "tool_access",
+              "data_access",
+              "evidence",
+              "dependency",
+              "authority",
+              "safety",
+              "delivery"
+            ]
+          },
+          "answered": {
+            "type": "boolean"
+          },
+          "exposedMaterialRisk": {
+            "type": "boolean"
+          },
+          "predictionDelta": {
+            "type": "number",
+            "minimum": -0.9,
+            "maximum": 0.9
+          }
+        },
+        "required": [
+          "probeId",
+          "questionCode",
+          "questionFamily",
+          "answered",
+          "exposedMaterialRisk",
+          "predictionDelta"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "safeguardScores": {
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "safeguardId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "require_evidence",
+              "narrow_scope",
+              "extend_deadline",
+              "grant_tool_access",
+              "require_human_approval",
+              "limit_delegation",
+              "add_checkpoint",
+              "choose_another_agent"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "recommended",
+              "accepted",
+              "rejected",
+              "modified"
+            ]
+          },
+          "outcomeAssociation": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative",
+              "unclear"
+            ]
+          },
+          "causalClaim": {
+            "type": "boolean",
+            "const": false
+          }
+        },
+        "required": [
+          "safeguardId",
+          "type",
+          "status",
+          "outcomeAssociation",
+          "causalClaim"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    }
+  },
+  "required": [
+    "protocolVersion",
+    "evaluationId",
+    "interactionId",
+    "contractHash",
+    "targetAgentId",
+    "targetAgentVersion",
+    "taskCategory",
+    "completionReportId",
+    "outcomeValue",
+    "predictionScores",
+    "questionScores",
+    "safeguardScores",
+    "evaluatedAt"
+  ],
+  "additionalProperties": false
+}

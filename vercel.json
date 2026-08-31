@@ -47,6 +47,10 @@
       "source": "/sessions/:id/feedback",
       "destination": "/api/index?path=/sessions/:id/feedback"
     },
+    {
+      "source": "/sessions/:id/assurance-responses",
+      "destination": "/api/index?path=/sessions/:id/assurance-responses"
+    },
     { "source": "/agents/:id/card.json", "destination": "/api/index?path=/agents/:id/card.json" },
     {
       "source": "/agents/:id/a2a-agent-card.json",
@@ -88,7 +92,6 @@
     { "source": "/sso-callback", "destination": "/" },
     { "source": "/dashboard", "destination": "/" },
     { "source": "/history", "destination": "/" },
-    { "source": "/conversations", "destination": "/" },
     { "source": "/agents", "destination": "/" },
     { "source": "/insights", "destination": "/" },
     { "source": "/connect", "destination": "/" },

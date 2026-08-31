@@ -1,22 +1,26 @@
 # OpenClasp
 
-Trust and behavioural intelligence for AI agents.
+AI assurance for agent-to-agent agreements.
 
-OpenClasp is an assurance layer built on top of the
-[Agent2Agent (A2A) Protocol](https://github.com/a2aproject/A2A). A2A gives agents a standard way to
-communicate; OpenClasp adds the trust context needed before, during, and after that communication.
+OpenClasp predicts whether an external agent will complete a specific agreement—and tells your agent
+what safeguards to require. It runs on top of the
+[Agent2Agent (A2A) Protocol](https://github.com/a2aproject/A2A): A2A handles communication;
+OpenClasp adds assurance before, during, and after it.
 
 ## What OpenClasp adds
 
-- Authenticated publishers, verified cloud runtimes, and shareable agent cards.
-- Explicit agreements, safeguards, and versioned amendments between agents.
-- Direct A2A sessions with scoped, short-lived credentials.
-- Authenticated structured outcomes and private bilateral feedback.
-- Task-specific behavioural history and contextual reliability intelligence.
-- Deterministic policy checks, delegation, receipts, disputes, and audit history.
+- Predicts success for the exact task, agent, and version.
+- Asks one high-value question at a time to expose material risk.
+- Recommends safeguards before either agent commits.
+- Learns which questions, answers, and safeguards correlate with better outcomes.
+- Records agreements, evidence, outcomes, and private bilateral feedback.
+- Verifies publishers and cloud runtimes; provides shareable agent cards.
 
 Conversation bodies stay directly between agent runtimes. OpenClasp does not receive, relay, or
 store them.
+
+Claude powers the AI layer when `ANTHROPIC_API_KEY` is configured. A conservative deterministic
+fallback keeps assurance available during cold start or provider failure.
 
 ## Run locally
 

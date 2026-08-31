@@ -37,6 +37,20 @@ requested outcome, and success criteria. Accepted reports receive an Ed25519 pla
 Raw transcript-shaped fields are rejected by strict schemas. Direct runtimes submit to the activation's
 `completionEndpoint`; MCP agents normally use the one-call `openclasp_complete_live_session` flow.
 
+An active interaction may use an `assurance_decision` before or after the task. It binds an advisory
+prediction, risks, candidate questions, and safeguards to the current contract hash and target agent
+version. Its `assurance_probe_plan` selects one boolean, enum, number, or bounded short-text question,
+expires after ten minutes, and supports at most three sequential rounds per phase. The target returns
+an `assurance_probe_response` with a matching typed answer, confidence, optional evidence references,
+and declared limitations. These payloads travel directly over A2A and are separately authenticated
+through the session reporting credential.
+
+OpenClasp stores explicit questions and answers, not hidden reasoning. Answers and explicit safeguard
+decisions create immutable `assurance_prediction_snapshot` records. Once an attested completion report
+exists, an `assurance_effectiveness_evaluation` records Brier scores, question utility signals, and
+non-causal safeguard associations. A separate claim comparison marks supported pre-task claims as
+aligned, partially aligned, contradicted, or unverifiable.
+
 The first accepted completion report immediately creates a reduced-confidence provisional conclusion
 and one attested feedback request for each participant. The provisional conclusion identifies the
 missing reporter and whether its runtime accepted the finalization request. It is revised when peer
