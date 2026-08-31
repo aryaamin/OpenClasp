@@ -1,49 +1,70 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { buildApi } from '../apps/api/src/app.js';
 import { TrustEngine } from '../packages/core/src/index.js';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
 import { dashboardTokenFromCookie, loadAuth0Profile, verifyAuth0Token } from './auth0.js';
+import { ScopeError, assertScopes, requiredAgentApiScopes } from './access-control.js';
+import { assertProductionConfiguration } from './production-config.js';
+
+assertProductionConfiguration('api');
 
 const databaseUrl = process.env.DATABASE_URL;
 const repository = databaseUrl ? new HostedRepository(databaseUrl) : undefined;
-const app = buildApi(new TrustEngine(), undefined, repository);
+const internalAuthSecret = randomBytes(32).toString('base64url');
+const app = buildApi(new TrustEngine(), undefined, repository, { internalAuthSecret });
 const ready = app.ready();
 
+const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function reject(response: ServerResponse, statusCode: number, error: string) {
+  response.statusCode = statusCode;
+  response.setHeader('content-type', 'application/json');
+  response.setHeader('cache-control', 'no-store');
+  response.end(JSON.stringify({ error }));
+}
+
 export default async function handler(request: IncomingMessage, response: ServerResponse) {
+  delete request.headers['x-openclasp-operator'];
+  delete request.headers['x-openclasp-bound-agent'];
+  delete request.headers['x-openclasp-credential-type'];
+  delete request.headers['x-openclasp-internal-auth'];
   const incoming = new URL(request.url ?? '/', 'https://openclasp.local');
   const target = incoming.searchParams.get('path');
   if (target) request.url = target;
   if ((request.url ?? '').startsWith('/v0.1/')) {
     const authorization = request.headers.authorization;
-    const token = authorization?.startsWith('Bearer ')
-      ? authorization.slice(7)
+    const bearerToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
+    const dashboardToken = bearerToken
+      ? undefined
       : dashboardTokenFromCookie(request.headers.cookie);
+    const token = bearerToken ?? dashboardToken;
     if (!token) {
-      response.statusCode = 401;
-      response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ error: 'authentication_required' }));
+      reject(response, 401, 'authentication_required');
       return;
     }
     try {
-      const agentSelfService =
-        /^\/v0\.1\/runtime(?:\/bootstrap|\/heartbeat)?(?:\?|$)/.test(request.url ?? '') ||
-        /^\/v0\.1\/feedback-requests(?:\?|$)/.test(request.url ?? '') ||
-        /^\/v0\.1\/federated-interactions\/[^/]+\/contract-proposals(?:\/[^/]+\/respond)?(?:\?|$)/.test(
-          request.url ?? '',
-        ) ||
-        /^\/v0\.1\/federated-interactions\/[^/]+\/(?:brief|session|completion-reports|feedback)(?:\?|$)/.test(
-          request.url ?? '',
-        );
-      if (token.startsWith('oc_at_') && agentSelfService) {
+      if (dashboardToken && unsafeMethods.has(request.method ?? 'GET')) {
+        const origin = request.headers.origin;
+        const forwardedProtocol = request.headers['x-forwarded-proto'];
+        const forwardedHost = request.headers['x-forwarded-host'];
+        const protocol = typeof forwardedProtocol === 'string' ? forwardedProtocol : 'https';
+        const host = typeof forwardedHost === 'string' ? forwardedHost : request.headers.host;
+        const expectedOrigin = `${protocol}://${host}`;
+        if (origin !== expectedOrigin) {
+          reject(response, 403, 'invalid_request_origin');
+          return;
+        }
+      }
+      if (token.startsWith('oc_at_')) {
         if (!repository) throw new Error('Agent access tokens are not configured');
+        const requiredScopes = requiredAgentApiScopes(request.method ?? 'GET', request.url ?? '/');
+        if (!requiredScopes) {
+          reject(response, 403, 'agent_route_forbidden');
+          return;
+        }
         const authentication = await repository.verifyAgentAccessToken(token);
-        // Existing beta tokens had only mcp:access. They remain accepted because
-        // they are already cryptographically bound to the same agent.
-        if (
-          !authentication.scopes.includes('runtime:connect') &&
-          !authentication.scopes.includes('mcp:access')
-        )
-          throw new Error('Agent token cannot connect a runtime');
+        assertScopes(authentication.scopes, requiredScopes);
         request.headers['x-openclasp-operator'] = authentication.operatorId;
         request.headers['x-openclasp-bound-agent'] = authentication.agentId;
         request.headers['x-openclasp-credential-type'] = 'agent_access_token';
@@ -56,10 +77,13 @@ export default async function handler(request: IncomingMessage, response: Server
           request.headers['x-openclasp-name'] = encodeURIComponent(user.name ?? '');
         }
       }
-    } catch {
-      response.statusCode = 401;
-      response.setHeader('content-type', 'application/json');
-      response.end(JSON.stringify({ error: 'invalid_session' }));
+      request.headers['x-openclasp-internal-auth'] = internalAuthSecret;
+    } catch (error) {
+      reject(
+        response,
+        error instanceof ScopeError ? 403 : 401,
+        error instanceof ScopeError ? 'insufficient_scope' : 'invalid_session',
+      );
       return;
     }
   }

@@ -1,4 +1,8 @@
 import { oauthStore, type OAuthStore } from './oauth-store.js';
+import { guardRequest } from './request-security.js';
+import { assertProductionConfiguration } from './production-config.js';
+
+assertProductionConfiguration('auth');
 
 const maximumRegistrationBytes = 32_768;
 
@@ -84,6 +88,11 @@ export async function register(request: Request, store: OAuthStore): Promise<Res
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const rejected = await guardRequest(request, 'oauth-register', {
+    limit: 20,
+    maximumBytes: maximumRegistrationBytes,
+  });
+  if (rejected) return rejected;
   try {
     return await register(request, oauthStore());
   } catch {

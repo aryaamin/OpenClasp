@@ -1,5 +1,9 @@
 import { auth0Config, verifyAuth0Token } from './auth0.js';
 import { oauthStore, type OAuthStore } from './oauth-store.js';
+import { guardRequest } from './request-security.js';
+import { assertProductionConfiguration } from './production-config.js';
+
+assertProductionConfiguration('auth');
 
 export async function callback(request: Request, store: OAuthStore): Promise<Response> {
   let input: { code?: unknown; state?: unknown };
@@ -54,6 +58,11 @@ export async function callback(request: Request, store: OAuthStore): Promise<Res
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const rejected = await guardRequest(request, 'oauth-callback', {
+    limit: 30,
+    maximumBytes: 16_384,
+  });
+  if (rejected) return rejected;
   try {
     return await callback(request, oauthStore());
   } catch {

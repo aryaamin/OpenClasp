@@ -1,3 +1,5 @@
+import { DEFAULT_MCP_AUTH_SCOPES } from './access-control.js';
+
 export async function GET(request: Request): Promise<Response> {
   const origin = new URL(request.url).origin;
   return Response.json(
@@ -6,7 +8,7 @@ export async function GET(request: Request): Promise<Response> {
       authorization_endpoint: `${origin}/oauth/authorize`,
       token_endpoint: `${origin}/oauth/token`,
       registration_endpoint: `${origin}/oauth/register`,
-      scopes_supported: ['mcp:access'],
+      scopes_supported: DEFAULT_MCP_AUTH_SCOPES,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],

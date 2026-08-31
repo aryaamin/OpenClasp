@@ -12,6 +12,7 @@ import {
   AgentIdentitySchema,
   AgentResolutionSchema,
   BehaviouralProfileDeltaSchema,
+  DEFAULT_AGENT_AUTH_SCOPES,
   DEFAULT_EXTENSION_URI,
   CounterpartyBriefSchema,
   ContractRevisionSchema,
@@ -408,6 +409,40 @@ export class HostedRepository {
     return value;
   }
 
+  private gatewaySecrets() {
+    const active = this.gatewaySecret();
+    const previous = (process.env.OPENCLASP_RELAY_PREVIOUS_KEYS ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (previous.some((value) => value.length < 32))
+      throw new Error('A previous gateway key is too short');
+    if (previous.length > 3) throw new Error('At most three previous gateway keys are supported');
+    return [...new Set([active, ...previous])];
+  }
+
+  private decryptGatewayPayload(encrypted: { ciphertext: string; iv: string; authTag: string }) {
+    for (const secret of this.gatewaySecrets()) {
+      try {
+        return decryptGatewayPayload(secret, encrypted);
+      } catch {
+        // Try retained rotation keys without exposing which key failed.
+      }
+    }
+    throw new Error('Encrypted gateway payload could not be decrypted');
+  }
+
+  private verifySessionGrant(token: string) {
+    for (const secret of this.gatewaySecrets()) {
+      try {
+        return verifySessionGrant(secret, token);
+      } catch {
+        // Short-lived sessions remain valid during an orderly key rotation.
+      }
+    }
+    throw new Error('Invalid or expired live-session credential');
+  }
+
   private attestPublicAgentCard(value: PublicAgentCard): PublicAgentCard {
     const unsigned = { ...value };
     delete unsigned.platformAttestation;
@@ -551,10 +586,16 @@ export class HostedRepository {
   }
 
   getRuntimeVerificationKey() {
+    const [active, ...previous] = this.gatewaySecrets();
     return {
       algorithm: 'Ed25519' as const,
-      keyId: getSessionKeyId(this.gatewaySecret()),
-      publicKey: getSessionVerificationKey(this.gatewaySecret()),
+      keyId: getSessionKeyId(active!),
+      publicKey: getSessionVerificationKey(active!),
+      previousKeys: previous.map((secret) => ({
+        algorithm: 'Ed25519' as const,
+        keyId: getSessionKeyId(secret),
+        publicKey: getSessionVerificationKey(secret),
+      })),
     };
   }
 
@@ -886,7 +927,7 @@ export class HostedRepository {
     const expiresAt = new Date(createdAt.getTime() + input.expiresInDays * 86_400_000);
     // The credential is bound to one agent. It may use MCP outbound and let that
     // same agent register its own inbound runtime; it cannot manage other agents.
-    const scopes = ['mcp:access', 'runtime:connect'];
+    const scopes = DEFAULT_AGENT_AUTH_SCOPES;
     await this.sql`
       INSERT INTO openclasp_agent_access_tokens(
         token_id, operator_id, agent_id, name, token_hash, scopes, expires_at, created_at
@@ -2336,7 +2377,7 @@ export class HostedRepository {
 
   async recordSessionCompletionReport(token: string, value: InteractionCompletionReport) {
     const report = InteractionCompletionReportSchema.parse(value);
-    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    const grant = this.verifySessionGrant(token);
     if (
       grant.interactionId !== report.interactionId ||
       grant.senderAgentId !== report.reportingAgentId ||
@@ -2939,7 +2980,7 @@ export class HostedRepository {
 
   async recordSessionFeedback(token: string, value: InteractionFeedback) {
     const feedback = InteractionFeedbackSchema.parse(value);
-    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    const grant = this.verifySessionGrant(token);
     if (
       grant.interactionId !== feedback.interactionId ||
       grant.senderAgentId !== feedback.reviewerAgentId ||
@@ -2984,7 +3025,7 @@ export class HostedRepository {
   }
 
   private hostedMessage(row: Record<string, any>): HostedMessage {
-    const decrypted = decryptGatewayPayload(this.gatewaySecret(), {
+    const decrypted = this.decryptGatewayPayload({
       ciphertext: String(row.content_ciphertext),
       iv: String(row.content_iv),
       authTag: String(row.content_auth_tag),
@@ -3113,7 +3154,7 @@ export class HostedRepository {
     content: string,
   ) {
     await this.ensureSchema();
-    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    const grant = this.verifySessionGrant(token);
     if (grant.recipientAgentId !== recipientAgentId)
       throw new Error('Session credential is not valid for this temporary agent');
     const recipient = await this.sessionParticipant(recipientAgentId);
@@ -3270,7 +3311,7 @@ export class HostedRepository {
   async recordLiveSessionEvent(token: string, value: LiveSessionEvent) {
     await this.ensureSchema();
     const event = LiveSessionEventSchema.parse(value);
-    const grant = verifySessionGrant(this.gatewaySecret(), token);
+    const grant = this.verifySessionGrant(token);
     if (grant.interactionId !== event.interactionId || grant.senderAgentId !== event.agentId)
       throw new Error('Session credential does not match the event');
     const sessions = await this.sql`

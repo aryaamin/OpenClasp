@@ -1270,6 +1270,28 @@ export interface FactCheckProvider {
   check(claim: string, permission?: boolean): Promise<FactCheckResult>;
 }
 
+export class UnavailableFactCheckProvider implements FactCheckProvider {
+  async check(claim: string, permission = true): Promise<FactCheckResult> {
+    if (!permission)
+      return result(
+        claim,
+        'objective',
+        'insufficient_permission',
+        1,
+        [],
+        'Grant evidence-source permission',
+      );
+    return result(
+      claim,
+      'objective',
+      'unverified',
+      0,
+      [],
+      'No production evidence provider is configured; request authoritative evidence',
+    );
+  }
+}
+
 export class FixtureFactCheckProvider implements FactCheckProvider {
   constructor(
     private fixtures: Record<

@@ -5,6 +5,10 @@ import {
   loadAuth0Profile,
   verifyAuth0Token,
 } from './auth0.js';
+import { guardRequest } from './request-security.js';
+import { assertProductionConfiguration } from './production-config.js';
+
+assertProductionConfiguration('auth');
 
 function cookie(value: string, maxAge: number, secure: boolean) {
   return [
@@ -18,6 +22,11 @@ function cookie(value: string, maxAge: number, secure: boolean) {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const rejected = await guardRequest(request, 'dashboard-session-create', {
+    limit: 30,
+    maximumBytes: 16_384,
+  });
+  if (rejected) return rejected;
   const input = (await request.json()) as { code?: unknown; codeVerifier?: unknown };
   if (typeof input.code !== 'string' || typeof input.codeVerifier !== 'string')
     return Response.json({ error: 'invalid_callback' }, { status: 400 });

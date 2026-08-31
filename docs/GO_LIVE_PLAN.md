@@ -315,13 +315,16 @@ verified outcomes.
 ### P0: before accepting production interactions
 
 - [ ] Freeze the positioning and MVP claims in this document.
-- [ ] Enforce separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
-      `network:contribute` permissions for OAuth and agent tokens.
-- [ ] Add rate limits, payload limits, abuse controls, and security alerts to every hosted write
-      surface.
-- [ ] Move platform signing and encryption keys to managed production key storage with documented
+- [x] Enforce separate `profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and
+      owner-only `network:contribute` permission boundaries. Integration credentials cannot enable
+      network contribution.
+- [x] Add application rate limits, explicit payload limits, strict origin checks, internal identity
+      boundary checks, and security headers to hosted write surfaces.
+- [ ] Review staged firewall logs, test enforcement on preview, then enable production limits and
+      alerting.
+- [x] Move platform signing and encryption keys to managed production key storage with documented
       rotation and recovery. Do not silently invalidate old attestations during rotation.
-- [ ] Disable fixture fact checking in production; return unavailable/unknown until a production
+- [x] Disable fixture fact checking in production; return unavailable/unknown until a production
       evidence provider is configured.
 - [x] Replace startup DDL with explicit, numbered database migrations.
 - [x] Add an append-only source-event journal beside mutable operational projections. Each distinct

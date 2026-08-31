@@ -8,6 +8,15 @@ import {
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
 import { verifyAuth0Token } from './auth0.js';
 import { oauthStore } from './oauth-store.js';
+import {
+  DEFAULT_MCP_AUTH_SCOPES,
+  assertScopes,
+  requiredMcpRequestScopes,
+} from './access-control.js';
+import { guardRequest } from './request-security.js';
+import { assertProductionConfiguration } from './production-config.js';
+
+assertProductionConfiguration('mcp');
 
 const repository = process.env.DATABASE_URL
   ? new HostedRepository(process.env.DATABASE_URL)
@@ -51,12 +60,13 @@ const mcp = createMcpHandler(
   },
 );
 
-async function verifyToken(_request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
+async function verifyToken(request: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
   if (!bearerToken) return undefined;
+  const requiredScopes = await requiredMcpRequestScopes(request);
   if (bearerToken.startsWith('oc_oat_')) {
     const authentication = await oauthStore().verifyAccessToken(bearerToken);
-    if (!authentication || !authentication.scopes.includes('mcp:access'))
-      throw new Error('OpenClasp OAuth token is invalid or missing the MCP scope');
+    if (!authentication) throw new Error('OpenClasp OAuth token is invalid');
+    assertScopes(authentication.scopes, requiredScopes);
     return {
       token: bearerToken,
       clientId: authentication.clientId,
@@ -71,8 +81,7 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
   if (bearerToken.startsWith('oc_at_')) {
     if (!repository) throw new Error('Agent access tokens are not configured');
     const authentication = await repository.verifyAgentAccessToken(bearerToken);
-    if (!authentication.scopes.includes('mcp:access'))
-      throw new Error('Agent access token is missing the MCP scope');
+    assertScopes(authentication.scopes, requiredScopes);
     return {
       token: bearerToken,
       clientId: authentication.clientId,
@@ -87,7 +96,7 @@ async function verifyToken(_request: Request, bearerToken?: string): Promise<Aut
   }
   const authentication = await verifyAuth0Token(bearerToken, {
     dashboard: false,
-    requiredScopes: ['mcp:access'],
+    requiredScopes,
   });
   return {
     token: bearerToken,
@@ -108,6 +117,13 @@ const authenticatedHandler = withMcpAuth(mcp, verifyToken, {
 });
 
 async function handler(request: Request): Promise<Response> {
+  if (request.method === 'POST') {
+    const rejected = await guardRequest(request, 'mcp', {
+      limit: 300,
+      maximumBytes: 256 * 1024,
+    });
+    if (rejected) return rejected;
+  }
   const response = await authenticatedHandler(request);
   if (response.status >= 500) {
     console.error('[mcp.http] request failed', {
@@ -128,7 +144,7 @@ async function handler(request: Request): Promise<Response> {
   const headers = new Headers(response.headers);
   headers.set(
     'www-authenticate',
-    `Bearer resource_metadata="${new URL(resourceMetadataPath, publicOrigin).href}", scope="mcp:access"`,
+    `Bearer resource_metadata="${new URL(resourceMetadataPath, publicOrigin).href}", scope="${DEFAULT_MCP_AUTH_SCOPES.join(' ')}"`,
   );
   headers.set('cache-control', 'no-store');
   headers.delete('content-length');

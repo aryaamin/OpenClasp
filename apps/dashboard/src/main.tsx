@@ -41,7 +41,6 @@ declare const __AUTH0_DOMAIN__: string;
 declare const __AUTH0_CLIENT_ID__: string;
 declare const __AUTH0_AUDIENCE__: string;
 declare const __OPENCLASP_PUBLIC_URL__: string;
-declare const __PUBLIC_LOGIN_ENABLED__: boolean;
 
 type Auth0User = { sub: string; name?: string; email?: string; picture?: string };
 type AuthSession = { user: Auth0User };
@@ -50,7 +49,6 @@ type Theme = 'dark' | 'light';
 
 const authTransactionKey = 'openclasp.auth0.transaction';
 const themeKey = 'openclasp.theme.v1';
-const demoUrl = 'https://cal.com/arya-amin-rjkw8c';
 const landingCapabilities = [
   'verified identity',
   'contextual intelligence',
@@ -286,7 +284,7 @@ function App() {
   useEffect(() => {
     if (session === undefined) return;
     if (!session) {
-      const publicPath = __PUBLIC_LOGIN_ENABLED__ ? '/login' : '/';
+      const publicPath = '/login';
       if (location.pathname !== publicPath) history.replaceState({}, '', publicPath);
       return;
     }
@@ -464,15 +462,9 @@ function PublicLanding({
           >
             {theme === 'dark' ? <Sun /> : <Moon />}
           </button>
-          {__PUBLIC_LOGIN_ENABLED__ ? (
-            <a className="navCta" href="#access" onClick={scrollToAnchor}>
-              sign in <ArrowRight />
-            </a>
-          ) : (
-            <a className="navCta" href={demoUrl} target="_blank" rel="noreferrer">
-              book a demo <ArrowRight />
-            </a>
-          )}
+          <a className="navCta" href="#access" onClick={scrollToAnchor}>
+            sign in <ArrowRight />
+          </a>
         </div>
       </header>
 
@@ -492,11 +484,9 @@ function PublicLanding({
               reliability intelligence, while agents communicate directly over A2A.
             </p>
             <div className="heroActions">
-              {__PUBLIC_LOGIN_ENABLED__ && (
-                <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
-                  sign in <ArrowRight />
-                </a>
-              )}
+              <a className="landingPrimary" href="#access" onClick={scrollToAnchor}>
+                sign in <ArrowRight />
+              </a>
               <a className="landingSecondary" href="#product" onClick={scrollToAnchor}>
                 see what OpenClasp knows
               </a>
@@ -596,45 +586,42 @@ function PublicLanding({
           </p>
         </section>
 
-        {__PUBLIC_LOGIN_ENABLED__ && (
-          <section className="accessSection" id="access">
-            <div className="accessCopy">
-              <p className="landingKicker">
-                <span>03</span> identity required
-              </p>
-              <h2>Access your agent network.</h2>
-              <p>
-                Sign in to connect agents, control network participation, and inspect signed
-                history.
-              </p>
+        <section className="accessSection" id="access">
+          <div className="accessCopy">
+            <p className="landingKicker">
+              <span>03</span> identity required
+            </p>
+            <h2>Access your agent network.</h2>
+            <p>
+              Sign in to connect agents, control network participation, and inspect signed history.
+            </p>
+          </div>
+          <div className="accessCard">
+            <div className="accessChrome">
+              <span>$ authenticate</span>
+              <span className="accessBlink">_</span>
             </div>
-            <div className="accessCard">
-              <div className="accessChrome">
-                <span>$ authenticate</span>
-                <span className="accessBlink">_</span>
-              </div>
-              <div className="socialButtons">
-                <button type="button" onClick={() => void continueWith('google')}>
-                  <GoogleMark /> continue with google
+            <div className="socialButtons">
+              <button type="button" onClick={() => void continueWith('google')}>
+                <GoogleMark /> continue with google
+              </button>
+              <button type="button" onClick={() => void continueWith('github')}>
+                <GitHubMark /> continue with github
+              </button>
+              {onPreview && (
+                <button type="button" onClick={() => void onPreview()}>
+                  open local preview <ArrowRight />
                 </button>
-                <button type="button" onClick={() => void continueWith('github')}>
-                  <GitHubMark /> continue with github
-                </button>
-                {onPreview && (
-                  <button type="button" onClick={() => void onPreview()}>
-                    open local preview <ArrowRight />
-                  </button>
-                )}
-              </div>
-              {error && (
-                <div className="loginError" role="alert">
-                  {error}
-                </div>
               )}
-              <small>google or github · openclasp never receives your password</small>
             </div>
-          </section>
-        )}
+            {error && (
+              <div className="loginError" role="alert">
+                {error}
+              </div>
+            )}
+            <small>google or github · openclasp never receives your password</small>
+          </div>
+        </section>
       </main>
 
       <footer className="landingFooter">

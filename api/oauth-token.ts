@@ -1,5 +1,9 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { oauthStore, type OAuthStore } from './oauth-store.js';
+import { guardRequest } from './request-security.js';
+import { assertProductionConfiguration } from './production-config.js';
+
+assertProductionConfiguration('auth');
 
 const noStoreHeaders = {
   'access-control-allow-origin': '*',
@@ -76,6 +80,11 @@ export async function exchange(request: Request, store: OAuthStore): Promise<Res
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const rejected = await guardRequest(request, 'oauth-token', {
+    limit: 60,
+    maximumBytes: 16_384,
+  });
+  if (rejected) return rejected;
   try {
     return await exchange(request, oauthStore());
   } catch {

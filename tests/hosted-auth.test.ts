@@ -20,7 +20,7 @@ describe('hosted MCP authorization', () => {
     );
     expect(response.status).toBe(401);
     expect(response.headers.get('www-authenticate')).toBe(
-      'Bearer resource_metadata="https://openclasp.example/.well-known/oauth-protected-resource/mcp", scope="mcp:access"',
+      'Bearer resource_metadata="https://openclasp.example/.well-known/oauth-protected-resource/mcp", scope="mcp:access profile:read interaction:write feedback:write agent:manage"',
     );
     expect(response.headers.get('www-authenticate')).not.toContain('invalid_token');
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -35,7 +35,13 @@ describe('hosted MCP authorization', () => {
     await expect(response.json()).resolves.toMatchObject({
       resource: 'https://openclasp.example/mcp',
       authorization_servers: ['https://openclasp.example'],
-      scopes_supported: ['mcp:access'],
+      scopes_supported: expect.arrayContaining([
+        'mcp:access',
+        'profile:read',
+        'interaction:write',
+        'feedback:write',
+        'agent:manage',
+      ]),
     });
   });
 
@@ -44,9 +50,7 @@ describe('hosted MCP authorization', () => {
     process.env.OPENCLASP_MCP_URL = 'https://openclasp.dev/mcp';
     try {
       const legacyResponse = metadataHandler(
-        new Request(
-          'https://openclasp.vercel.app/.well-known/oauth-protected-resource/mcp',
-        ),
+        new Request('https://openclasp.vercel.app/.well-known/oauth-protected-resource/mcp'),
       );
       await expect(legacyResponse.json()).resolves.toMatchObject({
         resource: 'https://openclasp.vercel.app/mcp',

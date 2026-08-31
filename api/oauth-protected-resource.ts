@@ -1,10 +1,12 @@
+import { DEFAULT_MCP_AUTH_SCOPES } from './access-control.js';
+
 export function GET(request: Request): Response {
   const origin = new URL(request.url).origin;
   return Response.json(
     {
       resource: `${origin}/mcp`,
       authorization_servers: [origin],
-      scopes_supported: ['mcp:access'],
+      scopes_supported: DEFAULT_MCP_AUTH_SCOPES,
       bearer_methods_supported: ['header'],
     },
     {

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { createIdentity, FixtureFactCheckProvider, TrustEngine } from '../../core/src/index.js';
+import { createIdentity, TrustEngine, UnavailableFactCheckProvider } from '../../core/src/index.js';
 import {
   AgentIdentitySchema,
   DEFAULT_EXTENSION_URI,
@@ -267,7 +267,7 @@ export function registerOpenClaspTools(
   onboardingStore?: OnboardingStore,
   agentDirectory?: AgentDirectory,
 ) {
-  const factChecker = new FixtureFactCheckProvider();
+  const factChecker = new UnavailableFactCheckProvider();
   const resolveEngine = (context: ToolContext) =>
     typeof engineSource === 'function' ? engineSource(context) : Promise.resolve(engineSource);
   const persist = async (

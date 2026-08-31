@@ -15,9 +15,9 @@ import {
   InteractionFeedbackSchema,
 } from '../../../packages/protocol/src/index.js';
 import {
-  FixtureFactCheckProvider,
   MemoryAuditStore,
   TrustEngine,
+  UnavailableFactCheckProvider,
 } from '../../../packages/core/src/index.js';
 import { buildPublicAgentCard } from '../../../packages/persistence/src/index.js';
 import type { AgentProfile, HostedRepository } from '../../../packages/persistence/src/index.js';
@@ -28,6 +28,7 @@ import {
   getOnboardingState,
   rejectAgentSetup,
 } from '../../../packages/persistence/src/onboarding.js';
+import { FixedWindowRateLimiter } from './security.js';
 
 type DashboardRepository = Pick<
   HostedRepository,
@@ -87,15 +88,57 @@ type DashboardRepository = Pick<
 
 export function buildApi(
   engine = new TrustEngine(),
-  factChecker = new FixtureFactCheckProvider(),
+  factChecker = new UnavailableFactCheckProvider(),
   repository?: DashboardRepository,
+  security: { internalAuthSecret?: string } = {},
 ) {
   const app = Fastify({
-    logger: { redact: ['req.headers.authorization', 'req.body.rawMessage', 'req.body.privateKey'] },
+    bodyLimit: 256 * 1024,
+    requestTimeout: 30_000,
+    logger: {
+      redact: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers.x-openclasp-internal-auth',
+        'req.body.rawMessage',
+        'req.body.privateKey',
+      ],
+    },
   });
   const engines = new Map<string, Promise<TrustEngine>>();
-  void app.register(cors, { origin: true });
+  const limiter = new FixedWindowRateLimiter();
+  const allowedOrigin = process.env.OPENCLASP_PUBLIC_URL
+    ? new URL(process.env.OPENCLASP_PUBLIC_URL).origin
+    : undefined;
+  void app.register(cors, {
+    credentials: Boolean(repository),
+    origin(origin, callback) {
+      callback(null, !origin || !allowedOrigin || origin === allowedOrigin);
+    },
+  });
   void app.register(swagger, { openapi: { info: { title: 'OpenClasp API', version: '0.1.0' } } });
+
+  app.addHook('onRequest', async (request, reply) => {
+    const method = request.method.toUpperCase();
+    if (['GET', 'HEAD', 'OPTIONS'].includes(method)) return;
+    const operator = request.headers['x-openclasp-operator'];
+    const bucket = typeof operator === 'string' ? `operator:${operator}` : `ip:${request.ip}`;
+    const externalSession = request.url.startsWith('/sessions/') || request.url.startsWith('/a2a/');
+    const result = limiter.consume(bucket, externalSession ? 300 : 120, 60_000);
+    reply.header('x-ratelimit-remaining', result.remaining);
+    if (!result.allowed)
+      return reply
+        .status(429)
+        .header('retry-after', result.retryAfterSeconds)
+        .send({ error: 'rate_limit_exceeded' });
+  });
+
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('referrer-policy', 'no-referrer');
+    reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+    return payload;
+  });
 
   app.setErrorHandler((error, _request, reply) =>
     reply
@@ -109,6 +152,15 @@ export function buildApi(
   void app.register(async (router) => {
     const operatorId = (request: { headers: Record<string, unknown> }) => {
       const value = request.headers['x-openclasp-operator'];
+      if (
+        repository &&
+        security.internalAuthSecret &&
+        request.headers['x-openclasp-internal-auth'] !== security.internalAuthSecret
+      ) {
+        const error = new Error('Trusted authentication boundary required');
+        Object.assign(error, { statusCode: 401 });
+        throw error;
+      }
       if (repository && typeof value !== 'string') {
         const error = new Error('Authentication required');
         Object.assign(error, { statusCode: 401 });

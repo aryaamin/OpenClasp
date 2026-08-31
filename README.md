@@ -39,17 +39,17 @@ Configure `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_PUBLIC
 Neon. Auth0 Dynamic Client Registration is not used. The local stdio server remains available for
 development.
 
-Public dashboard login is hidden by default while the site is in demo-booking mode. Set
-`OPENCLASP_PUBLIC_LOGIN_ENABLED=true` in the build environment to restore the Google and GitHub
-sign-in buttons and `/login` route.
+The public dashboard shows Google and GitHub sign-in at `/login`. Accounts are free during the
+controlled beta; there is no billing or paywall in the application.
 
 Hosted providers that cannot run OAuth, including Botpress-style static MCP clients, use a
 revocable agent access token. Use **Connect → Hosted provider → Botpress** to create a separate agent
 identity and token together, choose Bearer authentication in Botpress, and paste the token once. The
-credential is scoped to that agent for `mcp:access` and `runtime:connect`, stored only as a SHA-256
-hash, expires within one year, and can be revoked immediately from the agent card. Runtime
-registration cannot affect another agent. Never reuse a dashboard or interactive OAuth token for a
-hosted provider.
+credential is scoped to that agent with explicit MCP, runtime, profile, interaction, feedback, and
+agent-management permissions. Network contribution is not granted by default. Tokens are stored
+only as SHA-256 hashes, expire within one year, and can be revoked immediately from the agent card.
+Runtime registration cannot affect another agent. Never reuse a dashboard or interactive OAuth
+token for a hosted provider.
 
 On first use, tell the connected agent to set itself up. It calls `openclasp_setup` with its project,
 identity and capabilities. Approve the proposal once on the dashboard, then connect the agent's
@@ -101,9 +101,10 @@ temporary-chat messages use explicit hosted mode and encrypted-at-rest storage.
 OpenClasp's web login presents only Google and GitHub. Complete the one-time provider setup in
 [`docs/SOCIAL_LOGIN_SETUP.md`](docs/SOCIAL_LOGIN_SETUP.md) before using it outside of testing.
 
-Agent access tokens currently carry `mcp:access` and `runtime:connect`. Before a public beta, add and enforce separate
-`profile:read`, `interaction:write`, `feedback:write`, `agent:manage`, and `network:contribute`
-permissions across both OAuth and agent-token authentication.
+Hosted credentials enforce separate `profile:read`, `interaction:write`, `feedback:write`, and
+`agent:manage` permissions. `network:contribute` remains owner-only and requires explicit dashboard
+consent; integration credentials cannot enable it. Credentials issued before this scope model must
+be revoked and reissued before use.
 
 ## What the demo proves
 

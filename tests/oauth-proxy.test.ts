@@ -18,7 +18,13 @@ describe('OpenClasp OAuth broker', () => {
       authorization_endpoint: 'https://openclasp.example/oauth/authorize',
       token_endpoint: 'https://openclasp.example/oauth/token',
       registration_endpoint: 'https://openclasp.example/oauth/register',
-      scopes_supported: ['mcp:access'],
+      scopes_supported: expect.arrayContaining([
+        'mcp:access',
+        'profile:read',
+        'interaction:write',
+        'feedback:write',
+        'agent:manage',
+      ]),
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
     });
@@ -79,7 +85,7 @@ describe('OpenClasp OAuth broker', () => {
         client_id: 'oc_client',
         redirect_uri: 'http://127.0.0.1:4567/callback',
         response_type: 'code',
-        scope: 'mcp:access',
+        scope: 'mcp:access profile:read interaction:write',
         state: 'client-state',
         code_challenge: challenge,
         code_challenge_method: 'S256',
@@ -97,6 +103,33 @@ describe('OpenClasp OAuth broker', () => {
     expect(saved.clientId).toBe('oc_client');
     expect(saved.downstreamState).toBe('client-state');
     expect(saved.codeChallenge).toBe(challenge);
+    expect(saved.scope).toBe('mcp:access profile:read interaction:write');
+  });
+
+  it('does not let integration credentials opt an account into network contribution', async () => {
+    const store = {
+      getClient: vi.fn().mockResolvedValue({
+        clientId: 'oc_client',
+        redirectUris: ['http://127.0.0.1:4567/callback'],
+      }),
+      createTransaction: vi.fn(),
+    } as unknown as OAuthStore;
+    const response = await authorize(
+      new Request(
+        `https://openclasp.example/oauth/authorize?${new URLSearchParams({
+          client_id: 'oc_client',
+          redirect_uri: 'http://127.0.0.1:4567/callback',
+          response_type: 'code',
+          scope: 'mcp:access network:contribute',
+          code_challenge: 'challenge',
+          code_challenge_method: 'S256',
+        })}`,
+      ),
+      store,
+    );
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: 'invalid_scope' });
+    expect(store.createTransaction).not.toHaveBeenCalled();
   });
 
   it('exchanges a PKCE code for OpenClasp opaque tokens', async () => {

@@ -74,11 +74,19 @@ Docker daemon; source compilation and connector bundling remain part of the auto
 ## Required production configuration
 
 - Auth0: Google and GitHub connections, API audience, `mcp:access`, and the exact production
-  `/sso-callback` URL on the existing SPA application; Auth0 DCR is not used;
+  `/sso-callback` URL on the existing SPA application; Auth0 DCR is not used. OpenClasp OAuth
+  advertises and enforces the narrower profile, interaction, feedback, and agent-management scopes;
+  network contribution remains owner-only through explicit dashboard consent;
 - Vercel: `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`, `OPENCLASP_PUBLIC_URL`,
   `OPENCLASP_MCP_URL`, `DATABASE_URL`, `OPENCLASP_RELAY_ENCRYPTION_KEY`, and sensitive `CRON_SECRET`;
-- optional public dashboard login: set `OPENCLASP_PUBLIC_LOGIN_ENABLED=true`; it is hidden when the
-  variable is absent or false;
+- dashboard login is public at `/login`; accounts are free during the controlled beta;
+- generate relay and cron secrets from at least 32 random bytes and store them only as encrypted
+  production environment variables;
+- during relay-key rotation, move the prior value to the comma-separated
+  `OPENCLASP_RELAY_PREVIOUS_KEYS` (maximum three), deploy the new active key, wait beyond the longest
+  live session and temporary-message retention window, verify old data recovery, then remove the
+  retired key;
+- revoke and reissue agent tokens created before scoped authorization was deployed;
 - Vercel Cron: `0 0 * * *` for `/api/cron-feedback`;
 - generic sidecar deployments: stable `OPENCLASP_SESSION_SECRET` and the connector variables in
   [`CONNECTORS.md`](CONNECTORS.md);
@@ -86,3 +94,8 @@ Docker daemon; source compilation and connector bundling remain part of the auto
 
 Never print or commit production secrets, Auth0 client secrets, agent access tokens, session grants,
 temporary-message plaintext, or private feedback comments.
+
+The API rejects bodies above 256 KiB and applies per-instance write limits. OAuth/session functions
+have tighter limits. Vercel Firewall rules must begin in log mode, be reviewed against real traffic,
+then be tested on preview before enforcement. Application limits remain required because firewall
+counters are regional.

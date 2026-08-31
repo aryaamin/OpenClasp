@@ -5,6 +5,32 @@ import { z } from 'zod';
 export const PROTOCOL_VERSION = '0.1' as const;
 export const DEFAULT_EXTENSION_URI = 'https://openclasp.vercel.app/extensions/trust/v0.1';
 
+export const OPENCLASP_AUTH_SCOPES = [
+  'mcp:access',
+  'runtime:connect',
+  'profile:read',
+  'interaction:write',
+  'feedback:write',
+  'agent:manage',
+  'network:contribute',
+] as const;
+export type OpenClaspAuthScope = (typeof OPENCLASP_AUTH_SCOPES)[number];
+export const DEFAULT_AGENT_AUTH_SCOPES: OpenClaspAuthScope[] = [
+  'mcp:access',
+  'runtime:connect',
+  'profile:read',
+  'interaction:write',
+  'feedback:write',
+  'agent:manage',
+];
+export const DEFAULT_MCP_AUTH_SCOPES: OpenClaspAuthScope[] = [
+  'mcp:access',
+  'profile:read',
+  'interaction:write',
+  'feedback:write',
+  'agent:manage',
+];
+
 export const ProvenanceSchema = z.enum([
   'self_declared',
   'operator_attested',
