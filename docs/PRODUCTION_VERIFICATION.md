@@ -3,6 +3,7 @@
 Run this gate before every production release:
 
 ```bash
+DATABASE_URL=<production-connection-string> corepack pnpm migrate
 corepack pnpm format:check
 corepack pnpm lint
 corepack pnpm typecheck
@@ -12,6 +13,9 @@ corepack pnpm demo
 corepack pnpm --dir connectors/botpress check:type
 corepack pnpm --dir connectors/botpress build
 ```
+
+Database migrations are explicit and must run before the new API version starts. Application
+startup verifies the migration ledger and fails closed when a migration is missing.
 
 The CLI demo must prove recipient-bound counterparty context, scoped delegation, an immutable
 bilateral contract, A2A extension forwarding, structured-only filtering, contradiction advice,

@@ -12,6 +12,7 @@
     "api": "tsx apps/api/src/index.ts",
     "dashboard": "vite --config apps/dashboard/vite.config.ts",
     "mcp": "tsx packages/mcp-server/src/index.ts",
+    "migrate": "tsx scripts/migrate-hosted.ts",
     "demo": "tsx apps/demo/src/index.ts",
     "build": "tsup --config tsup.config.ts && vite build --config apps/dashboard/vite.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p apps/dashboard",

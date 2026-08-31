@@ -36,6 +36,34 @@ export const RecordAttestationSchema = SignatureSchema.extend({
   digest: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
 }).strict();
 
+export const RetentionClassSchema = z.enum(['account', 'audit', 'operational', 'temporary']);
+export const LearningScopeSchema = z.enum([
+  'not_evaluated',
+  'excluded',
+  'local_only',
+  'network_aggregate',
+]);
+
+export const SourceRecordEnvelopeSchema = z
+  .object({
+    eventId: z.string().uuid(),
+    operatorId: z.string().min(1),
+    kind: z.string().regex(/^[a-z][a-z0-9_]*$/),
+    recordId: z.string().min(1),
+    schemaName: z.string().min(1),
+    schemaVersion: z.string().min(1),
+    payload: z.json(),
+    payloadDigest: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
+    entityRefs: z.record(z.string(), z.string().min(1)).default({}),
+    provenance: ProvenanceSchema,
+    visibility: VisibilitySchema,
+    retentionClass: RetentionClassSchema,
+    learningScope: LearningScopeSchema,
+    reportedAt: z.string().datetime(),
+    ingestedAt: z.string().datetime(),
+  })
+  .strict();
+
 export const ExpectationManifestSchema = z.object({
   requiredInputs: z.array(z.string()).default([]),
   supportedTaskCategories: z.array(z.string()).min(1),
@@ -842,6 +870,9 @@ export type BehaviouralProfileDelta = z.infer<typeof BehaviouralProfileDeltaSche
 export type BehaviouralDimensionName = z.infer<typeof BehaviouralDimensionNameSchema>;
 export type ContextualReliabilitySummary = z.infer<typeof ContextualReliabilitySummarySchema>;
 export type RecordAttestation = z.infer<typeof RecordAttestationSchema>;
+export type SourceRecordEnvelope = z.infer<typeof SourceRecordEnvelopeSchema>;
+export type RetentionClass = z.infer<typeof RetentionClassSchema>;
+export type LearningScope = z.infer<typeof LearningScopeSchema>;
 
 export interface KeyPair {
   keyId: string;

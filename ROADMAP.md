@@ -12,6 +12,11 @@ interaction-centric dashboard.
 
 Production key-management adapters, service-account OAuth, live search providers, retention workers, end-to-end temporary-inbox encryption, contribution export/deletion workflows, and A2A conformance vectors.
 
+Before production interactions are treated as future intelligence data, complete the P0 data and
+governance gates in [`docs/GO_LIVE_PLAN.md`](docs/GO_LIVE_PLAN.md): versioned migrations,
+append-only source records, deployment snapshots, a task taxonomy, safeguard decisions, evidence
+verification, prospective risk-decision snapshots, and a consent ledger.
+
 ## Network
 
 Permissioned cross-platform aggregates, verified operator resolution, incident feeds, Sybil/collusion/review-ring detection, calibrated risk models, audit tooling, and formal privacy/compliance controls. Raw private conversations remain outside the default network boundary.

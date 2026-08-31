@@ -6,6 +6,12 @@ The future proprietary OpenClasp Network may provide cross-platform behavioural 
 
 The commercial asset is permissioned, evidence-backed derived intelligence. It is not ownership or resale of message bodies. The open repository contains synthetic fixtures only and no private production data.
 
+Production structured records are also written to an append-only source journal with explicit
+schema version, provenance, visibility, retention, learning scope, entity references, timestamps,
+and a canonical digest. Mutable tables remain operational projections. High-volume presence and
+other ephemeral projection updates are excluded from the intelligence journal. Direct and hosted
+message bodies are never written to it.
+
 Hosted records are partitioned by the authenticated Auth0 subject in Postgres. Dashboard and
 settings endpoints require a server-validated session token; browser authentication state is never
 treated as authorization by itself. Persistent-runtime messages travel directly and do not enter

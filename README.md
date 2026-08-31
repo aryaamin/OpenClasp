@@ -115,6 +115,9 @@ eligibility, local profile updates, and the switch to network eligibility only a
 in. The release checklist is in
 [`docs/PRODUCTION_VERIFICATION.md`](docs/PRODUCTION_VERIFICATION.md).
 
+The product position, intelligence boundary, day-one production data requirements, and controlled
+beta sequence are defined in [`docs/GO_LIVE_PLAN.md`](docs/GO_LIVE_PLAN.md).
+
 ## Packages
 
 - `protocol`: schemas, canonical hashing, and Ed25519 signing.

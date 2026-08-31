@@ -34,6 +34,7 @@ import {
   ReceiptSchema,
   RecordAttestationSchema,
   RiskDecisionSchema,
+  SourceRecordEnvelopeSchema,
   SuccessCriterionAssessmentSchema,
   TrustEnvelopeSchema,
   LearningEligibilityDecisionSchema,
@@ -76,6 +77,7 @@ const schemas = {
   learning_eligibility_decision: LearningEligibilityDecisionSchema,
   behavioural_profile_delta: BehaviouralProfileDeltaSchema,
   contextual_reliability_summary: ContextualReliabilitySummarySchema,
+  source_record_envelope: SourceRecordEnvelopeSchema,
 };
 await mkdir('schemas/v0.1', { recursive: true });
 await Promise.all(
