@@ -3,7 +3,10 @@
   "buildCommand": "corepack pnpm build",
   "outputDirectory": "apps/dashboard/dist",
   "functions": {
-    "api/index.ts": { "maxDuration": 60 },
+    "api/index.ts": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/geist/dist/fonts/geist-sans/**"
+    },
     "api/mcp.ts": { "maxDuration": 60 },
     "api/cron-feedback.ts": { "maxDuration": 60 }
   },
