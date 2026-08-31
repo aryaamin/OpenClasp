@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   approveAgentSetup,
+  createDashboardAgent,
   createHostedProviderAgent,
   getOnboardingState,
   requestAgentSetup,
@@ -25,6 +26,32 @@ class MemoryOnboardingStore implements OnboardingStore {
 }
 
 describe('agent self-onboarding', () => {
+  it('creates a published-ready temporary identity for dashboard quickstart', async () => {
+    const store = new MemoryOnboardingStore();
+    const created = await createDashboardAgent(store, 'owner', {
+      agentName: 'Research assistant',
+      projectName: 'My agents',
+      description: 'Returns sourced research',
+      capabilities: ['research', 'research'],
+    });
+    expect(created.agent).toMatchObject({
+      name: 'Research assistant',
+      framework: 'OpenClasp hosted',
+      agentMode: 'temporary_chat',
+      transport: 'openclasp_gateway',
+      autoPublish: true,
+      capabilities: ['research'],
+    });
+    const retried = await createDashboardAgent(store, 'owner', {
+      agentName: 'Research assistant',
+      projectName: 'My agents',
+      description: 'Returns sourced research',
+      capabilities: ['research'],
+    });
+    expect(retried.agent.agentId).toBe(created.agent.agentId);
+    expect((await getOnboardingState(store, 'owner')).agentProfiles).toHaveLength(1);
+  });
+
   it('creates a separate owner-managed identity for a hosted provider', async () => {
     const store = new MemoryOnboardingStore();
     const created = await createHostedProviderAgent(store, 'owner', {

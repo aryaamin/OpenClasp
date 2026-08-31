@@ -85,7 +85,10 @@
     },
     "mediationPolicy": {
       "type": "string",
-      "enum": ["none", "mutual_consent"]
+      "enum": [
+        "none",
+        "mutual_consent"
+      ]
     },
     "retentionDays": {
       "type": "integer",
@@ -126,7 +129,11 @@
             "minLength": 1
           }
         },
-        "required": ["algorithm", "keyId", "value"],
+        "required": [
+          "algorithm",
+          "keyId",
+          "value"
+        ],
         "additionalProperties": false
       }
     }

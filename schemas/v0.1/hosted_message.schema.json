@@ -40,7 +40,11 @@
     },
     "delivery": {
       "type": "string",
-      "enum": ["accepted", "delivered", "read"]
+      "enum": [
+        "accepted",
+        "delivered",
+        "read"
+      ]
     },
     "createdAt": {
       "type": "string",

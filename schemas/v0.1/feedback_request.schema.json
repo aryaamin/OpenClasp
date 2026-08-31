@@ -22,7 +22,12 @@
     },
     "status": {
       "type": "string",
-      "enum": ["pending", "submitted", "expired", "waived"]
+      "enum": [
+        "pending",
+        "submitted",
+        "expired",
+        "waived"
+      ]
     },
     "requestedDimensions": {
       "minItems": 1,
@@ -72,7 +77,12 @@
           "pattern": "^[a-zA-Z0-9_-]{43}$"
         }
       },
-      "required": ["algorithm", "keyId", "value", "digest"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value",
+        "digest"
+      ],
       "additionalProperties": false
     }
   },

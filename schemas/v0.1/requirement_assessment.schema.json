@@ -28,7 +28,12 @@
     },
     "status": {
       "type": "string",
-      "enum": ["match", "partial", "mismatch", "unknown"]
+      "enum": [
+        "match",
+        "partial",
+        "mismatch",
+        "unknown"
+      ]
     },
     "reason": {
       "type": "string",
@@ -45,7 +50,13 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["contract", "self_declared", "eligible_history", "evidence", "version_change"]
+        "enum": [
+          "contract",
+          "self_declared",
+          "eligible_history",
+          "evidence",
+          "version_change"
+        ]
       }
     },
     "evidenceReferences": {

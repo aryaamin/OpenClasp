@@ -1,5 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "string",
-  "enum": ["persistent_runtime", "temporary_chat"]
+  "enum": [
+    "persistent_runtime",
+    "temporary_chat"
+  ]
 }

@@ -21,7 +21,14 @@
     },
     "status": {
       "type": "string",
-      "enum": ["pending", "active", "rejected", "expired", "cancelled", "completed"]
+      "enum": [
+        "pending",
+        "active",
+        "rejected",
+        "expired",
+        "cancelled",
+        "completed"
+      ]
     },
     "contract": {
       "type": "object",
@@ -109,7 +116,10 @@
         },
         "mediationPolicy": {
           "type": "string",
-          "enum": ["none", "mutual_consent"]
+          "enum": [
+            "none",
+            "mutual_consent"
+          ]
         },
         "retentionDays": {
           "type": "integer",
@@ -150,7 +160,11 @@
                 "minLength": 1
               }
             },
-            "required": ["algorithm", "keyId", "value"],
+            "required": [
+              "algorithm",
+              "keyId",
+              "value"
+            ],
             "additionalProperties": false
           }
         }
@@ -197,7 +211,12 @@
           },
           "method": {
             "type": "string",
-            "enum": ["oauth_installation", "oauth_account", "policy_auto_accept", "ed25519"]
+            "enum": [
+              "oauth_installation",
+              "oauth_account",
+              "policy_auto_accept",
+              "ed25519"
+            ]
           },
           "termsHash": {
             "type": "string",
@@ -224,11 +243,20 @@
                 "minLength": 1
               }
             },
-            "required": ["algorithm", "keyId", "value"],
+            "required": [
+              "algorithm",
+              "keyId",
+              "value"
+            ],
             "additionalProperties": false
           }
         },
-        "required": ["agentId", "method", "termsHash", "acceptedAt"],
+        "required": [
+          "agentId",
+          "method",
+          "termsHash",
+          "acceptedAt"
+        ],
         "additionalProperties": false
       }
     },
@@ -353,7 +381,10 @@
               },
               "mediationPolicy": {
                 "type": "string",
-                "enum": ["none", "mutual_consent"]
+                "enum": [
+                  "none",
+                  "mutual_consent"
+                ]
               },
               "retentionDays": {
                 "type": "integer",
@@ -394,7 +425,11 @@
                       "minLength": 1
                     }
                   },
-                  "required": ["algorithm", "keyId", "value"],
+                  "required": [
+                    "algorithm",
+                    "keyId",
+                    "value"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -429,7 +464,12 @@
           },
           "status": {
             "type": "string",
-            "enum": ["proposed", "accepted", "rejected", "superseded"]
+            "enum": [
+              "proposed",
+              "accepted",
+              "rejected",
+              "superseded"
+            ]
           },
           "acceptances": {
             "type": "object",
@@ -445,7 +485,12 @@
                 },
                 "method": {
                   "type": "string",
-                  "enum": ["oauth_installation", "oauth_account", "policy_auto_accept", "ed25519"]
+                  "enum": [
+                    "oauth_installation",
+                    "oauth_account",
+                    "policy_auto_accept",
+                    "ed25519"
+                  ]
                 },
                 "termsHash": {
                   "type": "string",
@@ -472,11 +517,20 @@
                       "minLength": 1
                     }
                   },
-                  "required": ["algorithm", "keyId", "value"],
+                  "required": [
+                    "algorithm",
+                    "keyId",
+                    "value"
+                  ],
                   "additionalProperties": false
                 }
               },
-              "required": ["agentId", "method", "termsHash", "acceptedAt"],
+              "required": [
+                "agentId",
+                "method",
+                "termsHash",
+                "acceptedAt"
+              ],
               "additionalProperties": false
             }
           },
@@ -515,7 +569,12 @@
                 "pattern": "^[a-zA-Z0-9_-]{43}$"
               }
             },
-            "required": ["algorithm", "keyId", "value", "digest"],
+            "required": [
+              "algorithm",
+              "keyId",
+              "value",
+              "digest"
+            ],
             "additionalProperties": false
           }
         },
@@ -553,10 +612,18 @@
         "managedBy": {
           "default": "agent",
           "type": "string",
-          "enum": ["agent", "openclasp"]
+          "enum": [
+            "agent",
+            "openclasp"
+          ]
         }
       },
-      "required": ["protocol", "protocolBinding", "endpoint", "managedBy"],
+      "required": [
+        "protocol",
+        "protocolBinding",
+        "endpoint",
+        "managedBy"
+      ],
       "additionalProperties": false
     },
     "responderTransport": {
@@ -578,10 +645,18 @@
         "managedBy": {
           "default": "agent",
           "type": "string",
-          "enum": ["agent", "openclasp"]
+          "enum": [
+            "agent",
+            "openclasp"
+          ]
         }
       },
-      "required": ["protocol", "protocolBinding", "endpoint", "managedBy"],
+      "required": [
+        "protocol",
+        "protocolBinding",
+        "endpoint",
+        "managedBy"
+      ],
       "additionalProperties": false
     },
     "createdAt": {

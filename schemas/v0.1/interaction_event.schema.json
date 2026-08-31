@@ -102,7 +102,11 @@
           "minLength": 1
         }
       },
-      "required": ["algorithm", "keyId", "value"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value"
+      ],
       "additionalProperties": false
     }
   },

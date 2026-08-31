@@ -4,7 +4,11 @@
   "properties": {
     "decision": {
       "type": "string",
-      "enum": ["ALLOW", "CHALLENGE", "DENY"]
+      "enum": [
+        "ALLOW",
+        "CHALLENGE",
+        "DENY"
+      ]
     },
     "confidence": {
       "type": "number",

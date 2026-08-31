@@ -54,14 +54,24 @@
     },
     "outcome": {
       "type": "string",
-      "enum": ["success", "failure", "partial"]
+      "enum": [
+        "success",
+        "failure",
+        "partial"
+      ]
     },
     "checkpoint": {
       "type": "object",
       "properties": {
         "state": {
           "type": "string",
-          "enum": ["active", "blocked", "ready_to_finalize", "done", "cancelled"]
+          "enum": [
+            "active",
+            "blocked",
+            "ready_to_finalize",
+            "done",
+            "cancelled"
+          ]
         },
         "progress": {
           "type": "number",
@@ -99,7 +109,11 @@
         },
         "topicStatus": {
           "type": "string",
-          "enum": ["in_scope", "drifting", "changed"]
+          "enum": [
+            "in_scope",
+            "drifting",
+            "changed"
+          ]
         },
         "expectedRemainingTurns": {
           "type": "integer",
@@ -168,7 +182,11 @@
           }
         }
       },
-      "required": ["labels", "metrics", "flags"],
+      "required": [
+        "labels",
+        "metrics",
+        "flags"
+      ],
       "additionalProperties": false
     }
   },

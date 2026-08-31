@@ -31,7 +31,10 @@
     },
     "role": {
       "type": "string",
-      "enum": ["initiator", "responder"]
+      "enum": [
+        "initiator",
+        "responder"
+      ]
     },
     "peer": {
       "type": "object",
@@ -58,7 +61,13 @@
           "minLength": 1
         }
       },
-      "required": ["agentId", "sessionId", "endpoint", "bearerToken", "verificationKey"],
+      "required": [
+        "agentId",
+        "sessionId",
+        "endpoint",
+        "bearerToken",
+        "verificationKey"
+      ],
       "additionalProperties": false
     },
     "reporting": {
@@ -81,7 +90,10 @@
           "minLength": 1
         }
       },
-      "required": ["endpoint", "bearerToken"],
+      "required": [
+        "endpoint",
+        "bearerToken"
+      ],
       "additionalProperties": false
     },
     "privateInsights": {
@@ -95,7 +107,11 @@
           },
           "severity": {
             "type": "string",
-            "enum": ["info", "caution", "high"]
+            "enum": [
+              "info",
+              "caution",
+              "high"
+            ]
           },
           "message": {
             "type": "string",
@@ -121,7 +137,13 @@
             "maximum": 1
           }
         },
-        "required": ["code", "severity", "message", "evidenceReferences", "requirementReferences"],
+        "required": [
+          "code",
+          "severity",
+          "message",
+          "evidenceReferences",
+          "requirementReferences"
+        ],
         "additionalProperties": false
       }
     },
@@ -156,7 +178,11 @@
         },
         "decision": {
           "type": "string",
-          "enum": ["ALLOW", "CHALLENGE", "DENY"]
+          "enum": [
+            "ALLOW",
+            "CHALLENGE",
+            "DENY"
+          ]
         },
         "requirements": {
           "maxItems": 100,
@@ -190,7 +216,12 @@
               },
               "status": {
                 "type": "string",
-                "enum": ["match", "partial", "mismatch", "unknown"]
+                "enum": [
+                  "match",
+                  "partial",
+                  "mismatch",
+                  "unknown"
+                ]
               },
               "reason": {
                 "type": "string",
@@ -252,7 +283,11 @@
               },
               "severity": {
                 "type": "string",
-                "enum": ["info", "caution", "high"]
+                "enum": [
+                  "info",
+                  "caution",
+                  "high"
+                ]
               },
               "message": {
                 "type": "string",
@@ -338,7 +373,11 @@
               "minLength": 1
             }
           },
-          "required": ["algorithm", "keyId", "value"],
+          "required": [
+            "algorithm",
+            "keyId",
+            "value"
+          ],
           "additionalProperties": false
         }
       },

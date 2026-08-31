@@ -69,11 +69,21 @@
     },
     "retentionClass": {
       "type": "string",
-      "enum": ["account", "audit", "operational", "temporary"]
+      "enum": [
+        "account",
+        "audit",
+        "operational",
+        "temporary"
+      ]
     },
     "learningScope": {
       "type": "string",
-      "enum": ["not_evaluated", "excluded", "local_only", "network_aggregate"]
+      "enum": [
+        "not_evaluated",
+        "excluded",
+        "local_only",
+        "network_aggregate"
+      ]
     },
     "reportedAt": {
       "type": "string",

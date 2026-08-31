@@ -21,11 +21,12 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { ClaspMark } from '@/components/clasp-mark';
+import { FirstRunGuide } from '@/components/first-run-guide';
 import { LandingBackdrop, LandingDiagram } from '@/components/landing-scene';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { pageMeta, type Page } from '@/lib/navigation';
+import { pageMeta, pages, type Page } from '@/lib/navigation';
 import {
   applyPreviewRequest,
   createPreviewData,
@@ -184,15 +185,24 @@ async function remoteApi(path: string, init?: RequestInit) {
     credentials: 'same-origin',
     headers,
   }).then(async (response) => {
-    if (!response.ok)
-      throw new Error((await response.text()) || `Request failed: ${response.status}`);
+    if (!response.ok) {
+      const text = await response.text();
+      let message = text || `Request failed: ${response.status}`;
+      try {
+        const value = JSON.parse(text) as { error?: unknown };
+        if (typeof value.error === 'string') message = value.error;
+      } catch {
+        // Preserve non-JSON error text from proxies and platform failures.
+      }
+      throw new Error(message);
+    }
     return response.json();
   });
 }
 
 function route(): Page {
   const value = location.pathname.slice(1) || 'dashboard';
-  if (value === 'marketplace' || value === 'settings' || value === 'connect') return value;
+  if ((pages as readonly string[]).includes(value)) return value as Page;
   return 'dashboard';
 }
 
@@ -320,9 +330,8 @@ function App() {
   }, [preview, refreshDashboard, session]);
 
   const navigate = (next: Page) => {
-    const target = ['marketplace', 'settings', 'connect'].includes(next) ? next : 'dashboard';
-    history.pushState({}, '', `/${target}`);
-    setPage(target as Page);
+    history.pushState({}, '', `/${next}`);
+    setPage(next);
   };
   const pendingSetup = data.setupRequests.filter((request) => request.status === 'pending').length;
   const pendingInvites = data.federatedInteractions.filter(
@@ -828,6 +837,13 @@ function AgentWorkspace({
           <Plus /> Connect new agent
         </button>
       </header>
+
+      <FirstRunGuide
+        data={data}
+        api={api}
+        refreshDashboard={refreshDashboard}
+        navigate={navigate}
+      />
 
       {error ? (
         <div className="errorBar" role="alert">

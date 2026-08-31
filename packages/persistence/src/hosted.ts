@@ -2243,7 +2243,8 @@ export class HostedRepository {
     operatorId: string,
     agentId: string,
     value: InteractionCompletionReport,
-    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+    submissionMethod:
+      'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ) {
     const participant = await this.interactionParticipant(operatorId, value.interactionId, agentId);
     const report = InteractionCompletionReportSchema.parse(value);
@@ -2782,7 +2783,8 @@ export class HostedRepository {
     operatorId: string,
     agentId: string,
     value: InteractionFeedback,
-    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+    submissionMethod:
+      'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ) {
     const feedback = InteractionFeedbackSchema.parse(value);
     if (feedback.platformAttestation)

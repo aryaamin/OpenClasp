@@ -30,7 +30,12 @@
     },
     "outcome": {
       "type": "string",
-      "enum": ["success", "partial", "failure", "cancelled"]
+      "enum": [
+        "success",
+        "partial",
+        "failure",
+        "cancelled"
+      ]
     },
     "summary": {
       "type": "string",
@@ -55,7 +60,12 @@
           },
           "status": {
             "type": "string",
-            "enum": ["met", "partially_met", "missed", "unknown"]
+            "enum": [
+              "met",
+              "partially_met",
+              "missed",
+              "unknown"
+            ]
           },
           "explanation": {
             "type": "string",
@@ -72,7 +82,11 @@
             }
           }
         },
-        "required": ["criterion", "status", "evidenceReferences"],
+        "required": [
+          "criterion",
+          "status",
+          "evidenceReferences"
+        ],
         "additionalProperties": false
       }
     },
@@ -154,7 +168,11 @@
     "dataSharingMode": {
       "default": "structured_only",
       "type": "string",
-      "enum": ["local_only", "structured_only", "permitted_evidence"]
+      "enum": [
+        "local_only",
+        "structured_only",
+        "permitted_evidence"
+      ]
     },
     "signature": {
       "type": "object",
@@ -172,12 +190,22 @@
           "minLength": 1
         }
       },
-      "required": ["algorithm", "keyId", "value"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value"
+      ],
       "additionalProperties": false
     },
     "submissionMethod": {
       "type": "string",
-      "enum": ["agent_signature", "oauth_installation", "agent_access_token", "runtime_session"]
+      "enum": [
+        "agent_signature",
+        "oauth_account",
+        "oauth_installation",
+        "agent_access_token",
+        "runtime_session"
+      ]
     },
     "platformAttestation": {
       "type": "object",
@@ -199,7 +227,12 @@
           "pattern": "^[a-zA-Z0-9_-]{43}$"
         }
       },
-      "required": ["algorithm", "keyId", "value", "digest"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value",
+        "digest"
+      ],
       "additionalProperties": false
     }
   },

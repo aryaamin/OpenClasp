@@ -18,7 +18,12 @@
     },
     "outcome": {
       "type": "string",
-      "enum": ["success", "partial", "failure", "cancelled"]
+      "enum": [
+        "success",
+        "partial",
+        "failure",
+        "cancelled"
+      ]
     },
     "consensus": {
       "type": "string",
@@ -32,7 +37,10 @@
     },
     "lifecycle": {
       "type": "string",
-      "enum": ["provisional", "final"]
+      "enum": [
+        "provisional",
+        "final"
+      ]
     },
     "confidence": {
       "type": "number",
@@ -57,7 +65,12 @@
     },
     "peerReportStatus": {
       "type": "string",
-      "enum": ["awaiting", "unreachable", "received", "timed_out"]
+      "enum": [
+        "awaiting",
+        "unreachable",
+        "received",
+        "timed_out"
+      ]
     },
     "summary": {
       "type": "string",
@@ -77,7 +90,12 @@
           },
           "status": {
             "type": "string",
-            "enum": ["met", "partially_met", "missed", "unknown"]
+            "enum": [
+              "met",
+              "partially_met",
+              "missed",
+              "unknown"
+            ]
           },
           "explanation": {
             "type": "string",
@@ -94,7 +112,11 @@
             }
           }
         },
-        "required": ["criterion", "status", "evidenceReferences"],
+        "required": [
+          "criterion",
+          "status",
+          "evidenceReferences"
+        ],
         "additionalProperties": false
       }
     },
@@ -174,7 +196,12 @@
           "pattern": "^[a-zA-Z0-9_-]{43}$"
         }
       },
-      "required": ["algorithm", "keyId", "value", "digest"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value",
+        "digest"
+      ],
       "additionalProperties": false
     }
   },

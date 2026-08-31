@@ -202,7 +202,8 @@ describe('HTTP API', () => {
         operatorId: string,
         agentId: string,
         report: any,
-        submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+        submissionMethod:
+          'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
       ) => {
         calls.push(
           `completion:${operatorId}:${agentId}:${report.interactionId}:${submissionMethod}`,
@@ -221,7 +222,8 @@ describe('HTTP API', () => {
         operatorId: string,
         agentId: string,
         feedback: any,
-        submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+        submissionMethod:
+          'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
       ) => {
         calls.push(
           `feedback:${operatorId}:${agentId}:${feedback.interactionId}:${submissionMethod}`,

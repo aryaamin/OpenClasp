@@ -7,7 +7,11 @@
     },
     "claimType": {
       "type": "string",
-      "enum": ["objective", "subjective", "prediction"]
+      "enum": [
+        "objective",
+        "subjective",
+        "prediction"
+      ]
     },
     "status": {
       "type": "string",

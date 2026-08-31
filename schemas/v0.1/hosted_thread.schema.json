@@ -27,7 +27,10 @@
     },
     "status": {
       "type": "string",
-      "enum": ["open", "closed"]
+      "enum": [
+        "open",
+        "closed"
+      ]
     },
     "privacyMode": {
       "type": "string",

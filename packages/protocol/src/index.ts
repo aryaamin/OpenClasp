@@ -544,7 +544,13 @@ export const InteractionCompletionReportSchema = z
     dataSharingMode: DataSharingModeSchema.default('structured_only'),
     signature: SignatureSchema.optional(),
     submissionMethod: z
-      .enum(['agent_signature', 'oauth_installation', 'agent_access_token', 'runtime_session'])
+      .enum([
+        'agent_signature',
+        'oauth_account',
+        'oauth_installation',
+        'agent_access_token',
+        'runtime_session',
+      ])
       .optional(),
     platformAttestation: RecordAttestationSchema.optional(),
   })
@@ -609,7 +615,13 @@ export const InteractionFeedbackSchema = z
     submittedAt: z.string().datetime(),
     signature: SignatureSchema.optional(),
     submissionMethod: z
-      .enum(['agent_signature', 'oauth_installation', 'agent_access_token', 'runtime_session'])
+      .enum([
+        'agent_signature',
+        'oauth_account',
+        'oauth_installation',
+        'agent_access_token',
+        'runtime_session',
+      ])
       .optional(),
     platformAttestation: RecordAttestationSchema.optional(),
   })

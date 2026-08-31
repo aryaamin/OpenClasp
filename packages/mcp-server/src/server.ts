@@ -223,14 +223,16 @@ type AgentDirectory = {
     operatorId: string,
     agentId: string,
     report: z.infer<typeof InteractionCompletionReportSchema>,
-    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+    submissionMethod:
+      'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ): Promise<unknown>;
   listFeedbackRequests?(operatorId: string, agentId: string): Promise<unknown[]>;
   submitInteractionFeedback?(
     operatorId: string,
     agentId: string,
     feedback: z.infer<typeof InteractionFeedbackSchema>,
-    submissionMethod: 'oauth_installation' | 'agent_access_token' | 'runtime_session',
+    submissionMethod:
+      'oauth_account' | 'oauth_installation' | 'agent_access_token' | 'runtime_session',
   ): Promise<unknown>;
   touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
   listHostedThreads(operatorId: string, agentId: string): Promise<any[]>;

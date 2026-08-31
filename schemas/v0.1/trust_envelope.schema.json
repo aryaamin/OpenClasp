@@ -42,7 +42,11 @@
     },
     "dataSharingMode": {
       "type": "string",
-      "enum": ["local_only", "structured_only", "permitted_evidence"]
+      "enum": [
+        "local_only",
+        "structured_only",
+        "permitted_evidence"
+      ]
     },
     "evidenceRequirements": {
       "type": "array",
@@ -80,7 +84,11 @@
           "minLength": 1
         }
       },
-      "required": ["algorithm", "keyId", "value"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value"
+      ],
       "additionalProperties": false
     }
   },

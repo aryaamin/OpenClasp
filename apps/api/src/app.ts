@@ -24,11 +24,17 @@ import type { AgentProfile, HostedRepository } from '../../../packages/persisten
 import { toA2AAgentCard } from '../../../packages/sidecar/src/index.js';
 import {
   approveAgentSetup,
+  createDashboardAgent,
   createHostedProviderAgent,
   getOnboardingState,
   rejectAgentSetup,
 } from '../../../packages/persistence/src/onboarding.js';
 import { FixedWindowRateLimiter } from './security.js';
+import {
+  buildOwnerCompletionReport,
+  buildOwnerFeedback,
+  buildQuickstartInteraction,
+} from './quickstart.js';
 
 type DashboardRepository = Pick<
   HostedRepository,
@@ -630,6 +636,31 @@ export function buildApi(
         throw error;
       }
     });
+    router.post('/v0.1/quickstart/agent', async (request) => {
+      const owner = operatorId(request);
+      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
+      const value = z
+        .object({
+          agentName: z.string().trim().min(1).max(100),
+          projectName: z.string().trim().min(1).max(100).default('My agents'),
+          description: z.string().trim().min(1).max(500),
+          capabilities: z.array(z.string().trim().min(1).max(100)).min(1).max(20),
+          limitations: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
+        })
+        .strict()
+        .parse(request.body);
+      const created = await createDashboardAgent(repository, owner, value);
+      const card = await repository.publishAgent(
+        owner,
+        buildPublicAgentCard(created.agent, publicBaseUrl(request)),
+      );
+      await repository.upsert(owner, 'publication', created.agent.agentId, {
+        agentId: created.agent.agentId,
+        published: true,
+        updatedAt: card.updatedAt,
+      });
+      return { ...created, card };
+    });
     router.post('/v0.1/agents', async (request) => {
       const owner = operatorId(request);
       const current = await scopedEngine(request);
@@ -836,6 +867,49 @@ export function buildApi(
         throw new Error('Federated interactions are not configured');
       return repository.listFederatedInteractions(owner);
     });
+    router.post('/v0.1/federated-interactions/start', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.createFederatedInteraction || !owner)
+        throw new Error('Federated interactions are not configured');
+      const value = z
+        .object({
+          initiatorAgentId: z.string().min(1),
+          responderAgentId: z.string().min(1),
+          task: z.string().trim().min(10).max(2000),
+          requestedOutcome: z.string().trim().min(3).max(1000),
+          successCriterion: z.string().trim().min(3).max(1000),
+          taskCategory: z.string().trim().min(1).max(100).optional(),
+          deadline: z.string().datetime().optional(),
+        })
+        .strict()
+        .refine((input) => !input.deadline || Date.parse(input.deadline) > Date.now(), {
+          message: 'Deadline must be in the future',
+          path: ['deadline'],
+        })
+        .parse(request.body);
+      const [initiator, responder] = await Promise.all([
+        repository.getPublishedAgent(value.initiatorAgentId),
+        repository.getPublishedAgent(value.responderAgentId),
+      ]);
+      if (!initiator) throw new Error('Publish the initiating agent before starting an agreement');
+      if (!responder) throw new Error('The selected counterparty is no longer available');
+      if (repository.listFederatedInteractions) {
+        const existing = (await repository.listFederatedInteractions(owner)).find(
+          (candidate) =>
+            ['pending', 'active'].includes(candidate.status) &&
+            candidate.initiatorAgentId === value.initiatorAgentId &&
+            candidate.responderAgentId === value.responderAgentId &&
+            candidate.contract.purpose === value.task.slice(0, 500) &&
+            candidate.contract.requestedOutcome === value.requestedOutcome &&
+            candidate.contract.successCriteria[0] === value.successCriterion,
+        );
+        if (existing) return existing;
+      }
+      return repository.createFederatedInteraction(
+        owner,
+        buildQuickstartInteraction(initiator, responder, value),
+      );
+    });
     router.get('/v0.1/federated-interactions/:id', async (request) => {
       const owner = operatorId(request);
       if (!repository?.getFederatedInteraction || !owner)
@@ -866,6 +940,46 @@ export function buildApi(
         (request.params as { id: string }).id,
         value.agentId,
       );
+    });
+    router.post('/v0.1/federated-interactions/:id/complete', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getFederatedInteraction || !repository.submitCompletionReport || !owner)
+        throw new Error('Interaction completion is not configured');
+      const interactionId = (request.params as { id: string }).id;
+      const value = z
+        .object({
+          agentId: z.string().min(1),
+          outcome: z.enum(['success', 'partial', 'failure', 'cancelled']),
+          summary: z.string().trim().min(3).max(2000),
+          evidenceReferences: z.array(z.string().url().max(2048)).max(20).default([]),
+        })
+        .strict()
+        .parse(request.body);
+      const [interaction, rows] = await Promise.all([
+        repository.getFederatedInteraction(owner, interactionId),
+        repository.list(owner),
+      ]);
+      if (!interaction) throw new Error('Interaction not found');
+      if (!['active', 'completed'].includes(interaction.status))
+        throw new Error('The agreement must be active before reporting its outcome');
+      const duplicate = rows.find(
+        (row) =>
+          row.kind === 'completion_report' &&
+          row.payload?.interactionId === interactionId &&
+          row.payload?.reportingAgentId === value.agentId,
+      );
+      if (duplicate) return { report: duplicate.payload, deduplicated: true };
+      const agent = rows.find(
+        (row) => row.kind === 'agent_profile' && row.recordId === value.agentId,
+      )?.payload as AgentProfile | undefined;
+      if (!agent || agent.status !== 'active') throw new Error('Active owned agent not found');
+      const session = repository.getLiveSession
+        ? await repository.getLiveSession(owner, interactionId, value.agentId)
+        : undefined;
+      const report = buildOwnerCompletionReport(interaction, agent, value, {
+        ...(session?.activatedAt ? { startedAt: session.activatedAt } : {}),
+      });
+      return repository.submitCompletionReport(owner, value.agentId, report, 'oauth_account');
     });
     router.post('/v0.1/federated-interactions/:id/completion-reports', async (request) => {
       const owner = operatorId(request);
@@ -898,6 +1012,42 @@ export function buildApi(
           ? 'agent_access_token'
           : 'oauth_installation',
       );
+    });
+    router.post('/v0.1/feedback-requests/:id/respond', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listFeedbackRequests || !repository.submitInteractionFeedback || !owner)
+        throw new Error('Interaction feedback is not configured');
+      const value = z
+        .object({
+          agentId: z.string().min(1),
+          rating: z.number().int().min(1).max(5),
+          wouldWorkAgain: z.enum(['yes', 'no', 'unsure']),
+          privateComment: z.string().trim().max(1000).optional(),
+        })
+        .strict()
+        .parse(request.body);
+      const [requests, rows] = await Promise.all([
+        repository.listFeedbackRequests(owner, value.agentId),
+        repository.list(owner),
+      ]);
+      const duplicate = rows.find(
+        (row) =>
+          row.kind === 'interaction_feedback' &&
+          row.payload?.requestId === (request.params as { id: string }).id &&
+          row.payload?.reviewerAgentId === value.agentId,
+      );
+      if (duplicate) return { feedback: duplicate.payload, deduplicated: true };
+      const feedbackRequest = requests.find(
+        (candidate) => candidate.requestId === (request.params as { id: string }).id,
+      );
+      if (!feedbackRequest || feedbackRequest.status !== 'pending')
+        throw new Error('Pending feedback request not found');
+      const agent = rows.find(
+        (row) => row.kind === 'agent_profile' && row.recordId === value.agentId,
+      )?.payload as AgentProfile | undefined;
+      if (!agent || agent.status !== 'active') throw new Error('Active owned agent not found');
+      const feedback = buildOwnerFeedback(feedbackRequest, agent, value);
+      return repository.submitInteractionFeedback(owner, value.agentId, feedback, 'oauth_account');
     });
     router.get('/v0.1/feedback-requests', async (request) => {
       const owner = operatorId(request);

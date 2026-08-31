@@ -17,7 +17,12 @@
     },
     "status": {
       "type": "string",
-      "enum": ["preparing", "active", "completed", "failed"]
+      "enum": [
+        "preparing",
+        "active",
+        "completed",
+        "failed"
+      ]
     },
     "expiresAt": {
       "type": "string",

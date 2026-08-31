@@ -42,7 +42,12 @@
     },
     "outcome": {
       "type": "string",
-      "enum": ["success", "partial", "failure", "cancelled"]
+      "enum": [
+        "success",
+        "partial",
+        "failure",
+        "cancelled"
+      ]
     },
     "commitmentsFulfilled": {
       "type": "array",
@@ -76,7 +81,11 @@
     },
     "disputeStatus": {
       "type": "string",
-      "enum": ["none", "open", "resolved"]
+      "enum": [
+        "none",
+        "open",
+        "resolved"
+      ]
     },
     "delegationChainHash": {
       "type": "string"
@@ -114,7 +123,11 @@
             "minLength": 1
           }
         },
-        "required": ["algorithm", "keyId", "value"],
+        "required": [
+          "algorithm",
+          "keyId",
+          "value"
+        ],
         "additionalProperties": false
       }
     },
@@ -152,7 +165,12 @@
           "pattern": "^[a-zA-Z0-9_-]{43}$"
         }
       },
-      "required": ["algorithm", "keyId", "value", "digest"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value",
+        "digest"
+      ],
       "additionalProperties": false
     }
   },

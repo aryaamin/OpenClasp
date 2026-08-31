@@ -170,6 +170,65 @@ export async function createHostedProviderAgent(
   return { project, agent };
 }
 
+export async function createDashboardAgent(
+  store: OnboardingStore,
+  operatorId: string,
+  input: {
+    agentName: string;
+    projectName: string;
+    description: string;
+    capabilities: string[];
+    limitations?: string[] | undefined;
+  },
+) {
+  const state = await getOnboardingState(store, operatorId);
+  const projectName = input.projectName.trim();
+  const agentName = input.agentName.trim();
+  if (!projectName || !agentName) throw new Error('Agent and project names are required');
+  const capabilities = [
+    ...new Set(input.capabilities.map((value) => value.trim()).filter(Boolean)),
+  ];
+  if (!capabilities.length) throw new Error('At least one capability is required');
+  const now = new Date().toISOString();
+  let project = state.projects.find(
+    (candidate) => candidate.name.trim().toLowerCase() === projectName.toLowerCase(),
+  );
+  if (!project) {
+    project = { projectId: `project_${randomUUID()}`, name: projectName, createdAt: now };
+    await store.upsert(operatorId, 'project', project.projectId, project);
+  }
+  const existing = state.agentProfiles.find(
+    (candidate) =>
+      candidate.status === 'active' &&
+      candidate.projectId === project!.projectId &&
+      candidate.name.trim().toLowerCase() === agentName.toLowerCase(),
+  );
+  if (existing) return { project, agent: existing };
+  const agent: AgentProfile = {
+    agentId: `agent_${randomUUID()}`,
+    projectId: project.projectId,
+    name: agentName,
+    description: input.description.trim(),
+    framework: 'OpenClasp hosted',
+    agentVersion: '1.0.0',
+    agentMode: 'temporary_chat',
+    transport: 'openclasp_gateway',
+    autoPublish: true,
+    autoAcceptPolicy: 'off',
+    autoAcceptTaskCategories: [],
+    capabilities,
+    limitations: [
+      ...new Set((input.limitations ?? []).map((value) => value.trim()).filter(Boolean)),
+    ],
+    identityMode: 'owner_managed',
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+  };
+  await store.upsert(operatorId, 'agent_profile', agent.agentId, agent);
+  return { project, agent };
+}
+
 export async function requestAgentSetup(
   store: OnboardingStore,
   operatorId: string,

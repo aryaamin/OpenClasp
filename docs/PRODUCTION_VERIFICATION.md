@@ -26,6 +26,11 @@ signatures.
 
 ## Browser gate
 
+With a new account, verify the guided first run can create and publish a hosted temporary identity,
+select a persistent counterparty, compile a task into a protected agreement, show the pending and
+active states, record an owner-attested outcome, and submit private feedback. Refresh between every
+step to prove progress is derived from persisted records rather than browser-only state.
+
 Verify `/history` and `/insights` with representative pending, active, completed, conflicting, and
 ineligible records. Check dark and light themes at desktop and 390px widths. Required results:
 

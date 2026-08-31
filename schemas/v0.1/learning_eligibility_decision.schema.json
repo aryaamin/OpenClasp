@@ -70,7 +70,10 @@
     },
     "contributionMode": {
       "type": "string",
-      "enum": ["local_only", "network_aggregate"]
+      "enum": [
+        "local_only",
+        "network_aggregate"
+      ]
     },
     "structuredDataOnly": {
       "type": "boolean",
@@ -101,7 +104,12 @@
           "pattern": "^[a-zA-Z0-9_-]{43}$"
         }
       },
-      "required": ["algorithm", "keyId", "value", "digest"],
+      "required": [
+        "algorithm",
+        "keyId",
+        "value",
+        "digest"
+      ],
       "additionalProperties": false
     }
   },

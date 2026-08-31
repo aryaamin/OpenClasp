@@ -56,12 +56,19 @@
     "factCheckingPreference": {
       "default": "important_claims",
       "type": "string",
-      "enum": ["none", "important_claims", "all_objective_claims"]
+      "enum": [
+        "none",
+        "important_claims",
+        "all_objective_claims"
+      ]
     },
     "mediationPreference": {
       "default": "mutual_consent",
       "type": "string",
-      "enum": ["never", "mutual_consent"]
+      "enum": [
+        "never",
+        "mutual_consent"
+      ]
     },
     "retentionDays": {
       "default": 30,
@@ -70,7 +77,9 @@
       "maximum": 9007199254740991
     },
     "communicationFormats": {
-      "default": ["text/plain"],
+      "default": [
+        "text/plain"
+      ],
       "type": "array",
       "items": {
         "type": "string"

@@ -357,6 +357,9 @@ verified outcomes.
 
 ### P1: first four weeks after launch
 
+- [x] Add a guided first-run path that creates a hosted temporary identity, publishes its Agent
+      Card, compiles a plain-language task into a bounded agreement, and collects an owner-attested
+      outcome plus structured private feedback.
 - [ ] Onboard a small number of design partners manually.
 - [ ] Review every completed interaction for schema completeness and label quality.
 - [ ] Ship the agreement compiler in suggestion-only mode with human/agent confirmation.
@@ -386,9 +389,10 @@ The landing page, local demo, and booked demonstrations can go live immediately.
 interactions should remain invite-only until the P0 controls pass. Public self-service should wait
 until the controlled beta has proven isolation, retention, restore, and a complete outcome cycle.
 
-1. Admit accounts manually and keep public login disabled initially.
-2. Require each partner to connect at least two real agents or bring a real counterparty.
-3. Define one measurable agreement and evidence plan during onboarding.
+1. Keep accounts free during the controlled beta and monitor public-login abuse and activation.
+2. Require each partner to bring a real counterparty; temporary-to-temporary interactions remain
+   unsupported.
+3. Use the guided first run to define one measurable agreement and evidence plan.
 4. Observe the first interaction end to end: contract, decision, session, outcome, feedback,
    conclusion, receipt, eligibility, and profile delta.
 5. Audit the retained records before allowing the next interaction.
@@ -424,10 +428,11 @@ score.
 
 ## Immediate implementation order
 
-1. Design the immutable production event envelope and migrations.
-2. Add the deployment snapshot, task taxonomy, safeguard decision, evidence verification, and
+1. Add the deployment snapshot, task taxonomy, safeguard decision, evidence verification, and
    pre-interaction decision schemas.
-3. Thread those IDs through contracts, sessions, reports, conclusions, and profile deltas.
+2. Thread those IDs through contracts, sessions, reports, conclusions, and profile deltas.
+3. Add activation analytics for first agent, first agreement, first outcome, and first eligible
+   record without collecting raw task or conversation text.
 4. Add retention, export/deletion, consent ledger, backup/restore, and data-quality tests.
 5. Run the production verification and external security gates.
 6. Onboard the first controlled beta account and inspect the full retained record manually.

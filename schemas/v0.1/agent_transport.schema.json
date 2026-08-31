@@ -18,9 +18,17 @@
     "managedBy": {
       "default": "agent",
       "type": "string",
-      "enum": ["agent", "openclasp"]
+      "enum": [
+        "agent",
+        "openclasp"
+      ]
     }
   },
-  "required": ["protocol", "protocolBinding", "endpoint", "managedBy"],
+  "required": [
+    "protocol",
+    "protocolBinding",
+    "endpoint",
+    "managedBy"
+  ],
   "additionalProperties": false
 }
