@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       '.agents',
+      '.vercel',
       'dist',
       'coverage',
       '**/.botpress/**',

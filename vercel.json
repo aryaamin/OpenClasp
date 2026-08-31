@@ -5,7 +5,7 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 60,
-      "includeFiles": ".openclasp-build/agent-card-fonts/**"
+      "includeFiles": "{.openclasp-build/agent-card-fonts/**,node_modules/.pnpm/harfbuzzjs@0.10.0/node_modules/harfbuzzjs/hb.wasm}"
     },
     "api/mcp.ts": { "maxDuration": 60 },
     "api/cron-feedback.ts": { "maxDuration": 60 }

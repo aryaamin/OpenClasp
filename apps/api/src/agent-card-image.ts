@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createElement, type CSSProperties, type ReactNode } from 'react';
-import satori from 'satori';
 import sharp from 'sharp';
 import type { PublicAgentCard } from '../../../packages/protocol/src/index.js';
 
@@ -93,6 +92,7 @@ async function renderTextLayer({
   nameSize: number;
   publicReference: string;
 }) {
+  const { default: satori } = await import('satori');
   const children: ReactNode[] = [
     createElement(
       'div',
