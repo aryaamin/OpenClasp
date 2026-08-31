@@ -1,12 +1,12 @@
 import {
   BarChart3,
-  Bot,
   History,
   Inbox,
   LayoutDashboard,
   LogOut,
   Moon,
   Plus,
+  ScanLine,
   Settings,
   Sun,
 } from 'lucide-react';
@@ -41,7 +41,7 @@ const navIcons = {
   dashboard: LayoutDashboard,
   history: History,
   conversations: Inbox,
-  agents: Bot,
+  agents: ScanLine,
   insights: BarChart3,
   connect: Plus,
   settings: Settings,

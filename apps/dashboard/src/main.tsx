@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowRight,
-  Bot,
   Check,
   ChevronDown,
   Circle,
@@ -12,13 +11,13 @@ import {
   ExternalLink,
   MessageCircle,
   Moon,
-  Plus,
   Search,
   Share2,
   ShieldCheck,
   Sun,
   X,
 } from 'lucide-react';
+import { AgentMark, FrameCorners } from '@/components/agent-mark';
 import { AppShell } from '@/components/app-shell';
 import { ClaspMark } from '@/components/clasp-mark';
 import { FirstRunGuide } from '@/components/first-run-guide';
@@ -795,12 +794,18 @@ function AgentWorkspace({
   api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const [expandedAgent, setExpandedAgent] = useState('');
+  const [openHistory, setOpenHistory] = useState<Record<string, boolean>>({});
+  const [expandedHistoryId, setExpandedHistoryId] = useState('');
   const [scorecardAgentId, setScorecardAgentId] = useState(
     () => new URLSearchParams(window.location.search).get('scorecard') ?? '',
   );
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
   const pendingSetups = data.setupRequests.filter((request) => request.status === 'pending');
+  const toggleAgent = (agentId: string, isOpen: boolean) => {
+    setExpandedAgent(isOpen ? '' : agentId);
+    setExpandedHistoryId('');
+  };
 
   const decideSetup = async (requestId: string, decision: 'approve' | 'reject') => {
     setWorking(`setup:${requestId}`);
@@ -842,22 +847,15 @@ function AgentWorkspace({
   return (
     <div className="workspacePage">
       <header className="workspaceHead">
-        <div>
-          <p className="eyebrow">your workspace</p>
-          <h1>My agents</h1>
-          <p>{data.agents.length} registered</p>
-        </div>
-        <button className="connectAgentButton" type="button" onClick={() => navigate('connect')}>
-          <Plus /> Add agent
+        <h1>
+          Agents <small>{data.agents.length}</small>
+        </h1>
+        <button className="landingPrimary" type="button" onClick={() => navigate('connect')}>
+          add agent <ArrowRight />
         </button>
       </header>
 
-      <FirstRunGuide
-        data={data}
-        api={api}
-        refreshDashboard={refreshDashboard}
-        navigate={navigate}
-      />
+      <FirstRunGuide data={data} api={api} refreshDashboard={refreshDashboard} />
 
       {error ? (
         <div className="errorBar" role="alert">
@@ -869,9 +867,7 @@ function AgentWorkspace({
         <section className="compactRequests" aria-label="New agent requests">
           {pendingSetups.map((request) => (
             <article key={request.requestId}>
-              <span className="requestIcon">
-                <Bot />
-              </span>
+              <AgentMark name={String(request.agentName ?? 'New agent')} size="sm" />
               <div>
                 <strong>{request.agentName ?? 'New agent'}</strong>
                 <small>{request.framework ?? 'Agent'} wants to connect</small>
@@ -925,12 +921,9 @@ function AgentWorkspace({
                     className="agentRowCore"
                     type="button"
                     aria-expanded={expanded}
-                    onClick={() => setExpandedAgent(expanded ? '' : agentId)}
+                    onClick={() => toggleAgent(agentId, expanded)}
                   >
-                    <span className="agentAvatar">
-                      <Bot />
-                      <i className={online ? 'online' : ''} />
-                    </span>
+                    <AgentMark name={String(agent.name ?? agentId)} online={online} />
                     <span className="agentIdentity">
                       <strong>{agent.name ?? agentId}</strong>
                       <small>{agent.framework ?? 'Agent'}</small>
@@ -958,22 +951,13 @@ function AgentWorkspace({
                     onClick={() => setScorecardAgentId(agentId)}
                     aria-label={`Open behavioural scorecard for ${String(agent.name ?? agentId)}`}
                   >
-                    <span className="scorecardBars" aria-hidden="true">
-                      {[0, 1, 2, 3].map((index) => (
-                        <i
-                          key={index}
-                          style={{
-                            width: `${Math.max(18, Number(reliability.score ?? 50) - index * 9)}%`,
-                          }}
-                        />
-                      ))}
-                    </span>
+                    <strong>{reliability.score == null ? '—' : reliability.score}</strong>
                     <span>
-                      <strong>Behaviour card</strong>
+                      <b>behaviour</b>
                       <small>
                         {reliability.summary
                           ? `${humanize(reliability.summary.confidence.level)} confidence · ${reliability.samples}`
-                          : 'Awaiting verified outcomes'}
+                          : 'awaiting verified outcomes'}
                       </small>
                     </span>
                   </button>
@@ -990,7 +974,7 @@ function AgentWorkspace({
                     type="button"
                     aria-expanded={expanded}
                     aria-label={`${expanded ? 'Collapse' : 'Expand'} ${String(agent.name ?? agentId)}`}
-                    onClick={() => setExpandedAgent(expanded ? '' : agentId)}
+                    onClick={() => toggleAgent(agentId, expanded)}
                   >
                     <ChevronDown className="expandIcon" />
                   </button>
@@ -1074,34 +1058,85 @@ function AgentWorkspace({
                     </div>
 
                     <section className="agentHistory">
-                      <div className="historyHeading">
-                        <p className="sectionLabel">History</p>
-                        <small>{history.length} interactions</small>
-                      </div>
-                      {history.length ? (
-                        <ol>
-                          {history.map((item) => (
-                            <li key={item.interactionId}>
-                              <OutcomeSymbol outcome={item.outcome} />
-                              <div>
-                                <strong>{item.counterpart}</strong>
-                                <small>
-                                  {item.counterpartMode === 'temporary'
-                                    ? 'Temporary chat'
-                                    : 'Agent'}
-                                  {' · '}
-                                  {relativeTime(item.at)}
-                                </small>
-                              </div>
-                              <span className="historyPurpose">{item.title}</span>
-                              <b className={`outcomeText ${item.outcome}`}>
-                                {humanize(item.outcome)}
-                              </b>
-                            </li>
-                          ))}
+                      <button
+                        className="historyHeading"
+                        type="button"
+                        aria-expanded={openHistory[agentId] !== false}
+                        aria-controls={`history-${agentId}`}
+                        onClick={() => {
+                          setOpenHistory((current) => ({
+                            ...current,
+                            [agentId]: current[agentId] === false,
+                          }));
+                          setExpandedHistoryId('');
+                        }}
+                      >
+                        History
+                        <small>{history.length}</small>
+                        <ChevronDown className="expandIcon" />
+                      </button>
+                      {openHistory[agentId] === false ? null : (
+                        <ol id={`history-${agentId}`}>
+                          {history.length ? (
+                            history.map((item) => {
+                              const itemOpen = expandedHistoryId === item.interactionId;
+                              return (
+                                <li
+                                  className={itemOpen ? 'historyEntry isExpanded' : 'historyEntry'}
+                                  key={item.interactionId}
+                                >
+                                  <div className="historyRowSummary">
+                                    <button
+                                      className="historyItem"
+                                      type="button"
+                                      aria-expanded={itemOpen}
+                                      onClick={() =>
+                                        setExpandedHistoryId(itemOpen ? '' : item.interactionId)
+                                      }
+                                    >
+                                      <OutcomeSymbol outcome={item.outcome} />
+                                      <span className="historyIdentity">
+                                        <strong>{item.counterpart}</strong>
+                                        <small>
+                                          {item.counterpartMode === 'temporary'
+                                            ? 'Temporary chat'
+                                            : 'Agent'}
+                                          {' · '}
+                                          {relativeTime(item.at)}
+                                        </small>
+                                      </span>
+                                      <span className="historyPurpose">{item.title}</span>
+                                      <b className={`outcomeText ${item.outcome}`}>
+                                        {humanize(item.outcome)}
+                                      </b>
+                                    </button>
+                                    <button
+                                      className="agentExpandButton"
+                                      type="button"
+                                      aria-expanded={itemOpen}
+                                      aria-label={`${itemOpen ? 'Collapse' : 'Expand'} ${item.title}`}
+                                      onClick={() =>
+                                        setExpandedHistoryId(itemOpen ? '' : item.interactionId)
+                                      }
+                                    >
+                                      <ChevronDown className="expandIcon" />
+                                    </button>
+                                  </div>
+                                  {itemOpen ? (
+                                    <div className="historyDetail">
+                                      <p>{item.title}</p>
+                                      <small>
+                                        {new Date(item.at).toLocaleString()} · {item.interactionId}
+                                      </small>
+                                    </div>
+                                  ) : null}
+                                </li>
+                              );
+                            })
+                          ) : (
+                            <li className="quietEmpty">No interactions yet</li>
+                          )}
                         </ol>
-                      ) : (
-                        <div className="quietEmpty">No interactions yet</div>
                       )}
                     </section>
                   </div>
@@ -1111,9 +1146,10 @@ function AgentWorkspace({
           })
         ) : (
           <button className="emptyAgentState" type="button" onClick={() => navigate('connect')}>
-            <Plus />
+            <FrameCorners />
+            <span aria-hidden="true">+</span>
             <strong>Connect your first agent</strong>
-            <span>It takes about a minute.</span>
+            <span>OpenClasp issues its identity. It does not run the agent.</span>
           </button>
         )}
       </section>
@@ -1618,11 +1654,7 @@ function Marketplace({ data }: { data: DashboardData }) {
   return (
     <div className="workspacePage marketplacePage">
       <header className="workspaceHead marketplaceHead">
-        <div>
-          <p className="eyebrow">verified cloud directory</p>
-          <h1>Marketplace</h1>
-          <p>Find persistent cloud agents ready for direct A2A work.</p>
-        </div>
+        <h1>Marketplace</h1>
         <div className="marketFilters">
           <label>
             <span>For</span>
@@ -1684,11 +1716,9 @@ function Marketplace({ data }: { data: DashboardData }) {
             const intelligence = result.contextualReliability;
             return (
               <article className="marketCard" key={agent.agentId}>
+                <FrameCorners />
                 <div className="marketCardTop">
-                  <span className="agentAvatar">
-                    <Bot />
-                    <i className={online ? 'online' : ''} />
-                  </span>
+                  <AgentMark name={String(agent.name ?? agent.agentId)} online={online} />
                   <span className={online ? 'marketPresence online' : 'marketPresence'}>
                     {online ? 'Online' : 'Offline'}
                   </span>
@@ -2934,10 +2964,7 @@ function Insights({ data }: { data: DashboardData }) {
       <PageHead page="insights" />
       <section className="insightPrinciple">
         <div>
-          <p className="pageKicker">
-            <span>//</span> how to read this
-          </p>
-          <h2>Reliability is contextual, not a leaderboard.</h2>
+          <h2>Reliability</h2>
           <p>
             Every profile is tied to an agent version and task category. Scores reflect eligible
             structured outcomes and decay as history gets older.
@@ -3139,9 +3166,6 @@ function Connect({
       {pending.length > 0 && (
         <section className="setupRequests">
           <div>
-            <p className="pageKicker">
-              <span>//</span> confirmation required
-            </p>
             <h2>Approve agent setup</h2>
             <p>
               An agent proposed this identity. Confirm it before OpenClasp binds the installation.
@@ -3610,13 +3634,7 @@ function PageHead({
   const meta = pageMeta[page];
   return (
     <header className="pageHead">
-      <div>
-        <p className="pageKicker">
-          <span>//</span> {meta.eyebrow.toLowerCase()}
-        </p>
-        <h1>{meta.title}</h1>
-        <p className="lede">{meta.lede}</p>
-      </div>
+      <h1>{meta.title}</h1>
       {action && (
         <button className="primary" type="button" onClick={onAction}>
           {action.toLowerCase()} <span aria-hidden="true">→</span>
@@ -3758,9 +3776,7 @@ function AgentCard({
   return (
     <article className="agentCard">
       <div className="agentTop">
-        <span className="agentGlyph">
-          <Bot />
-        </span>
+        <AgentMark name={String(agent.name ?? agent.agentId)} online={online} size="sm" />
         <div className="agentBadges">
           <b className={online && temporary ? 'onlineBadge' : 'offlineBadge'}>
             {temporary
@@ -4099,7 +4115,7 @@ function Empty({
 }) {
   return (
     <div className="empty">
-      <Bot />
+      <span aria-hidden="true">+</span>
       <strong>{title}</strong>
       <p>{text}</p>
       {action && (

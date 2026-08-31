@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { Bot, Check, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Check, Copy, ExternalLink } from 'lucide-react';
+import { FrameCorners } from '@/components/agent-mark';
 
 type RecordValue = Record<string, any>;
 
@@ -12,7 +13,6 @@ type FirstRunGuideProps = {
   data: FirstRunData;
   api: (path: string, init?: RequestInit) => Promise<unknown>;
   refreshDashboard: () => Promise<void>;
-  navigate: (page: 'agents') => void;
 };
 
 const splitList = (value: string) =>
@@ -21,10 +21,11 @@ const splitList = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRunGuideProps) {
+export function FirstRunGuide({ data, api, refreshDashboard }: FirstRunGuideProps) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [justPublished, setJustPublished] = useState(false);
   const [agentForm, setAgentForm] = useState({
     agentName: '',
     description: '',
@@ -80,6 +81,7 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
         method: 'POST',
         body: JSON.stringify({ published: true }),
       });
+      setJustPublished(true);
       await refreshDashboard();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not publish Agent Card');
@@ -98,12 +100,14 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
     }
   };
 
+  if (agent && published && !justPublished) return null;
+
   return (
     <section className="firstRunGuide" aria-labelledby="first-run-title">
+      <FrameCorners />
       <header className="firstRunHeader">
         <div>
-          <p className="eyebrow">get listed</p>
-          <h2 id="first-run-title">Create your public Agent Card</h2>
+          <h2 id="first-run-title">Public Agent Card</h2>
           <p>Add the agent you run elsewhere, review its public details, then publish one link.</p>
         </div>
         <span className="firstRunCount">{steps.filter((step) => step.done).length}/2</span>
@@ -133,9 +137,7 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
       {!agent ? (
         <form className="firstRunForm" onSubmit={(event) => void createAgent(event)}>
           <div className="firstRunStage">
-            <span className="firstRunIcon">
-              <Bot />
-            </span>
+            <span className="firstRunIcon">01</span>
             <div>
               <strong>Add your agent</strong>
               <p>OpenClasp creates its identity and card. It does not host or run the agent.</p>
@@ -194,9 +196,7 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
       ) : !published ? (
         <div className="firstRunReview">
           <div className="firstRunStage">
-            <span className="firstRunIcon">
-              <ShieldCheck />
-            </span>
+            <span className="firstRunIcon">02</span>
             <div>
               <strong>Review what becomes public</strong>
               <p>Publishing makes this profile and its machine-readable Agent Card public.</p>
@@ -225,17 +225,16 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
           </button>
         </div>
       ) : (
-        <div className="firstRunComplete">
+        <div className="firstRunComplete" role="status">
           <span className="firstRunIcon complete">
             <Check />
           </span>
           <div>
             <strong>Your Agent Card is public</strong>
-            <p>Share the profile with people or give the JSON card URL to another agent.</p>
+            <p>Share this public profile with people or other agents.</p>
             <a href={shareUrl} target="_blank" rel="noreferrer">
               {shareUrl}
             </a>
-            <small>Connect its runtime later if you want it to accept live requests.</small>
           </div>
           <div className="firstRunActions">
             <button type="button" className="secondary" onClick={() => void copyShareLink()}>
@@ -244,9 +243,6 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
             <a className="secondary" href={shareUrl} target="_blank" rel="noreferrer">
               Open <ExternalLink />
             </a>
-            <button type="button" className="secondary" onClick={() => navigate('agents')}>
-              Manage
-            </button>
           </div>
         </div>
       )}

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { Bot, LogOut, Moon, Settings, Store, Sun } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ArrowRight, LogOut, Moon, Sun } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +11,12 @@ import type { ShellUser } from '@/components/app-sidebar';
 import { ClaspMark } from '@/components/clasp-mark';
 import { initials } from '@/lib/utils';
 import type { Page } from '@/lib/navigation';
+
+const views = [
+  { page: 'dashboard' as const, label: 'agents' },
+  { page: 'marketplace' as const, label: 'marketplace' },
+  { page: 'settings' as const, label: 'settings' },
+];
 
 export function AppShell({
   page,
@@ -37,66 +42,57 @@ export function AppShell({
   const name = user.name || 'OpenClasp user';
 
   return (
-    <div className="simpleShell">
+    <div className="landingPage simpleShell">
       <a className="skipLink" href="#main">
         Skip to content
       </a>
-      <header className="simpleHeader">
-        <button className="simpleBrand" type="button" onClick={() => navigate('dashboard')}>
-          <ClaspMark size={19} />
+      <header className="landingNav dashHeader">
+        <button className="landingBrand" type="button" onClick={() => navigate('dashboard')}>
+          <ClaspMark className="landingMark" size={28} />
           <strong>openclasp</strong>
         </button>
-        <div className="viewSwitch" role="tablist" aria-label="Dashboard view">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={current === 'dashboard'}
-            onClick={() => navigate('dashboard')}
-          >
-            <Bot />
-            <span>My agents</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={current === 'marketplace'}
-            onClick={() => navigate('marketplace')}
-          >
-            <Store />
-            <span>Marketplace</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={current === 'settings'}
-            onClick={() => navigate('settings')}
-          >
-            <Settings />
-            <span>Settings</span>
-          </button>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="accountButton" type="button" aria-label="Account menu">
-              <Avatar size="sm" className="rounded-full">
-                {user.picture ? <AvatarImage src={user.picture} alt="" /> : null}
-                <AvatarFallback className="rounded-full bg-primary text-[10px] text-primary-foreground">
-                  {initials(name)}
-                </AvatarFallback>
-              </Avatar>
+        <nav className="dashNav" aria-label="Dashboard">
+          {views.map((item) => (
+            <button
+              key={item.page}
+              type="button"
+              aria-current={current === item.page ? 'page' : undefined}
+              onClick={() => navigate(item.page)}
+            >
+              {item.label}
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={8}>
-            <DropdownMenuItem onClick={onToggleTheme}>
-              {theme === 'dark' ? <Sun /> : <Moon />}
-              {theme === 'dark' ? 'Light theme' : 'Dark theme'}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={onSignOut}>
-              <LogOut /> Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          ))}
+        </nav>
+        <div className="landingNavActions">
+          <button
+            className="themeButton"
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          >
+            {theme === 'dark' ? <Sun /> : <Moon />}
+          </button>
+          <button className="navCta dashCta" type="button" onClick={() => navigate('connect')}>
+            add agent <ArrowRight />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="accountMark" type="button" aria-label="Account menu">
+                {initials(name)}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={8} className="dashMenu">
+              <DropdownMenuItem onClick={onToggleTheme}>
+                {theme === 'dark' ? <Sun /> : <Moon />}
+                {theme === 'dark' ? 'Light theme' : 'Dark theme'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={onSignOut}>
+                <LogOut /> Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
       <main id="main" className="simpleMain">
         {children}

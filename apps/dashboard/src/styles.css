@@ -444,20 +444,20 @@ textarea {
 
 .pageHead {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 18px;
+  min-height: 42px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .pageHead h1 {
-  max-width: 720px;
   margin: 0;
-  font-size: clamp(26px, 3vw, 34px);
-  font-weight: 600;
-  letter-spacing: -0.045em;
-  line-height: 1.05;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 
 .pageHead p.lede {
@@ -637,8 +637,9 @@ textarea {
 
 .setupRequests > div:first-child h2 {
   margin: 8px 0 4px;
-  font-size: 20px;
-  letter-spacing: -0.03em;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .setupRequests > div:first-child > p:last-child {
@@ -845,7 +846,7 @@ textarea {
 
 .empty {
   display: grid;
-  min-height: 220px;
+  min-height: 180px;
   place-items: center;
   align-content: center;
   padding: 28px;
@@ -855,14 +856,14 @@ textarea {
 .empty > span,
 .empty > svg {
   display: block;
-  width: 18px;
-  height: 18px;
   margin-bottom: 12px;
   color: var(--accent);
+  font: 500 16px/1 var(--mono);
 }
 
 .empty strong {
   font-size: 15px;
+  font-weight: 500;
 }
 
 .empty p {
@@ -1534,12 +1535,12 @@ textarea {
 .toggle {
   position: relative;
   display: block;
-  width: 44px;
-  height: 26px;
+  width: 42px;
+  height: 22px;
   margin-left: auto;
   padding: 0;
   border: 1px solid var(--border-strong);
-  border-radius: 99px;
+  border-radius: 0;
   background: var(--bg-well);
   cursor: pointer;
 }
@@ -1548,9 +1549,9 @@ textarea {
   position: absolute;
   top: 4px;
   left: 4px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 0;
   background: var(--text-faint);
   transition: transform 0.18s ease;
 }
@@ -2292,9 +2293,10 @@ textarea {
 }
 
 .insightPrinciple h2 {
-  margin: 7px 0 5px;
-  font-size: 20px;
-  letter-spacing: -0.03em;
+  margin: 0 0 5px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .insightPrinciple p {
@@ -2490,145 +2492,147 @@ textarea {
 /* Simplified agent workspace */
 .simpleShell {
   min-height: 100svh;
-  background: radial-gradient(circle at 50% -20%, var(--glow-a), transparent 40rem), var(--bg);
+  background: var(--bg);
 }
 
-.simpleHeader {
+.simpleShell.landingPage {
+  overflow-x: clip;
+}
+
+.dashHeader {
   position: sticky;
-  top: 0;
   z-index: 30;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  min-height: 68px;
-  padding: 0 28px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(18px);
 }
 
-.simpleBrand,
-.accountButton,
-.viewSwitch button {
+.dashHeader .landingBrand {
   border: 0;
-  color: inherit;
+  padding: 0;
   background: transparent;
   cursor: pointer;
 }
 
-.simpleBrand {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  width: max-content;
-  padding: 6px 0;
-}
-
-.simpleBrand strong {
-  font-size: 14px;
-  letter-spacing: -0.03em;
-}
-
-.viewSwitch {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  background: var(--bg-well);
-}
-
-.viewSwitch button {
+.dashNav {
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 13px;
+  gap: 28px;
   color: var(--text-muted);
   font-size: 12px;
-  font-weight: 600;
 }
 
-.viewSwitch button:hover {
+.dashNav button {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  cursor: pointer;
+  font: inherit;
+  transition: color 140ms ease;
+}
+
+.dashNav button::before {
+  margin-right: 2px;
+  color: var(--text-faint);
+  content: '/';
+}
+
+.dashNav button:hover,
+.dashNav button[aria-current='page'] {
   color: var(--text);
 }
 
-.viewSwitch button[aria-selected='true'] {
+.accountMark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: transparent;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.accountMark:hover,
+.accountMark[data-state='open'] {
+  border-color: var(--border-strong);
   color: var(--text);
-  background: var(--bg-elevated);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
-.viewSwitch svg,
-.accountButton svg {
-  width: 15px;
-  height: 15px;
-}
-
-.accountButton {
-  justify-self: end;
-  padding: 2px;
-  border-radius: 999px;
+.dashMenu {
+  min-width: 180px;
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
 }
 
 .simpleMain {
-  width: min(1120px, calc(100% - 40px));
+  position: relative;
+  z-index: 1;
+  width: min(1120px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 58px 0 100px;
+  padding: 28px 0 80px;
+}
+
+.simpleMain p,
+.simpleMain .lede,
+.simpleMain input,
+.simpleMain textarea,
+.simpleMain select {
+  font-family: var(--font);
 }
 
 .workspacePage {
   display: grid;
-  gap: 28px;
+  gap: 22px;
 }
 
 .workspaceHead {
   display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.workspaceHead h1 {
-  margin: 8px 0 2px;
-  font-size: clamp(31px, 4vw, 46px);
-  font-weight: 520;
-  letter-spacing: -0.055em;
-}
-
-.workspaceHead > div > p:last-child {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.connectAgentButton {
-  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 16px;
   min-height: 42px;
-  padding: 0 17px;
-  border: 1px solid var(--accent);
-  color: var(--accent-ink);
-  background: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
 }
 
-.connectAgentButton:hover {
-  background: var(--accent-hover);
+.landingPage.simpleShell .workspaceHead h1,
+.landingPage.simpleShell .pageHead h1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 
-.connectAgentButton svg {
-  width: 16px;
+.workspaceHead h1 small {
+  color: var(--text-muted);
+  font: 400 12px/1 var(--mono);
 }
 
 .firstRunGuide {
+  position: relative;
   display: grid;
-  gap: 20px;
-  padding: 24px;
-  border: 1px solid var(--accent-line);
-  background: color-mix(in srgb, var(--accent-dim) 42%, var(--bg-elevated));
+  gap: 0;
+  padding: 0 0 8px;
+  border: 1px solid var(--border-strong);
+  border-right-style: dashed;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+
+.firstRunGuide:has(.firstRunComplete) .firstRunHeader,
+.firstRunGuide:has(.firstRunComplete) .firstRunSteps {
+  display: none;
+}
+
+.firstRunGuide:has(.firstRunComplete) .firstRunComplete {
+  border-top: 0;
 }
 
 .firstRunHeader,
@@ -2643,13 +2647,14 @@ textarea {
 .firstRunHeader {
   align-items: start;
   justify-content: space-between;
+  padding: 22px 22px 8px;
 }
 
 .firstRunHeader h2 {
-  margin: 5px 0 4px;
-  font-size: 22px;
-  font-weight: 560;
-  letter-spacing: -0.035em;
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .firstRunHeader p,
@@ -2671,7 +2676,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
-  margin: 0;
+  margin: 8px 22px 0;
   padding: 0;
   background: var(--border);
   list-style: none;
@@ -2722,7 +2727,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  padding-top: 18px;
+  padding: 18px 22px 22px;
   border-top: 1px solid var(--border);
 }
 
@@ -2750,11 +2755,15 @@ textarea {
   height: 36px;
   flex: 0 0 auto;
   place-items: center;
+  border: 1px solid var(--accent-line);
   color: var(--accent);
-  background: var(--accent-dim);
+  background: transparent;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.06em;
 }
 
 .firstRunIcon.complete {
+  border-color: var(--live);
   color: var(--live);
 }
 
@@ -2812,7 +2821,7 @@ textarea {
 .firstRunReview {
   display: grid;
   gap: 16px;
-  padding-top: 18px;
+  padding: 18px 22px 22px;
   border-top: 1px solid var(--border);
 }
 
@@ -2878,7 +2887,7 @@ textarea {
 .firstRunComplete {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  padding-top: 18px;
+  padding: 18px 22px 22px;
   border-top: 1px solid var(--border);
 }
 
@@ -2910,9 +2919,11 @@ textarea {
 
 .compactRequests {
   display: grid;
-  gap: 1px;
-  border: 1px solid var(--accent-line);
-  background: var(--accent-line);
+  gap: 0;
+  border: 0;
+  border-top: 1px solid var(--accent-line);
+  border-bottom: 1px solid var(--accent-line);
+  background: transparent;
 }
 
 .compactRequests article,
@@ -2920,8 +2931,14 @@ textarea {
   display: flex;
   align-items: center;
   gap: 13px;
-  padding: 12px 14px;
-  background: var(--bg-elevated);
+  padding: 12px 0;
+  background: transparent;
+  border-bottom: 1px dashed var(--border);
+}
+
+.compactRequests article:last-child,
+.agentRequests article:last-child {
+  border-bottom: 0;
 }
 
 .compactRequests article > div:nth-child(2),
@@ -2996,21 +3013,25 @@ textarea {
 
 .agentList {
   display: grid;
-  gap: 9px;
+  gap: 0;
+  border-top: 1px solid var(--border);
 }
 
 .agentRow {
-  overflow: clip;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  transition:
-    border-color 160ms ease,
-    background 160ms ease;
+  overflow: visible;
+  border: 0;
+  border-bottom: 1px dashed var(--border);
+  background: transparent;
 }
 
 .agentRow:hover,
 .agentRow.isExpanded {
-  border-color: var(--border-strong);
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--bg-hover) 55%, transparent);
+}
+
+.agentRow.isExpanded {
+  border-bottom-style: solid;
 }
 
 .agentRowSummary {
@@ -3020,7 +3041,7 @@ textarea {
   gap: 16px;
   width: 100%;
   min-height: 82px;
-  padding: 13px 17px;
+  padding: 16px 0;
   color: inherit;
   background: transparent;
   text-align: left;
@@ -3054,29 +3075,37 @@ textarea {
   height: 42px;
   flex: none;
   place-items: center;
-  border: 1px solid var(--border-strong);
-  color: var(--text-muted);
-  background: var(--bg-well);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  background: transparent;
 }
 
-.agentAvatar > svg {
-  width: 19px;
+.agentAvatar b {
+  font: 500 12px/1 var(--mono);
+  letter-spacing: 0.08em;
+}
+
+.agentAvatar.isSmall {
+  width: 28px;
+  height: 28px;
+}
+
+.agentAvatar.isSmall b {
+  font-size: 9px;
 }
 
 .agentAvatar i {
   position: absolute;
   right: -3px;
   bottom: -3px;
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border: 2px solid var(--bg);
-  border-radius: 999px;
   background: var(--text-faint);
 }
 
 .agentAvatar i.online {
   background: var(--live);
-  box-shadow: 0 0 0 3px var(--live-dim);
 }
 
 .agentIdentity {
@@ -3107,11 +3136,12 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 7px;
-  border: 1px solid var(--border);
+  padding: 0;
+  border: 0;
   color: var(--text-muted);
-  font: 500 9px/1 var(--mono);
-  text-transform: uppercase;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
 }
 
 .agentSignals svg {
@@ -3121,36 +3151,33 @@ textarea {
 
 .agentSignals .signalOnline {
   color: var(--live);
-  border-color: color-mix(in srgb, var(--live) 24%, transparent);
-  background: var(--live-dim);
+  border-color: transparent;
+  background: transparent;
 }
 
 .agentSignals .signalVerified {
   color: var(--accent);
-  border-color: var(--accent-line);
-  background: var(--accent-dim);
+  border-color: transparent;
+  background: transparent;
 }
 
 .scorecardTeaser {
   display: grid;
-  grid-template-columns: 44px 1fr;
+  grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
-  padding: 9px 10px;
-  border: 1px solid var(--accent-line);
+  padding: 0 0 0 16px;
+  border: 0;
+  border-left: 1px solid var(--border);
   color: inherit;
-  background: linear-gradient(120deg, var(--accent-dim), transparent);
+  background: transparent;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    transform 160ms ease;
 }
 
 .scorecardTeaser:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
+  border-color: var(--accent-line);
 }
 
 .scorecardTeaser > span:last-child {
@@ -3159,18 +3186,24 @@ textarea {
   gap: 3px;
 }
 
-.scorecardTeaser strong {
-  font: 600 9px/1 var(--mono);
+.scorecardTeaser > strong {
+  color: var(--accent);
+  font: 500 22px/1 var(--mono);
+  letter-spacing: -0.04em;
+}
+
+.scorecardTeaser b {
+  font: 500 11px/1 var(--mono);
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: lowercase;
 }
 
 .scorecardTeaser small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: 11px;
   text-overflow: ellipsis;
-  text-transform: uppercase;
+  text-transform: lowercase;
   white-space: nowrap;
 }
 
@@ -3204,13 +3237,14 @@ textarea {
 
 .notificationCount {
   display: grid;
-  width: 22px;
-  height: 22px;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 6px;
   place-items: center;
-  border-radius: 999px;
-  color: #fff;
-  background: var(--accent);
-  font: 700 10px/1 var(--mono);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  background: transparent;
+  font: 500 10px/1 var(--mono);
 }
 
 .expandIcon {
@@ -3219,7 +3253,7 @@ textarea {
   transition: transform 160ms ease;
 }
 
-.agentRow.isExpanded .expandIcon {
+.agentRow.isExpanded > .agentRowSummary .expandIcon {
   transform: rotate(180deg);
 }
 
@@ -3256,7 +3290,7 @@ textarea {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--border-strong);
-  background: linear-gradient(120deg, #28110d, #100d0c 38%);
+  background: var(--bg);
 }
 
 :root[data-theme='light'] .scorecardDialog {
@@ -3264,19 +3298,11 @@ textarea {
 }
 
 :root[data-theme='light'] .behaviourScorecard {
-  background: linear-gradient(120deg, #fff0ec, #fff 38%);
+  background: #fff;
 }
 
 .behaviourScorecard::after {
-  position: absolute;
-  top: -70px;
-  right: -50px;
-  width: 220px;
-  height: 220px;
-  border: 1px solid var(--accent-line);
-  border-radius: 50%;
-  content: '';
-  pointer-events: none;
+  content: none;
 }
 
 .scorecardHeader,
@@ -3474,20 +3500,21 @@ textarea {
 .agentExpanded {
   display: grid;
   gap: 24px;
-  padding: 8px 18px 22px 77px;
-  border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-well) 70%, transparent);
+  padding: 8px 0 22px 58px;
+  border-top: 1px dashed var(--border);
+  background: transparent;
 }
 
 .agentRequests {
-  margin-top: 16px;
-  border: 1px solid var(--accent-line);
+  margin-top: 0;
+  border: 0;
+  border-top: 1px solid var(--accent-line);
 }
 
 .agentRequests .sectionLabel {
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--accent-line);
-  background: var(--accent-dim);
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--border);
+  background: transparent;
 }
 
 .requestPulse {
@@ -3686,18 +3713,44 @@ textarea {
 
 .agentHistory {
   display: grid;
-  gap: 10px;
+  gap: 0;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
 }
 
 .historyHeading {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: 500 14px/1.2 inherit;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
 .historyHeading small {
   color: var(--text-muted);
-  font-size: 10px;
+  font: 400 12px/1 var(--mono);
+}
+
+.historyHeading .expandIcon,
+.historyEntry .expandIcon {
+  width: 14px;
+  color: var(--text-faint);
+  transition: transform 160ms ease;
+}
+
+.historyHeading[aria-expanded='true'] > .expandIcon,
+.historyEntry.isExpanded > .historyRowSummary .expandIcon,
+.agentExpandButton[aria-expanded='true'] .expandIcon {
+  transform: rotate(180deg);
 }
 
 .agentHistory ol {
@@ -3705,38 +3758,87 @@ textarea {
   margin: 0;
   padding: 0;
   list-style: none;
+  border-top: 1px dashed var(--border);
 }
 
-.agentHistory li {
+.historyEntry {
+  border-bottom: 1px dashed var(--border);
+}
+
+.historyEntry:last-child {
+  border-bottom: 0;
+}
+
+.historyEntry.isExpanded {
+  border-bottom-style: solid;
+  background: color-mix(in srgb, var(--bg-hover) 40%, transparent);
+}
+
+.historyRowSummary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.historyItem {
   display: grid;
   grid-template-columns: auto minmax(130px, 0.8fr) minmax(180px, 1.6fr) auto;
   align-items: center;
   gap: 13px;
-  min-height: 58px;
-  border-top: 1px solid var(--border);
+  width: 100%;
+  min-height: 52px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
-.agentHistory li > div {
+.historyItem:focus-visible,
+.historyHeading:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.historyIdentity {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.agentHistory li strong,
+.historyEntry strong,
 .historyPurpose {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.agentHistory li small {
+.historyEntry small {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .historyPurpose {
   color: var(--text-muted);
+  font-size: 11px;
+}
+
+.historyDetail {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 14px 37px;
+}
+
+.historyDetail p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.historyDetail small {
+  font: 400 11px/1.4 var(--mono);
 }
 
 .outcomeSymbol {
@@ -3782,32 +3884,48 @@ textarea {
 
 .quietEmpty {
   padding: 28px;
-  border: 1px dashed var(--border-strong);
+  border: 0;
+  border-top: 1px dashed var(--border);
   color: var(--text-muted);
-  font-size: 12px;
-  text-align: center;
+  font: 400 12px/1.5 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  text-align: left;
+}
+
+.agentHistory .quietEmpty {
+  padding: 16px 0;
+  border-top: 0;
 }
 
 .emptyAgentState {
+  position: relative;
   display: grid;
-  min-height: 250px;
+  min-height: 220px;
   place-items: center;
   align-content: center;
-  gap: 7px;
-  border: 1px dashed var(--border-strong);
+  gap: 10px;
+  border: 1px solid var(--border-strong);
+  border-right-style: dashed;
   color: var(--text);
-  background: transparent;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
   cursor: pointer;
 }
 
-.emptyAgentState svg {
-  width: 22px;
+.emptyAgentState > span:not(.sceneCorner) {
   color: var(--accent);
+  font: 500 18px/1 var(--mono);
 }
 
-.emptyAgentState span {
+.emptyAgentState strong {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.emptyAgentState span:last-child {
   color: var(--text-muted);
-  font-size: 11px;
+  font-family: var(--font);
+  font-size: 13px;
 }
 
 .marketplaceHead {
@@ -3838,9 +3956,9 @@ textarea {
 
 .marketFilters > label > span {
   color: var(--text-faint);
-  font: 600 8px/1 var(--mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
 }
 
 .marketFilters select,
@@ -3855,12 +3973,12 @@ textarea {
 }
 
 .marketContext {
-  margin-top: -13px;
-  padding: 10px 12px;
-  border-left: 2px solid var(--accent);
+  margin-top: -8px;
+  padding: 0 0 4px;
+  border: 0;
   color: var(--text-muted);
-  background: var(--accent-dim);
-  font-size: 10px;
+  background: transparent;
+  font: 400 13px/1.55 var(--font);
 }
 
 .marketSearch svg {
@@ -3883,15 +4001,20 @@ textarea {
 }
 
 .marketCard {
+  position: relative;
   display: grid;
   min-height: 285px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
+  padding: 22px 22px 18px;
+  border-top: 1px solid var(--border-strong);
+  border-right: 1px dashed var(--border);
+  border-bottom: 0;
+  border-left: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
 }
 
 .marketCard:hover {
-  border-color: var(--accent-line);
+  border-color: var(--border-strong);
+  border-right-color: var(--accent-line);
 }
 
 .marketCardTop {
@@ -3901,22 +4024,23 @@ textarea {
 }
 
 .marketPresence {
-  padding: 5px 7px;
+  padding: 0;
   color: var(--text-faint);
-  background: var(--bg-well);
-  font: 600 9px/1 var(--mono);
-  text-transform: uppercase;
+  background: transparent;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
 }
 
 .marketPresence.online {
   color: var(--live);
-  background: var(--live-dim);
+  background: transparent;
 }
 
 .marketCard h2 {
   margin: 17px 0 5px;
-  font-size: 17px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 500;
   letter-spacing: -0.03em;
 }
 
@@ -3934,8 +4058,9 @@ textarea {
 }
 
 .matchBadge span {
-  font: 500 8px/1 var(--mono);
-  text-transform: uppercase;
+  font: 400 11px/1.3 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
 }
 
 .matchBadge.strong strong,
@@ -3987,19 +4112,21 @@ textarea {
   gap: 8px;
   min-height: 34px;
   margin-top: 10px;
-  padding: 8px;
+  padding: 8px 0 0;
+  border-top: 1px dashed var(--border);
   color: var(--text-muted);
-  background: var(--bg-well);
+  background: transparent;
 }
 
 .marketIntelligence strong {
   color: var(--accent);
-  font: 600 15px/1 var(--mono);
+  font: 500 15px/1 var(--mono);
 }
 
 .marketIntelligence span {
-  font: 500 8px/1.3 var(--mono);
-  text-transform: uppercase;
+  font: 400 11px/1.3 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
 }
 
 .marketMeta span {
@@ -4007,8 +4134,9 @@ textarea {
   align-items: center;
   gap: 5px;
   color: var(--text-muted);
-  font-size: 9px;
-  text-transform: uppercase;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
 }
 
 .marketMeta svg {
@@ -4021,9 +4149,10 @@ textarea {
   justify-content: space-between;
   margin-top: 14px;
   color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
+  font: 500 12px/1 var(--mono);
+  letter-spacing: 0.04em;
   text-decoration: none;
+  text-transform: lowercase;
 }
 
 .marketProfileLink svg {
@@ -4031,35 +4160,35 @@ textarea {
 }
 
 .marketSkeleton {
+  position: relative;
   min-height: 285px;
-  border: 1px solid var(--border);
-  background: linear-gradient(90deg, var(--bg-well), var(--bg-hover), var(--bg-well));
-  background-size: 200% 100%;
-  animation: marketLoading 1.4s ease infinite;
+  border-top: 1px solid var(--border);
+  border-right: 1px dashed var(--border);
+  border-bottom: 0;
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-well) 70%, transparent);
 }
 
 .marketEmpty {
   grid-column: 1 / -1;
 }
 
-@keyframes marketLoading {
-  to {
-    background-position: -200% 0;
+@media (max-width: 900px) {
+  .dashHeader {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .dashHeader nav,
+  .dashHeader .dashNav {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
   }
 }
 
 @media (max-width: 880px) {
-  .simpleHeader {
-    grid-template-columns: auto 1fr auto;
-    padding: 0 16px;
-  }
-
-  .simpleBrand strong {
+  .dashHeader .landingBrand strong {
     display: none;
-  }
-
-  .viewSwitch {
-    justify-self: center;
   }
 
   .agentRowSummary {
@@ -4093,19 +4222,18 @@ textarea {
   }
 }
 
-@media (max-width: 620px) {
-  .simpleHeader {
-    min-height: 60px;
+@media (max-width: 720px) {
+  .dashHeader {
+    grid-template-columns: 1fr auto;
   }
 
-  .viewSwitch button {
-    padding: 0 10px;
-  }
-
-  .viewSwitch button span {
+  .dashHeader .dashNav,
+  .dashHeader .dashCta {
     display: none;
   }
+}
 
+@media (max-width: 620px) {
   .simpleMain {
     width: min(100% - 24px, 1120px);
     padding: 34px 0 70px;
@@ -4117,7 +4245,7 @@ textarea {
     align-items: stretch;
   }
 
-  .connectAgentButton,
+  .workspaceHead .landingPrimary,
   .marketSearch {
     width: 100%;
     justify-content: center;
@@ -4155,7 +4283,7 @@ textarea {
     grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 11px;
     min-height: 74px;
-    padding: 12px;
+    padding: 12px 0;
   }
 
   .agentRowCore {
@@ -4164,10 +4292,9 @@ textarea {
   }
 
   .scorecardTeaser {
-    grid-template-columns: 32px;
-    gap: 0;
-    width: 48px;
-    padding: 7px;
+    grid-template-columns: auto;
+    width: auto;
+    padding: 0 0 0 12px;
   }
 
   .scorecardTeaser > span:last-child {
@@ -4240,7 +4367,7 @@ textarea {
     border-top: 1px solid var(--border);
   }
 
-  .agentHistory li {
+  .historyItem {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
@@ -4440,20 +4567,21 @@ html:has(.appInset) body::-webkit-scrollbar-thumb {
 }
 
 .pageHead {
-  min-height: 0;
-  padding: 0 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+  padding: 0 0 16px;
   border-bottom: 1px solid var(--border);
 }
 
 .pageHead h1 {
-  font-size: clamp(28px, 3.4vw, 36px);
+  margin: 0;
+  font-size: 16px;
   font-weight: 500;
-  letter-spacing: -0.04em;
-}
-
-.pageHead p.lede {
-  margin-top: 8px;
-  font-size: 14px;
+  letter-spacing: 0;
+  line-height: 1.2;
 }
 
 .primary,
@@ -4596,9 +4724,9 @@ html:has(.appInset) body::-webkit-scrollbar-thumb {
 
 .setupRequests > div:first-child h2 {
   margin: 8px 0 4px;
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 500;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 
 .setupRequests {

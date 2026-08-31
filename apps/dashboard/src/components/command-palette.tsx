@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
   BarChart3,
-  Bot,
   History,
   Inbox,
   LayoutDashboard,
   LogOut,
   Moon,
   Plus,
+  ScanLine,
   Search,
   Settings,
   Store,
@@ -30,7 +30,7 @@ const pageIcons = {
   dashboard: LayoutDashboard,
   history: History,
   conversations: Inbox,
-  agents: Bot,
+  agents: ScanLine,
   insights: BarChart3,
   connect: Plus,
   marketplace: Store,
@@ -116,7 +116,7 @@ export function CommandPalette({
                 value={`${agent.name ?? ''} ${agent.agentId}`}
                 onSelect={() => go('agents')}
               >
-                <Bot />
+                <ScanLine />
                 {agent.name || agent.agentId}
               </CommandItem>
             ))}

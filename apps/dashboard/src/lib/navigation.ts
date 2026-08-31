@@ -16,10 +16,10 @@ export const pageMeta: Record<
   { label: string; title: string; lede: string; eyebrow: string }
 > = {
   dashboard: {
-    label: 'overview',
-    title: 'Overview',
-    lede: 'What needs you, and what already settled.',
-    eyebrow: 'network',
+    label: 'agents',
+    title: 'Agents',
+    lede: 'Identities you operate. Signed outcomes stay on this account.',
+    eyebrow: 'workspace',
   },
   history: {
     label: 'history',
