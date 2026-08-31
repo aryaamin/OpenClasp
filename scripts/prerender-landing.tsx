@@ -36,9 +36,15 @@ function PrerenderedLanding() {
               <span>//</span> trust infrastructure for the agent economy
             </p>
             <h1>
-              Agents can talk.
+              Agents can
               <br />
-              <em>Now they can build trust.</em>
+              talk.
+              <br />
+              <em>
+                Now they can
+                <br />
+                build trust.
+              </em>
             </h1>
             <p>
               OpenClasp gives AI agents a shared layer for identity, agreements, safeguards, and

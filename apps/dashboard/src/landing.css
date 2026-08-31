@@ -220,17 +220,20 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   position: relative;
   display: grid;
   width: min(100% - 48px, 1120px);
-  min-height: 640px;
   margin: 0 auto;
-  padding: 72px 0 80px;
-  grid-template-columns: minmax(0, 0.96fr) minmax(380px, 1fr);
-  align-items: center;
-  gap: clamp(32px, 5vw, 72px);
+  padding: 40px 0 48px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.88fr);
+  align-items: stretch;
+  gap: clamp(28px, 4vw, 56px);
 }
 
 .heroCopy {
   position: relative;
   z-index: 2;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  justify-content: space-between;
   animation: landingReveal 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -257,13 +260,15 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
 .principlesSection h2,
 .accessCopy h2 {
   margin: 18px 0;
+  font-family: var(--font);
   font-weight: 500;
   letter-spacing: -0.045em;
   line-height: 0.96;
 }
 
 .heroCopy h1 {
-  max-width: 16ch;
+  max-width: 7.2em;
+  margin: 18px 0 0;
   font-size: clamp(40px, 5.4vw, 68px);
 }
 
@@ -277,7 +282,7 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
 }
 
 .heroCopy h1 em {
-  padding-left: 0.55em;
+  padding-left: 0.7em;
 }
 
 .heroCopy h1 em::after {
@@ -289,13 +294,18 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   animation: caretBlink 1.1s steps(1) infinite;
 }
 
-.heroCopy > p {
+.heroLead > p:not(.landingKicker) {
   max-width: 42em;
-  margin: 0;
+  margin: 22px 0 0;
   color: var(--text-muted);
   font-family: var(--font);
   font-size: 15px;
   line-height: 1.6;
+}
+
+.heroLead {
+  display: grid;
+  align-content: start;
 }
 
 .heroActions {
@@ -303,12 +313,13 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   flex-wrap: wrap;
   align-items: center;
   gap: 22px;
-  margin-top: 32px;
+  padding-top: 20px;
 }
 
 .landingPrimary {
-  min-height: 42px;
-  padding: 0 16px;
+  min-height: 48px;
+  padding: 0 18px;
+  font-size: 13px;
 }
 
 .landingSecondary {
@@ -370,7 +381,7 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   z-index: 2;
   display: grid;
   min-height: 0;
-  padding: 22px 22px 18px;
+  padding: 14px 16px 12px;
   align-content: start;
   border-top: 1px solid var(--border-strong);
   border-right: 1px dashed var(--border);
@@ -415,106 +426,248 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   color: var(--live);
 }
 
+.exchangeLane {
+  display: grid;
+  margin-top: 12px;
+  grid-template-columns: minmax(92px, 1fr) minmax(28px, 1fr) auto minmax(28px, 1fr) minmax(92px, 1fr);
+  align-items: center;
+}
+
+.exchangeAgent {
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  gap: 7px;
+  text-align: center;
+}
+
+.exchangeAgent.is-start {
+  justify-items: start;
+  text-align: left;
+}
+
+.exchangeAgent.is-end {
+  justify-items: end;
+  text-align: right;
+}
+
+.exchangeGlyph {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+.exchangeAgent strong {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  line-height: 1.25;
+  text-transform: lowercase;
+}
+
+.exchangeRail {
+  position: relative;
+  display: block;
+  height: 14px;
+  overflow: hidden;
+  background: linear-gradient(var(--border-strong), var(--border-strong)) center / 100% 1px
+    no-repeat;
+}
+
+.exchangeRail::after {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 18%,
+    var(--accent) 50%,
+    color-mix(in srgb, var(--accent) 18%, transparent) 82%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  content: '';
+  opacity: 0.85;
+  translate: 0 -50%;
+  animation: railFlow 2.2s linear infinite;
+}
+
+.exchangeRail:not(.is-inbound)::after {
+  animation-direction: reverse;
+}
+
+.claspHub {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 72px;
+  place-items: center;
+  gap: 6px;
+  color: var(--accent);
+}
+
+.hubMark {
+  display: block;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 40%, transparent));
+}
+
+.claspHub strong {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+
+.exchangeStem {
+  position: relative;
+  width: 1px;
+  height: 14px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--border-strong);
+}
+
+.exchangeStem::after {
+  position: absolute;
+  top: -40%;
+  left: 50%;
+  width: 3px;
+  height: 50%;
+  background: linear-gradient(transparent, var(--accent), transparent);
+  content: '';
+  translate: -50% 0;
+  animation: stemFlow 1.8s linear infinite;
+}
+
 .insightSubject {
   display: grid;
-  margin: 28px 0 0;
-  padding: 16px;
-  gap: 8px;
+  margin: 2px 0 0;
+  padding: 8px 12px;
+  gap: 3px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 56%, transparent);
 }
 
 .insightSubject span,
-.exampleOutcome span {
+.insightNext span {
   color: var(--accent);
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.1em;
 }
 
 .insightSubject strong {
   font-family: var(--font);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
-.riskPanel {
+.insightStream {
+  position: relative;
   display: grid;
-  margin: 18px 0 0;
-  border: 1px solid color-mix(in srgb, var(--danger) 52%, var(--border));
+  margin: 8px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+}
+
+.insightScore {
+  display: flex;
+  padding: 8px 12px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
   background: color-mix(in srgb, var(--danger) 6%, transparent);
 }
 
-.riskHeading {
-  display: flex;
-  padding: 14px 16px;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid color-mix(in srgb, var(--danger) 34%, var(--border));
-}
-
-.riskHeading > div {
+.insightScore > div {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
-.riskHeading span {
+.insightScore > div > span {
   color: var(--danger);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.12em;
 }
 
-.riskHeading strong {
+.insightScore strong {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: color-mix(in srgb, var(--danger) 76%, var(--text));
+}
+
+.insightScoreValue {
+  font-family: var(--font);
+  font-size: 46px;
+  font-weight: 600;
+  letter-spacing: -0.05em;
+  line-height: 0.88;
+}
+
+.insightScoreUnit {
   color: color-mix(in srgb, var(--danger) 76%, var(--text));
   font-family: var(--font);
-  font-size: 22px;
+  font-size: 14px;
   font-weight: 600;
 }
 
-.riskHeading small {
+.insightScore small {
   color: var(--text-faint);
   font-size: 9px;
 }
 
-.redFlagList {
+.insightRisks {
   display: grid;
   margin: 0;
-  padding: 0 16px;
+  padding: 0 12px;
   list-style: none;
 }
 
-.redFlagList li {
+.insightRisks li {
   display: grid;
-  padding: 11px 0;
-  grid-template-columns: 24px 1fr;
-  gap: 10px;
+  padding: 6px 0;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
   border-bottom: 1px dashed var(--border);
 }
 
-.redFlagList li:last-child {
+.insightRisks li:last-child {
   border-bottom: 0;
 }
 
-.redFlagList li > span {
+.insightRisks li > span {
   padding-top: 2px;
   color: var(--danger);
   font-size: 9px;
 }
 
-.redFlagList div {
+.insightRisks div {
   display: grid;
   gap: 3px;
 }
 
-.redFlagList strong {
+.insightRisks strong {
   font-family: var(--font);
   font-size: 12px;
   font-weight: 600;
 }
 
-.redFlagList p {
+.insightRisks p {
   margin: 0;
   color: var(--text-muted);
   font-family: var(--font);
@@ -522,92 +675,44 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   line-height: 1.45;
 }
 
-.guidancePanel {
+.insightNext {
   display: grid;
-  margin-top: 14px;
-  padding: 15px 16px;
-  gap: 6px;
-  border: 1px solid var(--accent-line);
-  border-left: 3px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--border);
 }
 
-.guidancePanel > span {
+.insightNext article {
+  display: grid;
+  padding: 9px 12px;
+  align-content: start;
+  gap: 4px;
+}
+
+.insightNext article:first-child {
+  border-right: 1px dashed var(--border);
+}
+
+.insightNext article:first-child span {
   color: var(--accent);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
 }
 
-.guidancePanel strong {
+.insightNext article:last-child span {
+  color: var(--live);
+}
+
+.insightNext strong {
   font-family: var(--font);
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.guidancePanel p {
-  margin: 0;
-  color: var(--text-muted);
-  font-family: var(--font);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.directLink {
-  display: grid;
-  margin-top: 20px;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-faint);
-  font-size: 10px;
-  text-align: center;
-}
-
-.directLink b {
-  padding: 6px 9px;
-  border: 1px solid var(--accent-line);
-  color: var(--accent);
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.directLink span:first-child {
-  text-align: left;
-}
-
-.directLink span:last-child {
-  text-align: right;
-}
-
-.exampleOutcome {
-  display: grid;
-  margin-top: 20px;
-  padding: 15px 16px;
-  gap: 6px;
-  border-left: 2px solid var(--live);
-  background: color-mix(in srgb, var(--live) 7%, transparent);
-}
-
-.exampleOutcome strong {
-  font-family: var(--font);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.exampleOutcome small {
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 
 .diagramSpec {
-  margin: 28px 0 0;
-  padding-top: 16px;
+  margin: 10px 0 0;
+  padding-top: 8px;
   border-top: 1px dashed var(--border);
   color: var(--text-faint);
-  font: 400 11px/1.7 var(--mono);
+  font: 400 10px/1.5 var(--mono);
   letter-spacing: 0.04em;
 }
 
@@ -1034,6 +1139,24 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   }
 }
 
+@keyframes railFlow {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -220% 0;
+  }
+}
+
+@keyframes stemFlow {
+  from {
+    top: -50%;
+  }
+  to {
+    top: 100%;
+  }
+}
+
 @keyframes caretBlink {
   50% {
     opacity: 0;
@@ -1118,8 +1241,8 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
 
 @media (max-width: 1080px) {
   .landingHero {
-    grid-template-columns: minmax(0, 1fr) minmax(380px, 0.95fr);
-    gap: 36px;
+    grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
+    gap: 28px;
   }
 
   .sectionIntro,
@@ -1138,8 +1261,7 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   }
 
   .landingHero {
-    min-height: auto;
-    padding: 56px 0 64px;
+    padding: 36px 0 48px;
     grid-template-columns: 1fr;
   }
 
@@ -1220,6 +1342,10 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
     font-size: clamp(34px, 11vw, 52px);
   }
 
+  .heroCopy h1 em {
+    padding-left: 0.45em;
+  }
+
   .heroNotes {
     display: grid;
     margin-top: 32px;
@@ -1229,14 +1355,34 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
     padding: 18px 16px 14px;
   }
 
-  .directLink {
+  .exchangeLane {
+    grid-template-columns: minmax(72px, 1fr) 20px auto 20px minmax(72px, 1fr);
+    gap: 4px;
+  }
+
+  .exchangeAgent.is-start,
+  .exchangeAgent.is-end {
+    justify-items: center;
+    text-align: center;
+  }
+
+  .claspHub {
+    min-width: 56px;
+    gap: 4px;
+  }
+
+  .hubMark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .insightNext {
     grid-template-columns: 1fr;
   }
 
-  .directLink span,
-  .directLink span:first-child,
-  .directLink span:last-child {
-    text-align: center;
+  .insightNext article:first-child {
+    border-right: 0;
+    border-bottom: 1px dashed var(--border);
   }
 
   .productSection,
@@ -1330,7 +1476,9 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
   .sectionIntro,
   .intelligenceLoop li,
   .principlesSection > div,
-  .accessSection {
+  .accessSection,
+  .exchangeRail::after,
+  .exchangeStem::after {
     animation: none;
   }
 

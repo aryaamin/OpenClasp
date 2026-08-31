@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { ClaspMark } from '@/components/clasp-mark';
 
 const LUM = ' .:-=+*#%@';
 const COLS = 88;
@@ -248,73 +249,111 @@ export function LandingBackdrop() {
   );
 }
 
+const RISKS = [
+  {
+    code: '01',
+    title: 'Spend authority is unverified',
+    detail: 'The agent has not proved it is authorized to commit this amount.',
+  },
+  {
+    code: '02',
+    title: 'The supplier payment destination changed',
+    detail: 'No independent verification exists for the new beneficiary account.',
+  },
+  {
+    code: '03',
+    title: 'Acceptance terms are incomplete',
+    detail: 'The agreement does not define inspection, rejection, or refund conditions.',
+  },
+] as const;
+
+function ExchangeAgent({
+  initials,
+  role,
+  align,
+}: {
+  initials: string;
+  role: string;
+  align: 'start' | 'end';
+}) {
+  return (
+    <article className={`exchangeAgent is-${align}`}>
+      <span className="exchangeGlyph">{initials}</span>
+      <strong>{role}</strong>
+    </article>
+  );
+}
+
+function ExchangeRail({ inbound }: { inbound: boolean }) {
+  return <span className={`exchangeRail${inbound ? ' is-inbound' : ''}`} aria-hidden="true" />;
+}
+
 export function LandingDiagram() {
   return (
     <div
       className="asciiDiagram"
       role="group"
-      aria-label="Example of OpenClasp predicting whether an external agent will complete an agreement"
+      aria-label="Example of OpenClasp sitting between two agents to predict whether an agreement will complete"
     >
       <span className="sceneCorner sceneTL">+</span>
       <span className="sceneCorner sceneTR">+</span>
       <span className="sceneCorner sceneBL">+</span>
       <div className="diagramHud">
-        <span>CONTRACT-SPECIFIC ASSESSMENT</span>
-        <span className="diagramLive">AI + OUTCOME HISTORY</span>
+        <span>LIVE ASSESSMENT</span>
+        <span className="diagramLive">
+          <LandingClock />
+        </span>
       </div>
+      <div className="exchangeLane">
+        <ExchangeAgent initials="RA" role="requesting agent" align="start" />
+        <ExchangeRail inbound />
+        <div className="claspHub">
+          <ClaspMark className="hubMark" size={52} />
+          <strong>openclasp</strong>
+        </div>
+        <ExchangeRail inbound={false} />
+        <ExchangeAgent initials="PA" role="procurement agent" align="end" />
+      </div>
+      <div className="exchangeStem" aria-hidden="true" />
       <div className="insightSubject">
         <span>EXACT AGREEMENT</span>
-        <strong>Procurement agent v2.1 · place a $24,800 inventory order by Tuesday</strong>
+        <strong>Place a $24,800 inventory order by Tuesday</strong>
       </div>
-      <section className="riskPanel" aria-labelledby="risk-title">
-        <div className="riskHeading">
+      <section className="insightStream" aria-labelledby="risk-title">
+        <div className="insightScore">
           <div>
             <span>EXPERIMENTAL SUCCESS PREDICTION</span>
-            <strong id="risk-title">64% likely to complete</strong>
+            <strong id="risk-title">
+              <b className="insightScoreValue">64</b>
+              <span className="insightScoreUnit">% likely to complete</span>
+            </strong>
           </div>
           <small>42% confidence · cold start</small>
         </div>
-        <ol className="redFlagList">
-          <li>
-            <span>01</span>
-            <div>
-              <strong>Spend authority is unverified</strong>
-              <p>The agent has not proved it is authorized to commit this amount.</p>
-            </div>
-          </li>
-          <li>
-            <span>02</span>
-            <div>
-              <strong>The supplier payment destination changed</strong>
-              <p>No independent verification exists for the new beneficiary account.</p>
-            </div>
-          </li>
-          <li>
-            <span>03</span>
-            <div>
-              <strong>Acceptance terms are incomplete</strong>
-              <p>The agreement does not define inspection, rejection, or refund conditions.</p>
-            </div>
-          </li>
+        <ol className="insightRisks">
+          {RISKS.map((risk) => (
+            <li key={risk.code}>
+              <span>{risk.code}</span>
+              <div>
+                <strong>{risk.title}</strong>
+                <p>{risk.detail}</p>
+              </div>
+            </li>
+          ))}
         </ol>
+        <div className="insightNext">
+          <article>
+            <span>ASK</span>
+            <strong id="guidance-title">
+              Prove the approved spend limit and verified supplier payment destination.
+            </strong>
+          </article>
+          <article>
+            <span>LOCK</span>
+            <strong>Human approval · lock supplier and maximum spend</strong>
+          </article>
+        </div>
       </section>
-      <section className="guidancePanel" aria-labelledby="guidance-title">
-        <span>HIGHEST-VALUE QUESTION → PROCUREMENT AGENT</span>
-        <strong id="guidance-title">
-          Can you prove the approved spend limit and verified supplier payment destination?
-        </strong>
-        <p>One bounded answer updates the prediction before another question is considered.</p>
-      </section>
-      <div className="directLink">
-        <span>requesting agent</span>
-        <b>agreement review</b>
-        <span>procurement agent</span>
-      </div>
-      <div className="exampleOutcome">
-        <span>RECOMMENDED SAFEGUARDS</span>
-        <strong>Require human approval · lock supplier and maximum spend</strong>
-        <small>Accepting a safeguard requires an explicit decision and contract revision.</small>
-      </div>
       <p className="diagramSpec">
         no conversation storage · predictions are advisory, not guarantees
       </p>
