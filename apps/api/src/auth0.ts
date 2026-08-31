@@ -1,5 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 
+// Shared runtime code lives outside /api so Vercel does not count it as a function.
+
 export const defaultAuth0Domain = 'icfg-0ua6bab8d4omtfolx72mrhzo.us.auth0.com';
 export const defaultAuth0ClientId = 'vGxzZd4LiO7TqH4U61QblwH96YcimpcA';
 export const defaultAudience = 'https://openclasp.vercel.app/mcp';

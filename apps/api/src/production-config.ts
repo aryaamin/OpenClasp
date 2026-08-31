@@ -1,4 +1,4 @@
-type ProductionComponent = 'api' | 'auth' | 'cron' | 'mcp';
+export type ProductionComponent = 'api' | 'auth' | 'cron' | 'mcp';
 
 const sharedVariables = [
   'AUTH0_DOMAIN',

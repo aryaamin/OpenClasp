@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
-import { assertProductionConfiguration } from './production-config.js';
+import { assertProductionConfiguration } from '../apps/api/src/production-config.js';
 
 assertProductionConfiguration('cron');
 

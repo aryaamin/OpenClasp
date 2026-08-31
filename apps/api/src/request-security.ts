@@ -1,4 +1,4 @@
-import { FixedWindowRateLimiter } from '../apps/api/src/security.js';
+import { FixedWindowRateLimiter } from './security.js';
 
 const limiter = new FixedWindowRateLimiter();
 

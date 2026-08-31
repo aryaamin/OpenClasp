@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { oauthStore, type OAuthStore } from './oauth-store.js';
-import { guardRequest } from './request-security.js';
-import { assertProductionConfiguration } from './production-config.js';
+import { oauthStore, type OAuthStore } from '../apps/api/src/oauth-store.js';
+import { guardRequest } from '../apps/api/src/request-security.js';
+import { assertProductionConfiguration } from '../apps/api/src/production-config.js';
 
 assertProductionConfiguration('auth');
 

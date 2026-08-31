@@ -5,9 +5,9 @@ import {
   requiredAgentApiScopes,
   requiredMcpRequestScopes,
   requiredMcpToolScope,
-} from '../api/access-control.js';
-import { productionConfigurationErrors } from '../api/production-config.js';
-import { guardRequest } from '../api/request-security.js';
+} from '../apps/api/src/access-control.js';
+import { productionConfigurationErrors } from '../apps/api/src/production-config.js';
+import { guardRequest } from '../apps/api/src/request-security.js';
 import { buildApi } from '../apps/api/src/app.js';
 import { FixedWindowRateLimiter } from '../apps/api/src/security.js';
 import { UnavailableFactCheckProvider } from '../packages/core/src/index.js';

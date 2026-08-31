@@ -3,9 +3,17 @@ import { randomBytes } from 'node:crypto';
 import { buildApi } from '../apps/api/src/app.js';
 import { TrustEngine } from '../packages/core/src/index.js';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
-import { dashboardTokenFromCookie, loadAuth0Profile, verifyAuth0Token } from './auth0.js';
-import { ScopeError, assertScopes, requiredAgentApiScopes } from './access-control.js';
-import { assertProductionConfiguration } from './production-config.js';
+import {
+  dashboardTokenFromCookie,
+  loadAuth0Profile,
+  verifyAuth0Token,
+} from '../apps/api/src/auth0.js';
+import {
+  ScopeError,
+  assertScopes,
+  requiredAgentApiScopes,
+} from '../apps/api/src/access-control.js';
+import { assertProductionConfiguration } from '../apps/api/src/production-config.js';
 
 assertProductionConfiguration('api');
 

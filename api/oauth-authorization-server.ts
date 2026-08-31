@@ -1,4 +1,4 @@
-import { DEFAULT_MCP_AUTH_SCOPES } from './access-control.js';
+import { DEFAULT_MCP_AUTH_SCOPES } from '../apps/api/src/access-control.js';
 
 export async function GET(request: Request): Promise<Response> {
   const origin = new URL(request.url).origin;

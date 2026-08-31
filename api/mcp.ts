@@ -6,15 +6,15 @@ import {
   registerOpenClaspTools,
 } from '../packages/mcp-server/src/server.js';
 import { HostedRepository } from '../packages/persistence/src/hosted.js';
-import { verifyAuth0Token } from './auth0.js';
-import { oauthStore } from './oauth-store.js';
+import { verifyAuth0Token } from '../apps/api/src/auth0.js';
+import { oauthStore } from '../apps/api/src/oauth-store.js';
 import {
   DEFAULT_MCP_AUTH_SCOPES,
   assertScopes,
   requiredMcpRequestScopes,
-} from './access-control.js';
-import { guardRequest } from './request-security.js';
-import { assertProductionConfiguration } from './production-config.js';
+} from '../apps/api/src/access-control.js';
+import { guardRequest } from '../apps/api/src/request-security.js';
+import { assertProductionConfiguration } from '../apps/api/src/production-config.js';
 
 assertProductionConfiguration('mcp');
 

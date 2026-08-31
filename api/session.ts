@@ -4,9 +4,9 @@ import {
   dashboardTokenFromCookie,
   loadAuth0Profile,
   verifyAuth0Token,
-} from './auth0.js';
-import { guardRequest } from './request-security.js';
-import { assertProductionConfiguration } from './production-config.js';
+} from '../apps/api/src/auth0.js';
+import { guardRequest } from '../apps/api/src/request-security.js';
+import { assertProductionConfiguration } from '../apps/api/src/production-config.js';
 
 assertProductionConfiguration('auth');
 

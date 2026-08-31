@@ -2,7 +2,7 @@ import {
   DEFAULT_MCP_AUTH_SCOPES,
   OPENCLASP_AUTH_SCOPES,
   type OpenClaspAuthScope,
-} from '../packages/protocol/src/index.js';
+} from '../../../packages/protocol/src/index.js';
 
 export { DEFAULT_MCP_AUTH_SCOPES, OPENCLASP_AUTH_SCOPES, type OpenClaspAuthScope };
 

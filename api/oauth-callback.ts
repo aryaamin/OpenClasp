@@ -1,7 +1,7 @@
-import { auth0Config, verifyAuth0Token } from './auth0.js';
-import { oauthStore, type OAuthStore } from './oauth-store.js';
-import { guardRequest } from './request-security.js';
-import { assertProductionConfiguration } from './production-config.js';
+import { auth0Config, verifyAuth0Token } from '../apps/api/src/auth0.js';
+import { oauthStore, type OAuthStore } from '../apps/api/src/oauth-store.js';
+import { guardRequest } from '../apps/api/src/request-security.js';
+import { assertProductionConfiguration } from '../apps/api/src/production-config.js';
 
 assertProductionConfiguration('auth');
 

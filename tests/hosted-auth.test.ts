@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { POST as mcpHandler } from '../api/mcp.js';
 import { GET as metadataHandler } from '../api/oauth-protected-resource.js';
-import { dashboardTokenFromCookie } from '../api/auth0.js';
+import { dashboardTokenFromCookie } from '../apps/api/src/auth0.js';
 
 describe('hosted MCP authorization', () => {
   it('reads only the named dashboard session cookie', () => {

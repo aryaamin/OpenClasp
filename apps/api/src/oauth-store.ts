@@ -2,6 +2,8 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 import { createHash, randomBytes } from 'node:crypto';
 import { canonicalize } from 'json-canonicalize';
 
+// Shared runtime code lives outside /api so Vercel does not count it as a function.
+
 export type OAuthClient = {
   clientId: string;
   redirectUris: string[];

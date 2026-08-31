@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GET as authorizationMetadata } from '../api/oauth-authorization-server.js';
 import { authorize } from '../api/oauth-authorize.js';
 import { register } from '../api/oauth-register.js';
-import type { OAuthStore, OAuthTransaction } from '../api/oauth-store.js';
+import type { OAuthStore, OAuthTransaction } from '../apps/api/src/oauth-store.js';
 import { exchange } from '../api/oauth-token.js';
 
 afterEach(() => vi.restoreAllMocks());
