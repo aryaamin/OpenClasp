@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createElement, type CSSProperties, type ReactNode } from 'react';
@@ -55,7 +55,10 @@ let geistFonts: Array<{
 function loadGeistFonts() {
   if (geistFonts) return geistFonts;
   const require = createRequire(import.meta.url);
-  const fontDirectory = join(dirname(require.resolve('geist/font/sans')), 'fonts/geist-sans');
+  const generatedFontDirectory = join(process.cwd(), '.openclasp-build', 'agent-card-fonts');
+  const fontDirectory = existsSync(generatedFontDirectory)
+    ? generatedFontDirectory
+    : join(dirname(require.resolve('geist/font/sans')), 'fonts/geist-sans');
   geistFonts = [
     {
       name: 'Geist',

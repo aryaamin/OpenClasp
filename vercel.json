@@ -5,7 +5,7 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 60,
-      "includeFiles": "node_modules/geist/dist/fonts/geist-sans/**"
+      "includeFiles": ".openclasp-build/agent-card-fonts/**"
     },
     "api/mcp.ts": { "maxDuration": 60 },
     "api/cron-feedback.ts": { "maxDuration": 60 }
