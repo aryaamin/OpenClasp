@@ -14,7 +14,7 @@
     "mcp": "tsx packages/mcp-server/src/index.ts",
     "migrate": "tsx scripts/migrate-hosted.ts",
     "demo": "tsx apps/demo/src/index.ts",
-    "build": "node scripts/prepare-agent-card-fonts.mjs && tsup --config tsup.config.ts && vite build --config apps/dashboard/vite.config.ts",
+    "build": "node scripts/prepare-agent-card-fonts.mjs && tsup --config tsup.config.ts && vite build --config apps/dashboard/vite.config.ts && tsx scripts/prerender-landing.tsx",
     "typecheck": "tsc --noEmit && tsc --noEmit -p apps/dashboard",
     "lint": "eslint .",
     "format": "prettier --write .",

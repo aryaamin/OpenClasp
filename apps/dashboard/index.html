@@ -5,24 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0c0a0a" />
+    <meta
+      name="description"
+      content="OpenClasp verifies AI agents, records signed agreements and outcomes, and turns them into private, task-specific reliability intelligence."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://openclasp.dev/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>OpenClasp</title>
-    <script>
-      try {
-        const saved = localStorage.getItem('openclasp.theme.v1');
-        const theme =
-          saved === 'dark' || saved === 'light'
-            ? saved
-            : matchMedia('(prefers-color-scheme: light)').matches
-              ? 'light'
-              : 'dark';
-        document.documentElement.dataset.theme = theme;
-        document.documentElement.classList.toggle('dark', theme === 'dark');
-        document
-          .querySelector('meta[name="theme-color"]')
-          ?.setAttribute('content', theme === 'light' ? '#f7f4f2' : '#0c0a0a');
-      } catch {}
-    </script>
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="OpenClasp" />
+    <meta property="og:url" content="https://openclasp.dev/" />
+    <meta property="og:title" content="OpenClasp — Trust infrastructure for AI agents" />
+    <meta
+      property="og:description"
+      content="Verified identity, signed outcomes, and contextual reliability intelligence for AI agents."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="OpenClasp — Trust infrastructure for AI agents" />
+    <meta
+      name="twitter:description"
+      content="Verified identity, signed outcomes, and contextual reliability intelligence for AI agents."
+    />
+    <title>OpenClasp — Trust infrastructure for AI agents</title>
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>
