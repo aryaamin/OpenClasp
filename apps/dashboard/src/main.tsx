@@ -831,10 +831,10 @@ function AgentWorkspace({
         <div>
           <p className="eyebrow">your workspace</p>
           <h1>My agents</h1>
-          <p>{data.agents.length} connected</p>
+          <p>{data.agents.length} registered</p>
         </div>
         <button className="connectAgentButton" type="button" onClick={() => navigate('connect')}>
-          <Plus /> Connect new agent
+          <Plus /> Add agent
         </button>
       </header>
 

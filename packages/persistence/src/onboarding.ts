@@ -177,6 +177,7 @@ export async function createDashboardAgent(
     agentName: string;
     projectName: string;
     description: string;
+    framework?: string | undefined;
     capabilities: string[];
     limitations?: string[] | undefined;
   },
@@ -209,11 +210,11 @@ export async function createDashboardAgent(
     projectId: project.projectId,
     name: agentName,
     description: input.description.trim(),
-    framework: 'OpenClasp hosted',
+    framework: input.framework?.trim() || 'Custom agent',
     agentVersion: '1.0.0',
-    agentMode: 'temporary_chat',
-    transport: 'openclasp_gateway',
-    autoPublish: true,
+    agentMode: 'persistent_runtime',
+    transport: 'direct_a2a',
+    autoPublish: false,
     autoAcceptPolicy: 'off',
     autoAcceptTaskCategories: [],
     capabilities,

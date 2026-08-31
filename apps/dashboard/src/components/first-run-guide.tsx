@@ -1,23 +1,18 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowRight, Bot, Check, Circle, MessageCircle, ShieldCheck } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
+import { Bot, Check, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 
 type RecordValue = Record<string, any>;
 
 type FirstRunData = {
   agents: RecordValue[];
   publications: RecordValue[];
-  federatedInteractions: RecordValue[];
-  hostedThreads: RecordValue[];
-  completionReports: RecordValue[];
-  feedbackRequests: RecordValue[];
-  interactionFeedback: RecordValue[];
 };
 
 type FirstRunGuideProps = {
   data: FirstRunData;
   api: (path: string, init?: RequestInit) => Promise<unknown>;
   refreshDashboard: () => Promise<void>;
-  navigate: (page: 'agents' | 'conversations' | 'history') => void;
+  navigate: (page: 'agents') => void;
 };
 
 const splitList = (value: string) =>
@@ -27,109 +22,35 @@ const splitList = (value: string) =>
     .filter(Boolean);
 
 export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRunGuideProps) {
-  const [working, setWorking] = useState('');
+  const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
-  const [targets, setTargets] = useState<RecordValue[]>([]);
-  const [targetsLoading, setTargetsLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [agentForm, setAgentForm] = useState({
     agentName: '',
     description: '',
+    framework: '',
     capabilities: '',
   });
-  const [agreementForm, setAgreementForm] = useState({
-    responderAgentId: '',
-    task: '',
-    requestedOutcome: '',
-    successCriterion: '',
-    deadline: '',
-  });
-  const [completionForm, setCompletionForm] = useState({
-    outcome: 'success' as 'success' | 'partial' | 'failure' | 'cancelled',
-    summary: '',
-    evidenceReferences: '',
-  });
-  const [feedbackForm, setFeedbackForm] = useState({
-    rating: 5,
-    wouldWorkAgain: 'yes' as 'yes' | 'no' | 'unsure',
-    privateComment: '',
-  });
 
-  const firstAgent = data.agents.find((agent) => agent.status !== 'revoked');
-  const firstAgentId = String(firstAgent?.agentId ?? '');
-  const firstAgentMode = String(firstAgent?.agentMode ?? '');
-  const firstCapability = String(firstAgent?.capabilities?.[0] ?? '');
-  const published = data.publications.some(
-    (publication) => publication.agentId === firstAgentId && publication.published,
+  const agent = data.agents.find((candidate) => candidate.status !== 'revoked');
+  const agentId = String(agent?.agentId ?? '');
+  const publication = data.publications.find(
+    (candidate) => candidate.agentId === agentId && candidate.published,
   );
-  const interaction = data.federatedInteractions.find(
-    (candidate) =>
-      candidate.contract?.parties?.includes(firstAgentId) &&
-      !['rejected', 'expired', 'cancelled'].includes(String(candidate.status)),
+  const published = Boolean(publication);
+  const cardUrl = String(
+    publication?.cardUrl ||
+      (agentId ? `${window.location.origin}/agents/${encodeURIComponent(agentId)}/card.json` : ''),
   );
-  const interactionId = String(interaction?.interactionId ?? '');
-  const completionReport = data.completionReports.find(
-    (report) => report.interactionId === interactionId && report.reportingAgentId === firstAgentId,
-  );
-  const pendingFeedback = data.feedbackRequests.find(
-    (request) =>
-      request.interactionId === interactionId &&
-      request.reviewerAgentId === firstAgentId &&
-      request.status === 'pending',
-  );
-  const feedbackSubmitted = data.interactionFeedback.some(
-    (feedback) =>
-      feedback.interactionId === interactionId && feedback.reviewerAgentId === firstAgentId,
-  );
-  const finished = Boolean(interactionId && completionReport && feedbackSubmitted);
+  const shareUrl = String(publication?.profileUrl || cardUrl);
   const steps = [
-    { label: 'Create agent', done: Boolean(firstAgent) },
-    { label: 'Agree safeguards', done: Boolean(interaction) },
-    { label: 'Record outcome', done: Boolean(completionReport) },
-    { label: 'Give feedback', done: finished },
+    { label: 'Add agent', done: Boolean(agent) },
+    { label: 'Publish card', done: published },
   ];
-
-  useEffect(() => {
-    if (!firstAgentId || !published || interaction) return;
-    let cancelled = false;
-    setTargetsLoading(true);
-    const parameters = new URLSearchParams({ agentId: firstAgentId, limit: '20' });
-    const taskCategory = firstCapability.trim();
-    if (taskCategory) parameters.set('taskCategory', taskCategory);
-    api(`/v0.1/marketplace?${parameters}`)
-      .then((value) => {
-        if (cancelled) return;
-        const available = (value as RecordValue[]).filter(
-          (candidate) =>
-            candidate.card?.transports?.length &&
-            !(
-              firstAgentMode === 'temporary_chat' && candidate.card?.agentMode === 'temporary_chat'
-            ),
-        );
-        setTargets(available);
-        setAgreementForm((current) => ({
-          ...current,
-          responderAgentId: available.some(
-            (candidate) => candidate.card.agentId === current.responderAgentId,
-          )
-            ? current.responderAgentId
-            : String(available[0]?.card?.agentId ?? ''),
-        }));
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled)
-          setError(reason instanceof Error ? reason.message : 'Could not load counterparties');
-      })
-      .finally(() => {
-        if (!cancelled) setTargetsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, firstAgentId, firstAgentMode, firstCapability, interaction, published]);
 
   const createAgent = async (event: FormEvent) => {
     event.preventDefault();
-    setWorking('agent');
+    setWorking(true);
     setError('');
     try {
       await api('/v0.1/quickstart/agent', {
@@ -138,115 +59,57 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
           agentName: agentForm.agentName,
           projectName: 'My agents',
           description: agentForm.description,
+          framework: agentForm.framework || 'Custom agent',
           capabilities: splitList(agentForm.capabilities),
           limitations: [],
         }),
       });
       await refreshDashboard();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not create agent');
+      setError(reason instanceof Error ? reason.message : 'Could not add agent');
     } finally {
-      setWorking('');
+      setWorking(false);
     }
   };
 
-  const startAgreement = async (event: FormEvent) => {
-    event.preventDefault();
-    setWorking('agreement');
+  const publishAgent = async () => {
+    setWorking(true);
     setError('');
     try {
-      await api('/v0.1/federated-interactions/start', {
+      await api(`/v0.1/agents/${encodeURIComponent(agentId)}/publication`, {
         method: 'POST',
-        body: JSON.stringify({
-          initiatorAgentId: firstAgentId,
-          responderAgentId: agreementForm.responderAgentId,
-          task: agreementForm.task,
-          requestedOutcome: agreementForm.requestedOutcome,
-          successCriterion: agreementForm.successCriterion,
-          taskCategory: firstCapability || 'general',
-          ...(agreementForm.deadline
-            ? { deadline: new Date(agreementForm.deadline).toISOString() }
-            : {}),
-        }),
+        body: JSON.stringify({ published: true }),
       });
       await refreshDashboard();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not start agreement');
+      setError(reason instanceof Error ? reason.message : 'Could not publish Agent Card');
     } finally {
-      setWorking('');
+      setWorking(false);
     }
   };
 
-  const reportOutcome = async (event: FormEvent) => {
-    event.preventDefault();
-    setWorking('outcome');
+  const copyShareLink = async () => {
     setError('');
     try {
-      await api(`/v0.1/federated-interactions/${encodeURIComponent(interactionId)}/complete`, {
-        method: 'POST',
-        body: JSON.stringify({
-          agentId: firstAgentId,
-          outcome: completionForm.outcome,
-          summary: completionForm.summary,
-          evidenceReferences: splitList(completionForm.evidenceReferences),
-        }),
-      });
-      await refreshDashboard();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not record outcome');
-    } finally {
-      setWorking('');
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+    } catch {
+      setError('Could not copy the link. Open it and copy it from your browser.');
     }
   };
-
-  const submitFeedback = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!pendingFeedback) return;
-    setWorking('feedback');
-    setError('');
-    try {
-      await api(
-        `/v0.1/feedback-requests/${encodeURIComponent(String(pendingFeedback.requestId))}/respond`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ agentId: firstAgentId, ...feedbackForm }),
-        },
-      );
-      await refreshDashboard();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not submit feedback');
-    } finally {
-      setWorking('');
-    }
-  };
-
-  if (finished)
-    return (
-      <section className="firstRunGuide firstRunComplete" aria-label="First interaction complete">
-        <span className="firstRunIcon complete">
-          <Check />
-        </span>
-        <div>
-          <strong>First protected interaction recorded</strong>
-          <p>The agreement, outcome, and private feedback are now part of your verified history.</p>
-        </div>
-        <button type="button" className="secondary" onClick={() => navigate('history')}>
-          View record <ArrowRight />
-        </button>
-      </section>
-    );
 
   return (
     <section className="firstRunGuide" aria-labelledby="first-run-title">
       <header className="firstRunHeader">
         <div>
-          <p className="eyebrow">guided first run</p>
-          <h2 id="first-run-title">Complete one protected interaction</h2>
-          <p>Four concrete steps. Every step writes real, structured OpenClasp data.</p>
+          <p className="eyebrow">get listed</p>
+          <h2 id="first-run-title">Create your public Agent Card</h2>
+          <p>Add the agent you run elsewhere, review its public details, then publish one link.</p>
         </div>
-        <span className="firstRunCount">{steps.filter((step) => step.done).length}/4</span>
+        <span className="firstRunCount">{steps.filter((step) => step.done).length}/2</span>
       </header>
-      <ol className="firstRunSteps">
+
+      <ol className="firstRunSteps twoSteps">
         {steps.map((step, index) => (
           <li
             className={step.done ? 'done' : ''}
@@ -267,15 +130,15 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
         </div>
       ) : null}
 
-      {!firstAgent ? (
+      {!agent ? (
         <form className="firstRunForm" onSubmit={(event) => void createAgent(event)}>
           <div className="firstRunStage">
             <span className="firstRunIcon">
               <Bot />
             </span>
             <div>
-              <strong>Create a hosted agent identity</strong>
-              <p>No infrastructure needed. You can connect a runtime later.</p>
+              <strong>Add your agent</strong>
+              <p>OpenClasp creates its identity and card. It does not host or run the agent.</p>
             </div>
           </div>
           <label>
@@ -291,7 +154,18 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
             />
           </label>
           <label>
-            <span>What does it do?</span>
+            <span>Framework or platform</span>
+            <input
+              maxLength={100}
+              value={agentForm.framework}
+              onChange={(event) =>
+                setAgentForm((current) => ({ ...current, framework: event.target.value }))
+              }
+              placeholder="LangGraph, CrewAI, custom…"
+            />
+          </label>
+          <label className="fullWidth">
+            <span>Description</span>
             <input
               required
               maxLength={500}
@@ -302,7 +176,7 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
               placeholder="Researches markets and returns sourced findings"
             />
           </label>
-          <label>
+          <label className="fullWidth">
             <span>Capabilities</span>
             <input
               required
@@ -313,270 +187,67 @@ export function FirstRunGuide({ data, api, refreshDashboard, navigate }: FirstRu
               placeholder="market research, source verification"
             />
           </label>
-          <button className="primary" type="submit" disabled={working === 'agent'}>
-            {working === 'agent' ? 'Creating…' : 'Create and publish agent'}
+          <button className="primary" type="submit" disabled={working}>
+            {working ? 'Adding…' : 'Add agent'}
           </button>
         </form>
-      ) : !interaction ? (
-        <form className="firstRunForm" onSubmit={(event) => void startAgreement(event)}>
+      ) : !published ? (
+        <div className="firstRunReview">
           <div className="firstRunStage">
             <span className="firstRunIcon">
               <ShieldCheck />
             </span>
             <div>
-              <strong>Define the agreement before work starts</strong>
-              <p>Choose a counterparty, expected result, success test, and deadline.</p>
+              <strong>Review what becomes public</strong>
+              <p>Publishing makes this profile and its machine-readable Agent Card public.</p>
             </div>
           </div>
-          {!published ? (
-            <div className="firstRunBlocked">
-              <span>This agent is private. Publish it before starting an agreement.</span>
-              <button type="button" className="secondary" onClick={() => navigate('agents')}>
-                Manage agent
-              </button>
-            </div>
-          ) : targetsLoading ? (
-            <div className="firstRunBlocked">Loading available counterparties…</div>
-          ) : !targets.length ? (
-            <div className="firstRunBlocked">
-              No connected persistent counterparties are available yet. Invite a second account or
-              connect a persistent runtime.
-            </div>
-          ) : (
-            <>
-              <label>
-                <span>Counterparty</span>
-                <select
-                  required
-                  value={agreementForm.responderAgentId}
-                  onChange={(event) =>
-                    setAgreementForm((current) => ({
-                      ...current,
-                      responderAgentId: event.target.value,
-                    }))
-                  }
-                >
-                  {targets.map((target) => (
-                    <option value={target.card.agentId} key={target.card.agentId}>
-                      {target.card.name} · {Math.round(Number(target.match?.score ?? 0) * 100)}% fit
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="fullWidth">
-                <span>Task</span>
-                <textarea
-                  required
-                  minLength={10}
-                  maxLength={2000}
-                  value={agreementForm.task}
-                  onChange={(event) =>
-                    setAgreementForm((current) => ({ ...current, task: event.target.value }))
-                  }
-                  placeholder="Compare three customer-support platforms for a 20-person team."
-                />
-              </label>
-              <label>
-                <span>Expected result</span>
-                <input
-                  required
-                  maxLength={1000}
-                  value={agreementForm.requestedOutcome}
-                  onChange={(event) =>
-                    setAgreementForm((current) => ({
-                      ...current,
-                      requestedOutcome: event.target.value,
-                    }))
-                  }
-                  placeholder="A ranked shortlist with trade-offs"
-                />
-              </label>
-              <label>
-                <span>Success means</span>
-                <input
-                  required
-                  maxLength={1000}
-                  value={agreementForm.successCriterion}
-                  onChange={(event) =>
-                    setAgreementForm((current) => ({
-                      ...current,
-                      successCriterion: event.target.value,
-                    }))
-                  }
-                  placeholder="Three current options with source links"
-                />
-              </label>
-              <label>
-                <span>Deadline (optional)</span>
-                <input
-                  type="datetime-local"
-                  value={agreementForm.deadline}
-                  onChange={(event) =>
-                    setAgreementForm((current) => ({ ...current, deadline: event.target.value }))
-                  }
-                />
-              </label>
-              <button className="primary" type="submit" disabled={working === 'agreement'}>
-                {working === 'agreement' ? 'Sending…' : 'Send protected request'}
-              </button>
-            </>
-          )}
-        </form>
-      ) : interaction.status === 'pending' ? (
-        <div className="firstRunWaiting">
-          <span className="firstRunIcon">
-            <Circle />
-          </span>
-          <div>
-            <strong>Waiting for counterparty approval</strong>
-            <p>{interaction.contract?.purpose}</p>
+          <article className="agentCardPreview">
+            <span className="verifiedPublisher">✓ Publisher verified</span>
+            <h3>{String(agent.name)}</h3>
+            <p>{String(agent.description)}</p>
+            <dl>
+              <div>
+                <dt>Framework</dt>
+                <dd>{String(agent.framework)}</dd>
+              </div>
+              <div>
+                <dt>Capabilities</dt>
+                <dd>{(agent.capabilities as string[]).join(', ')}</dd>
+              </div>
+            </dl>
             <small>
-              The task cannot start until both agents accept the same terms hash. This page updates
-              automatically.
+              OpenClasp verifies control of the publishing account. Capabilities are self-declared.
             </small>
-          </div>
+          </article>
+          <button className="primary" type="button" disabled={working} onClick={publishAgent}>
+            {working ? 'Publishing…' : 'Publish Agent Card'}
+          </button>
         </div>
-      ) : interaction.status === 'active' && !completionReport ? (
-        <form className="firstRunForm" onSubmit={(event) => void reportOutcome(event)}>
-          <div className="firstRunStage">
-            <span className="firstRunIcon">
-              <MessageCircle />
-            </span>
-            <div>
-              <strong>Agreement active — do the work, then record the result</strong>
-              <p>{interaction.contract?.requestedOutcome}</p>
-            </div>
-            {data.hostedThreads.some((thread) => thread.interactionId === interactionId) ? (
-              <button type="button" className="secondary" onClick={() => navigate('conversations')}>
-                Open conversation
-              </button>
-            ) : null}
-          </div>
-          <label>
-            <span>Outcome</span>
-            <select
-              value={completionForm.outcome}
-              onChange={(event) =>
-                setCompletionForm((current) => ({
-                  ...current,
-                  outcome: event.target.value as typeof current.outcome,
-                }))
-              }
-            >
-              <option value="success">Success</option>
-              <option value="partial">Partial</option>
-              <option value="failure">Failure</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </label>
-          <label className="fullWidth">
-            <span>What happened?</span>
-            <textarea
-              required
-              minLength={3}
-              maxLength={2000}
-              value={completionForm.summary}
-              onChange={(event) =>
-                setCompletionForm((current) => ({ ...current, summary: event.target.value }))
-              }
-              placeholder="Summarize the delivered result and any material limitations."
-            />
-          </label>
-          <label className="fullWidth">
-            <span>Evidence URLs (optional, comma-separated)</span>
-            <input
-              value={completionForm.evidenceReferences}
-              onChange={(event) =>
-                setCompletionForm((current) => ({
-                  ...current,
-                  evidenceReferences: event.target.value,
-                }))
-              }
-              placeholder="https://…"
-            />
-          </label>
-          <button className="primary" type="submit" disabled={working === 'outcome'}>
-            {working === 'outcome' ? 'Recording…' : 'Record outcome'}
-          </button>
-        </form>
-      ) : pendingFeedback ? (
-        <form className="firstRunForm" onSubmit={(event) => void submitFeedback(event)}>
-          <div className="firstRunStage">
-            <span className="firstRunIcon">
-              <Check />
-            </span>
-            <div>
-              <strong>One last step: private counterparty feedback</strong>
-              <p>
-                Structured feedback improves task-specific reliability without storing chat text.
-              </p>
-            </div>
-          </div>
-          <label>
-            <span>Overall rating</span>
-            <select
-              value={feedbackForm.rating}
-              onChange={(event) =>
-                setFeedbackForm((current) => ({
-                  ...current,
-                  rating: Number(event.target.value),
-                }))
-              }
-            >
-              {[5, 4, 3, 2, 1].map((rating) => (
-                <option value={rating} key={rating}>
-                  {rating} / 5
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Work together again?</span>
-            <select
-              value={feedbackForm.wouldWorkAgain}
-              onChange={(event) =>
-                setFeedbackForm((current) => ({
-                  ...current,
-                  wouldWorkAgain: event.target.value as typeof current.wouldWorkAgain,
-                }))
-              }
-            >
-              <option value="yes">Yes</option>
-              <option value="unsure">Unsure</option>
-              <option value="no">No</option>
-            </select>
-          </label>
-          <label className="fullWidth">
-            <span>Private note (optional)</span>
-            <textarea
-              maxLength={1000}
-              value={feedbackForm.privateComment}
-              onChange={(event) =>
-                setFeedbackForm((current) => ({
-                  ...current,
-                  privateComment: event.target.value,
-                }))
-              }
-            />
-          </label>
-          <button className="primary" type="submit" disabled={working === 'feedback'}>
-            {working === 'feedback' ? 'Submitting…' : 'Submit private feedback'}
-          </button>
-        </form>
       ) : (
-        <div className="firstRunWaiting">
+        <div className="firstRunComplete">
           <span className="firstRunIcon complete">
             <Check />
           </span>
           <div>
-            <strong>Your outcome is recorded</strong>
-            <p>
-              Waiting for the counterparty report before OpenClasp finalizes the shared receipt.
-            </p>
+            <strong>Your Agent Card is public</strong>
+            <p>Share the profile with people or give the JSON card URL to another agent.</p>
+            <a href={shareUrl} target="_blank" rel="noreferrer">
+              {shareUrl}
+            </a>
+            <small>Connect its runtime later if you want it to accept live requests.</small>
           </div>
-          <button type="button" className="secondary" onClick={() => navigate('history')}>
-            View progress
-          </button>
+          <div className="firstRunActions">
+            <button type="button" className="secondary" onClick={() => void copyShareLink()}>
+              <Copy /> {copied ? 'Copied' : 'Copy link'}
+            </button>
+            <a className="secondary" href={shareUrl} target="_blank" rel="noreferrer">
+              Open <ExternalLink />
+            </a>
+            <button type="button" className="secondary" onClick={() => navigate('agents')}>
+              Manage
+            </button>
+          </div>
         </div>
       )}
     </section>

@@ -2677,6 +2677,10 @@ textarea {
   list-style: none;
 }
 
+.firstRunSteps.twoSteps {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .firstRunSteps li {
   display: flex;
   align-items: center;
@@ -2805,6 +2809,60 @@ textarea {
   flex: 0 0 auto;
 }
 
+.firstRunReview {
+  display: grid;
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.agentCardPreview {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.agentCardPreview h3,
+.agentCardPreview p,
+.agentCardPreview dl,
+.agentCardPreview dd {
+  margin: 0;
+}
+
+.agentCardPreview p,
+.agentCardPreview small,
+.firstRunComplete small {
+  color: var(--text-muted);
+}
+
+.agentCardPreview dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agentCardPreview dl > div {
+  display: grid;
+  gap: 3px;
+}
+
+.agentCardPreview dt {
+  color: var(--text-muted);
+  font: 500 10px/1.4 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.verifiedPublisher {
+  justify-self: start;
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--live) 45%, transparent);
+  color: var(--live);
+  font: 500 11px/1 var(--mono);
+}
+
 .firstRunWaiting {
   align-items: start;
   padding-top: 18px;
@@ -2818,7 +2876,10 @@ textarea {
 }
 
 .firstRunComplete {
+  display: grid;
   grid-template-columns: auto 1fr auto;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
 }
 
 .firstRunComplete button,
@@ -2828,6 +2889,23 @@ textarea {
   align-items: center;
   gap: 7px;
   white-space: nowrap;
+}
+
+.firstRunComplete a:not(.secondary) {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font: 500 12px/1.5 var(--mono);
+}
+
+.firstRunActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.firstRunActions svg {
+  width: 14px;
+  height: 14px;
 }
 
 .compactRequests {
@@ -4748,6 +4826,12 @@ html:has(.appInset) body::-webkit-scrollbar-thumb {
     grid-template-columns: 1fr;
   }
 
+  .firstRunSteps.twoSteps,
+  .agentCardPreview dl,
+  .firstRunComplete {
+    grid-template-columns: 1fr;
+  }
+
   .firstRunGuide {
     padding: 18px;
   }
@@ -4759,6 +4843,10 @@ html:has(.appInset) body::-webkit-scrollbar-thumb {
   .firstRunBlocked {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .firstRunActions {
+    flex-wrap: wrap;
   }
 
   .providerSubmit {

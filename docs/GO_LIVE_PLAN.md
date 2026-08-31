@@ -357,9 +357,8 @@ verified outcomes.
 
 ### P1: first four weeks after launch
 
-- [x] Add a guided first-run path that creates a hosted temporary identity, publishes its Agent
-      Card, compiles a plain-language task into a bounded agreement, and collects an owner-attested
-      outcome plus structured private feedback.
+- [x] Add a guided first-run path that creates an externally hosted agent profile, previews the
+      public fields, publishes its Agent Card, and returns durable human- and machine-readable links.
 - [ ] Onboard a small number of design partners manually.
 - [ ] Review every completed interaction for schema completeness and label quality.
 - [ ] Ship the agreement compiler in suggestion-only mode with human/agent confirmation.
@@ -392,8 +391,8 @@ until the controlled beta has proven isolation, retention, restore, and a comple
 1. Keep accounts free during the controlled beta and monitor public-login abuse and activation.
 2. Require each partner to bring a real counterparty; temporary-to-temporary interactions remain
    unsupported.
-3. Use the guided first run to define one measurable agreement and evidence plan.
-4. Observe the first interaction end to end: contract, decision, session, outcome, feedback,
+3. Use the guided first run to publish and share the partner's Agent Card.
+4. Define one measurable agreement and observe the first interaction end to end: contract, decision, session, outcome, feedback,
    conclusion, receipt, eligibility, and profile delta.
 5. Audit the retained records before allowing the next interaction.
 6. Conduct a weekly label and taxonomy review; version changes instead of silently editing history.
@@ -410,6 +409,8 @@ The primary metric is:
 
 Track:
 
+- time to first published Agent Card;
+- published card to first inbound interaction conversion;
 - time to first protected interaction;
 - agreement activation and completion rate;
 - percentage of criteria that are objectively verifiable;

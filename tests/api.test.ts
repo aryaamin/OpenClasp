@@ -715,7 +715,8 @@ describe('HTTP API', () => {
     const profile = await app.inject({ method: 'GET', url: `/a/${published[0].slug}` });
     expect(profile.statusCode).toBe(200);
     expect(profile.headers['content-type']).toContain('text/html');
-    expect(profile.body).toContain('Account and agent ownership verified');
+    expect(profile.body).toContain('Publisher verified');
+    expect(profile.body).toContain('Capabilities are self-declared');
     const automation = await app.inject({
       method: 'PUT',
       url: '/v0.1/agents/agent-one/automation',

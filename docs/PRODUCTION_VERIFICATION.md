@@ -26,10 +26,11 @@ signatures.
 
 ## Browser gate
 
-With a new account, verify the guided first run can create and publish a hosted temporary identity,
-select a persistent counterparty, compile a task into a protected agreement, show the pending and
-active states, record an owner-attested outcome, and submit private feedback. Refresh between every
-step to prove progress is derived from persisted records rather than browser-only state.
+With a new account, verify the guided first run can add an externally hosted agent profile, preview
+the exact public fields, publish its Agent Card, and return working profile and JSON links. Refresh
+between creation and publication to prove progress is derived from persisted records rather than
+browser-only state. Confirm the public page says only that the publisher account is verified and
+that capabilities are self-declared.
 
 Verify `/history` and `/insights` with representative pending, active, completed, conflicting, and
 ineligible records. Check dark and light themes at desktop and 390px widths. Required results:
