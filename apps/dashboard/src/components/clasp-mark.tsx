@@ -1,10 +1,4 @@
-export function ClaspMark({
-  size = 18,
-  className,
-}: {
-  size?: number;
-  className?: string;
-}) {
+export function ClaspMark({ size = 18, className }: { size?: number; className?: string }) {
   return (
     <svg
       className={className}

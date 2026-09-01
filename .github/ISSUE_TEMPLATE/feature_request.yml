@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a focused improvement to OpenClasp
+title: 'feature: '
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What agent-to-agent trust problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful solution.
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Privacy and authority boundaries
+      description: What data or permissions would this require?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Protocol and schemas
+        - A2A or MCP integration
+        - Identity and authorization
+        - Assurance intelligence
+        - Runtime connector
+        - Dashboard and developer experience
+    validations:
+      required: true

@@ -20,7 +20,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "schemas": "tsx scripts/export-schemas.ts"
+    "schemas": "tsx scripts/export-schemas.ts",
+    "social-preview": "node scripts/generate-social-preview.mjs"
   },
   "dependencies": {
     "@a2a-js/sdk": "^1.0.1",

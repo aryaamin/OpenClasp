@@ -1,10 +1,6 @@
 import { createHash } from 'node:crypto';
 import { auth0Config } from '../apps/api/src/auth0.js';
-import {
-  oauthStore,
-  randomOAuthValue,
-  type OAuthStore,
-} from '../apps/api/src/oauth-store.js';
+import { oauthStore, randomOAuthValue, type OAuthStore } from '../apps/api/src/oauth-store.js';
 import { DEFAULT_MCP_AUTH_SCOPES } from '../apps/api/src/access-control.js';
 import { assertProductionConfiguration } from '../apps/api/src/production-config.js';
 

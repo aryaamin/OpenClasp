@@ -429,7 +429,10 @@ html:has(.landingPage) body::-webkit-scrollbar-corner {
 .exchangeLane {
   display: grid;
   margin-top: 12px;
-  grid-template-columns: minmax(92px, 1fr) minmax(28px, 1fr) auto minmax(28px, 1fr) minmax(92px, 1fr);
+  grid-template-columns: minmax(92px, 1fr) minmax(28px, 1fr) auto minmax(28px, 1fr) minmax(
+      92px,
+      1fr
+    );
   align-items: center;
 }
 

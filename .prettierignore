@@ -4,3 +4,5 @@ dist
 coverage
 **/.botpress
 apps/dashboard/dist
+**/pnpm-lock.yaml
+schemas/**/*.json

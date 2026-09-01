@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node.js 24+ and pnpm. Before opening a change, run:
+Use Node.js 24.x and pnpm. Before opening a change, run:
 
 ```bash
 corepack pnpm format:check
