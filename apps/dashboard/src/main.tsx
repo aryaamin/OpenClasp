@@ -39,14 +39,14 @@ import './styles.css';
 declare const __AUTH0_DOMAIN__: string;
 declare const __AUTH0_CLIENT_ID__: string;
 declare const __AUTH0_AUDIENCE__: string;
-declare const __OPENCLASP_PUBLIC_URL__: string;
 
 type Auth0User = { sub: string; name?: string; email?: string; picture?: string };
 type AuthSession = { user: Auth0User };
-type AuthTransaction = { state: string; nonce: string; verifier: string };
+type AuthTransaction = { state: string; nonce: string; verifier: string; returnTo: string };
 type Theme = 'dark' | 'light';
 
 const authTransactionKey = 'openclasp.auth0.transaction';
+const authReturnToKey = 'openclasp.auth0.return-to';
 const themeKey = 'openclasp.theme.v1';
 const landingCapabilities = [
   'verified agent identity',
@@ -150,7 +150,14 @@ async function beginAuth(provider: 'google' | 'github') {
     'SHA-256',
     new TextEncoder().encode(verifier) as BufferSource,
   );
-  const transaction: AuthTransaction = { state: randomValue(), nonce: randomValue(), verifier };
+  const returnTo = sessionStorage.getItem(authReturnToKey) ?? '/dashboard';
+  sessionStorage.removeItem(authReturnToKey);
+  const transaction: AuthTransaction = {
+    state: randomValue(),
+    nonce: randomValue(),
+    verifier,
+    returnTo,
+  };
   sessionStorage.setItem(authTransactionKey, JSON.stringify(transaction));
   const parameters = new URLSearchParams({
     client_id: __AUTH0_CLIENT_ID__,
@@ -298,6 +305,8 @@ function App() {
   useEffect(() => {
     if (session === undefined) return;
     if (!session) {
+      if (location.pathname === '/connect' && new URLSearchParams(location.search).has('claim'))
+        sessionStorage.setItem(authReturnToKey, `${location.pathname}${location.search}`);
       const publicPath = '/login';
       if (location.pathname !== publicPath) history.replaceState({}, '', publicPath);
       return;
@@ -687,7 +696,11 @@ function AuthCallback() {
         body: JSON.stringify({ code, codeVerifier: transaction.verifier }),
       });
       if (!response.ok) throw new Error('Auth0 token exchange failed');
-      location.replace('/dashboard');
+      const returnTo =
+        transaction.returnTo.startsWith('/') && !transaction.returnTo.startsWith('//')
+          ? transaction.returnTo
+          : '/dashboard';
+      location.replace(returnTo);
     };
     void finish().catch((reason: unknown) =>
       setError(reason instanceof Error ? reason.message : 'Authentication failed'),
@@ -1832,7 +1845,7 @@ function Overview({
   const reviewCount = warnings + pendingInvitations + pendingFeedback;
   return (
     <>
-      <PageHead page="dashboard" action="Connect agent" onAction={() => navigate('connect')} />
+      <PageHead page="dashboard" action="Connect provider" onAction={() => navigate('connect')} />
       {pendingSetup > 0 && (
         <button className="attentionBanner" type="button" onClick={() => navigate('connect')}>
           <div>
@@ -1862,7 +1875,7 @@ function Overview({
       )}
       <section className="metrics">
         <Metric
-          label="Connected runtimes"
+          label="Connected agents"
           value={runtimeIds.size}
           note={`${readyAgents} published and ready`}
         />
@@ -2745,21 +2758,6 @@ function Agents({
       setWorking('');
     }
   };
-  const saveRuntime = async (agentId: string, endpoint: string) => {
-    setWorking(`runtime:${agentId}`);
-    setError('');
-    try {
-      await api(`/v0.1/agents/${encodeURIComponent(agentId)}/runtime`, {
-        method: 'PUT',
-        body: JSON.stringify({ endpoint }),
-      });
-      await refreshDashboard();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Runtime verification failed');
-    } finally {
-      setWorking('');
-    }
-  };
   const disableRuntime = async (agentId: string) => {
     setWorking(`runtime:${agentId}`);
     setError('');
@@ -2808,7 +2806,7 @@ function Agents({
   };
   return (
     <>
-      <PageHead page="agents" action="Connect agent" onAction={() => navigate('connect')} />
+      <PageHead page="agents" action="Connect provider" onAction={() => navigate('connect')} />
       <div className="notice">
         <strong>Direct A2A only.</strong> Conversation bodies travel between agent-owned runtimes.
         OpenClasp does not proxy or retain them.
@@ -2835,7 +2833,6 @@ function Agents({
               runtime={data.runtimes.find((runtime) => runtime.agentId === agent.agentId)}
               runtimeWorking={working === `runtime:${agent.agentId}`}
               deleteWorking={working === `delete:${agent.agentId}`}
-              onRuntime={(endpoint) => saveRuntime(agent.agentId, endpoint)}
               onDisableRuntime={() => disableRuntime(agent.agentId)}
               accessTokens={data.accessTokens.filter(
                 (token) =>
@@ -2851,8 +2848,8 @@ function Agents({
         ) : (
           <Empty
             title="No agents connected"
-            text="Install the remote MCP endpoint in an agent, sign in, then create and register its identity."
-            action="Open connection guide"
+            text="Choose a provider. OpenClasp connects the runtime and asks the agent for its own profile."
+            action="Choose provider"
             onAction={() => navigate('connect')}
           />
         )}
@@ -3126,6 +3123,34 @@ function Insights({ data }: { data: DashboardData }) {
   );
 }
 
+type ConnectorClaimView = {
+  claimId: string;
+  status: 'pending' | 'approved' | 'rejected' | 'connected' | 'expired';
+  runtimeEndpoint: string;
+  agentId?: string;
+  expiresAt: string;
+  agent?: { name: string };
+  profile: {
+    description: string;
+    framework: string;
+    agentVersion: string;
+    modelProvider?: string;
+    modelName?: string;
+    capabilities: string[];
+    limitations: string[];
+  };
+};
+
+type ProviderConnectionView = {
+  connectionId: string;
+  provider: 'botpress';
+  agentName: string;
+  status: 'pending' | 'connected' | 'expired';
+  code?: string;
+  agentId?: string;
+  expiresAt: string;
+};
+
 function Connect({
   data,
   navigate,
@@ -3137,401 +3162,352 @@ function Connect({
   refreshDashboard: () => Promise<void>;
   api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
-  const endpoint = `${new URL(__OPENCLASP_PUBLIC_URL__).origin}/mcp`;
-  const [copied, setCopied] = useState(false);
-  const [tokenCopied, setTokenCopied] = useState(false);
-  const [working, setWorking] = useState('');
-  const [decisionError, setDecisionError] = useState('');
-  const [providerError, setProviderError] = useState('');
-  const [providerForm, setProviderForm] = useState({
-    provider: 'botpress' as 'botpress' | 'custom',
-    agentName: '',
-    projectName: '',
-    description: '',
-    capabilities: '',
-    limitations: '',
-    expiresInDays: 365,
-  });
-  const [providerResult, setProviderResult] = useState<{
-    provider: 'botpress' | 'custom';
-    agent: { agentId: string; name: string; framework: string };
-    accessToken: { token: string; expiresAt: string };
-  }>();
-  const pending = data.setupRequests.filter((request) => request.status === 'pending');
+  const claimId = new URLSearchParams(window.location.search).get('claim') ?? '';
+  const [claim, setClaim] = useState<ConnectorClaimView>();
+  const [loadingClaim, setLoadingClaim] = useState(Boolean(claimId));
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+  const [agentName, setAgentName] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('');
+  const [providerConnection, setProviderConnection] = useState<ProviderConnectionView>();
+  const [copiedPairingCode, setCopiedPairingCode] = useState(false);
+
   useEffect(() => {
-    const poll = () => void refreshDashboard().catch(() => undefined);
-    poll();
-    const timer = window.setInterval(poll, 5000);
-    return () => window.clearInterval(timer);
-  }, [refreshDashboard]);
-  const decide = async (requestId: string, decision: 'approve' | 'reject') => {
-    setWorking(requestId);
-    setDecisionError('');
-    try {
-      await api(`/v0.1/onboarding/${encodeURIComponent(requestId)}/${decision}`, {
-        method: 'POST',
+    if (!claimId) return;
+    let cancelled = false;
+    void api(`/v0.1/connector-claims/${encodeURIComponent(claimId)}`)
+      .then((value) => {
+        if (!cancelled) setClaim(value as ConnectorClaimView);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled)
+          setError(reason instanceof Error ? reason.message : 'Could not load connector claim');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingClaim(false);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, claimId]);
+
+  useEffect(() => {
+    if (!providerConnection || providerConnection.status !== 'pending') return;
+    const poll = window.setInterval(() => {
+      void api(`/v0.1/provider-connections/${encodeURIComponent(providerConnection.connectionId)}`)
+        .then((value) => {
+          const next = value as ProviderConnectionView;
+          setProviderConnection((current) => ({ ...next, code: current?.code }));
+          if (next.status === 'connected') void refreshDashboard();
+        })
+        .catch(() => undefined);
+    }, 3_000);
+    return () => window.clearInterval(poll);
+  }, [api, providerConnection?.connectionId, providerConnection?.status, refreshDashboard]);
+
+  const createBotpressConnection = async () => {
+    if (!agentName.trim()) {
+      setError('Enter an agent name');
+      return;
+    }
+    setWorking(true);
+    setError('');
+    try {
+      const result = (await api('/v0.1/provider-connections/botpress', {
+        method: 'POST',
+        body: JSON.stringify({ agentName: agentName.trim() }),
+      })) as ProviderConnectionView;
+      setProviderConnection(result);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not create Botpress pairing code');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const decide = async (decision: 'approve' | 'reject') => {
+    if (!claim) return;
+    if (decision === 'approve' && !agentName.trim()) {
+      setError('Enter an agent name');
+      return;
+    }
+    setWorking(true);
+    setError('');
+    try {
+      const result = (await api(
+        `/v0.1/connector-claims/${encodeURIComponent(claim.claimId)}/${decision}`,
+        {
+          method: 'POST',
+          ...(decision === 'approve' ? { body: JSON.stringify({ name: agentName.trim() }) } : {}),
+        },
+      )) as ConnectorClaimView;
+      setClaim(result);
       await refreshDashboard();
     } catch (reason) {
-      setDecisionError(reason instanceof Error ? reason.message : 'Could not update setup request');
+      setError(reason instanceof Error ? reason.message : 'Could not update connector claim');
     } finally {
-      setWorking('');
+      setWorking(false);
     }
   };
-  const connectHostedProvider = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setWorking('hosted-provider');
-    setProviderError('');
-    try {
-      const list = (value: string) =>
-        value
-          .split(/[,\n]/)
-          .map((item) => item.trim())
-          .filter(Boolean);
-      const created = (await api('/v0.1/provider-connections', {
-        method: 'POST',
-        body: JSON.stringify({
-          provider: providerForm.provider,
-          agentName: providerForm.agentName,
-          projectName: providerForm.projectName,
-          description: providerForm.description,
-          capabilities: list(providerForm.capabilities),
-          limitations: list(providerForm.limitations),
-          expiresInDays: providerForm.expiresInDays,
-        }),
-      })) as {
-        provider: 'botpress' | 'custom';
-        agent: { agentId: string; name: string; framework: string };
-        accessToken: { token: string; expiresAt: string };
-      };
-      setProviderResult(created);
-      await refreshDashboard().catch(() => undefined);
-    } catch (reason) {
-      setProviderError(reason instanceof Error ? reason.message : 'Could not create connection');
-    } finally {
-      setWorking('');
-    }
-  };
+
   return (
     <>
       <PageHead page="connect" />
-      {pending.length > 0 && (
-        <section className="setupRequests">
+      {claimId ? (
+        <section className="setupRequests" aria-live="polite">
           <div>
-            <h2>Approve agent setup</h2>
-            <p>
-              An agent proposed this identity. Confirm it before OpenClasp binds the installation.
-            </p>
+            <p className="pageKicker">CONNECTOR CLAIM</p>
+            <h2>Name your agent</h2>
+            <p>That is the only detail you need to enter.</p>
           </div>
-          {pending.map((request) => (
-            <article className="setupRequest" key={request.requestId}>
+          {loadingClaim ? <Loading compact /> : null}
+          {claim ? (
+            <article className="setupRequest">
               <div>
-                <strong>{request.agentName ?? 'Switch installation'}</strong>
-                <small>
-                  {request.projectName ?? request.existingAgentId} · {request.framework}
-                </small>
-                {!!request.capabilities?.length && (
+                {claim.status === 'pending' ? (
+                  <label>
+                    <span>Agent name</span>
+                    <input
+                      autoFocus
+                      required
+                      maxLength={100}
+                      value={agentName}
+                      onChange={(event) => setAgentName(event.target.value)}
+                      placeholder="Procurement agent"
+                    />
+                  </label>
+                ) : (
+                  <strong>{claim.agent?.name || agentName || 'Agent connected'}</strong>
+                )}
+                <small>OpenClasp asked the running agent for everything else.</small>
+                <details>
+                  <summary>View agent-reported details</summary>
+                  <p>{claim.profile.description}</p>
+                  <small>
+                    {claim.profile.framework} · version {claim.profile.agentVersion}
+                    {claim.profile.modelName
+                      ? ` · ${claim.profile.modelProvider ?? 'model'} ${claim.profile.modelName}`
+                      : ''}
+                  </small>
                   <div className="tags">
-                    {request.capabilities.slice(0, 5).map((capability: string) => (
+                    {claim.profile.capabilities.map((capability) => (
                       <span key={capability}>{capability}</span>
                     ))}
                   </div>
-                )}
-                {!!request.limitations?.length && (
-                  <small>Limitations: {request.limitations.join(' · ')}</small>
-                )}
-                <div className="automationPreview">
-                  <span>
-                    {request.autoPublish ? 'Public after runtime verification' : 'Private'}
-                  </span>
-                  <span>Agent-owned runtime · direct A2A</span>
-                  <span>
-                    {request.autoAcceptPolicy === 'safe_matching'
-                      ? 'Auto-accept safe matches'
-                      : 'Review every request'}
-                  </span>
+                  {claim.profile.limitations.length ? (
+                    <small>Limits: {claim.profile.limitations.join(' · ')}</small>
+                  ) : null}
+                </details>
+              </div>
+              {claim.status === 'pending' ? (
+                <div className="decisionButtons">
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={working}
+                    onClick={() => void decide('reject')}
+                  >
+                    Reject
+                  </button>
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={working}
+                    onClick={() => void decide('approve')}
+                  >
+                    {working ? 'Connecting…' : 'Connect agent'}
+                  </button>
                 </div>
-              </div>
-              <div className="decisionButtons">
-                <button
-                  className="secondary"
-                  type="button"
-                  disabled={working === request.requestId}
-                  onClick={() => void decide(request.requestId, 'reject')}
-                >
-                  Reject
-                </button>
-                <button
-                  className="primary"
-                  type="button"
-                  disabled={working === request.requestId}
-                  onClick={() => void decide(request.requestId, 'approve')}
-                >
-                  {working === request.requestId ? 'Working…' : 'Approve & automate'}
-                </button>
-              </div>
+              ) : (
+                <div className="decisionButtons">
+                  <StatusPill value={claim.status} />
+                  {claim.status === 'approved' || claim.status === 'connected' ? (
+                    <button className="primary" type="button" onClick={() => navigate('agents')}>
+                      View agent
+                    </button>
+                  ) : null}
+                </div>
+              )}
             </article>
-          ))}
-          {decisionError && (
+          ) : null}
+          {error ? (
             <div className="loginError" role="alert">
-              {decisionError}
+              {error}
             </div>
-          )}
+          ) : null}
         </section>
-      )}
-      <section className="connectLayout providerConnectLayout">
-        <Panel title="Add a cloud agent" subtitle="Creates an isolated identity and credential">
-          {providerResult ? (
-            <div className="providerResult">
-              <div className="successBanner">
-                <strong>{providerResult.agent.name} created</strong>
-                <span>{providerResult.agent.agentId}</span>
-              </div>
-              <label>
-                <span>MCP URL</span>
-                <code>{endpoint}</code>
-              </label>
-              <label>
-                <span>Agent token — copy it now; it will not be shown again</span>
-                <code>{providerResult.accessToken.token}</code>
-              </label>
-              <small>
-                This agent-bound token authorizes MCP and automatic runtime registration. It cannot
-                connect or manage another agent.
-              </small>
-              <div className="agentActions">
-                <button
-                  className="secondary"
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(providerResult.accessToken.token);
-                    setTokenCopied(true);
-                    window.setTimeout(() => setTokenCopied(false), 2000);
-                  }}
-                >
-                  {tokenCopied ? 'Copied' : 'Copy token'}
-                </button>
-                <button className="primary" type="button" onClick={() => navigate('agents')}>
-                  View agent
-                </button>
-              </div>
+      ) : null}
+
+      {!claimId ? (
+        <div className="connectLayout providerConnectLayout">
+          <section className="providerIntro">
+            <div>
+              <p className="pageKicker">CHOOSE A PROVIDER</p>
+              <h2>Where does your agent run?</h2>
+              <p>The provider connector handles endpoints, A2A and credentials.</p>
             </div>
-          ) : (
-            <form className="providerForm" onSubmit={(event) => void connectHostedProvider(event)}>
-              <label>
-                <span>Provider</span>
-                <select
-                  value={providerForm.provider}
-                  onChange={(event) =>
-                    setProviderForm((value) => ({
-                      ...value,
-                      provider: event.target.value as 'botpress' | 'custom',
-                    }))
-                  }
+            <span>{data.agents.length} connected</span>
+          </section>
+          <section className="providerGrid" aria-label="Cloud agent providers">
+            <button
+              className={`providerCard available ${selectedProvider === 'botpress' ? 'active' : ''}`}
+              type="button"
+              onClick={() => setSelectedProvider('botpress')}
+            >
+              <span className="providerMonogram botpressMonogram">bp</span>
+              <span>
+                <strong>Botpress</strong>
+                <small>Available now</small>
+              </span>
+              <ArrowRight />
+            </button>
+            {['Dify', 'n8n', 'Microsoft Copilot Studio', 'LangGraph'].map((provider, index) => (
+              <article className="providerCard" key={provider}>
+                <span className="providerMonogram">0{index + 2}</span>
+                <span>
+                  <strong>{provider}</strong>
+                  <small>Coming next</small>
+                </span>
+              </article>
+            ))}
+          </section>
+
+          {selectedProvider === 'botpress' ? (
+            <section className="providerSetup" aria-live="polite">
+              <header>
+                <div>
+                  <p className="pageKicker">BOTPRESS · MANAGED CONNECTOR</p>
+                  <h2>Connect a Botpress agent</h2>
+                </div>
+                <button
+                  className="iconButton"
+                  type="button"
+                  aria-label="Close Botpress setup"
+                  onClick={() => setSelectedProvider('')}
                 >
-                  <option value="botpress">Botpress</option>
-                  <option value="custom">Custom / self-hosted</option>
-                </select>
-              </label>
-              <label>
-                <span>Agent name</span>
-                <input
-                  required
-                  maxLength={100}
-                  value={providerForm.agentName}
-                  onChange={(event) =>
-                    setProviderForm((value) => ({ ...value, agentName: event.target.value }))
-                  }
-                  placeholder="Procurement agent"
-                />
-              </label>
-              <label>
-                <span>Project</span>
-                <input
-                  required
-                  maxLength={100}
-                  value={providerForm.projectName}
-                  onChange={(event) =>
-                    setProviderForm((value) => ({ ...value, projectName: event.target.value }))
-                  }
-                  placeholder="Operations"
-                />
-              </label>
-              <label className="fullWidth">
-                <span>Purpose</span>
-                <textarea
-                  required
-                  maxLength={500}
-                  value={providerForm.description}
-                  onChange={(event) =>
-                    setProviderForm((value) => ({ ...value, description: event.target.value }))
-                  }
-                  placeholder="Sources approved inventory within budget and supplier policy"
-                />
-              </label>
-              <label>
-                <span>Capabilities, comma-separated</span>
-                <input
-                  required
-                  value={providerForm.capabilities}
-                  onChange={(event) =>
-                    setProviderForm((value) => ({ ...value, capabilities: event.target.value }))
-                  }
-                  placeholder="supplier discovery, quote comparison, purchase preparation"
-                />
-              </label>
-              <label>
-                <span>Limitations, comma-separated</span>
-                <input
-                  value={providerForm.limitations}
-                  onChange={(event) =>
-                    setProviderForm((value) => ({ ...value, limitations: event.target.value }))
-                  }
-                  placeholder="no payments without human approval"
-                />
-              </label>
-              <label>
-                <span>Credential expiry</span>
-                <select
-                  value={providerForm.expiresInDays}
-                  onChange={(event) =>
-                    setProviderForm((value) => ({
-                      ...value,
-                      expiresInDays: Number(event.target.value),
-                    }))
-                  }
-                >
-                  <option value={30}>30 days</option>
-                  <option value={90}>90 days</option>
-                  <option value={365}>1 year</option>
-                </select>
-              </label>
-              <div className="providerSubmit fullWidth">
-                <p>This does not reuse or modify your Codex agent.</p>
-                <button className="primary" type="submit" disabled={working === 'hosted-provider'}>
-                  {working === 'hosted-provider' ? 'Creating…' : 'Create agent credentials'}
+                  <X />
                 </button>
-              </div>
-              {providerError ? (
-                <div className="loginError fullWidth" role="alert">
-                  {providerError}
+              </header>
+              {!providerConnection ? (
+                <div className="providerNameStep">
+                  <label>
+                    <span>Agent name</span>
+                    <Input
+                      autoFocus
+                      maxLength={100}
+                      value={agentName}
+                      onChange={(event) => setAgentName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void createBotpressConnection();
+                      }}
+                      placeholder="Procurement agent"
+                    />
+                  </label>
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={working}
+                    onClick={() => void createBotpressConnection()}
+                  >
+                    {working ? 'Creating…' : 'Create pairing code'}
+                  </button>
+                  <p>You name it. The running agent reports everything else.</p>
+                </div>
+              ) : providerConnection.status === 'connected' ? (
+                <div className="providerConnected">
+                  <ShieldCheck />
+                  <div>
+                    <strong>{providerConnection.agentName} is connected</strong>
+                    <p>
+                      Botpress reported its profile. Runtime verification is finishing
+                      automatically.
+                    </p>
+                  </div>
+                  <button className="primary" type="button" onClick={() => navigate('agents')}>
+                    View agent
+                  </button>
+                </div>
+              ) : (
+                <div className="pairingSetup">
+                  <div className="pairingCodeBlock">
+                    <span>PAIRING CODE · EXPIRES IN 15 MINUTES</span>
+                    <code>{providerConnection.code}</code>
+                    <button
+                      className="secondary"
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(providerConnection.code ?? '');
+                        setCopiedPairingCode(true);
+                      }}
+                    >
+                      <Copy /> {copiedPairingCode ? 'Copied' : 'Copy code'}
+                    </button>
+                  </div>
+                  <div className="connectSteps">
+                    <div className="connectStep">
+                      <b>1</b>
+                      <span>
+                        Open the Botpress Hub and install the <strong>OpenClasp</strong>{' '}
+                        integration.
+                      </span>
+                    </div>
+                    <div className="connectStep">
+                      <b>2</b>
+                      <span>Paste this pairing code and enable the integration.</span>
+                    </div>
+                    <div className="connectStep">
+                      <b>3</b>
+                      <span>
+                        Wait here. The agent will report its profile and appear automatically.
+                      </span>
+                    </div>
+                  </div>
+                  <a
+                    className="primary providerExternalLink"
+                    href="https://app.botpress.cloud/hub"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open Botpress Hub <ExternalLink />
+                  </a>
+                  {providerConnection.status === 'expired' ? (
+                    <div className="loginError" role="alert">
+                      Pairing code expired. Close this panel and create another one.
+                    </div>
+                  ) : (
+                    <small className="waitingStatus">
+                      <Circle /> Waiting for Botpress
+                    </small>
+                  )}
+                </div>
+              )}
+              {error ? (
+                <div className="loginError" role="alert">
+                  {error}
                 </div>
               ) : null}
-            </form>
-          )}
-        </Panel>
-        <Panel
-          title={providerForm.provider === 'botpress' ? 'Configure Botpress' : 'Deploy the sidecar'}
-          subtitle={
-            providerForm.provider === 'botpress'
-              ? 'MCP and inbound runtime are separate connections'
-              : 'Runs beside an agent on any cloud'
-          }
-        >
-          {providerForm.provider === 'botpress' ? (
-            <>
-              <div className="connectSteps">
-                <div className="connectStep">
-                  <b>1</b>
-                  <span>Add the displayed MCP URL with Bearer authentication.</span>
-                </div>
-                <div className="connectStep">
-                  <b>2</b>
-                  <span>
-                    Paste the generated <code>oc_at_…</code> agent token.
-                  </span>
-                </div>
-                <div className="connectStep">
-                  <b>3</b>
-                  <span>Install the OpenClasp Botpress runtime integration for inbound A2A.</span>
-                </div>
-              </div>
-              <div className="notice providerNotice">
-                MCP proves outbound tool access only. Autonomous runtime becomes connected only
-                after the Botpress integration registers its webhook successfully.
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="connectSteps">
-                <div className="connectStep">
-                  <b>1</b>
-                  <span>
-                    Deploy <code>Dockerfile.sidecar</code> beside the agent.
-                  </span>
-                </div>
-                <div className="connectStep">
-                  <b>2</b>
-                  <span>
-                    Set <code>OPENCLASP_AGENT_TOKEN</code>, <code>OPENCLASP_RUNTIME_URL</code>, and{' '}
-                    <code>AGENT_ADAPTER_URL</code>.
-                  </span>
-                </div>
-                <div className="connectStep">
-                  <b>3</b>
-                  <span>
-                    The sidecar verifies and registers itself; no endpoint paste is needed.
-                  </span>
-                </div>
-              </div>
-              <div className="notice providerNotice">
-                The application implements three internal POST hooks: session-offer,
-                session-activated, and message. Agent-to-agent content remains off OpenClasp.
-              </div>
-            </>
-          )}
-        </Panel>
-      </section>
-      <details className="mcpClientSection">
-        <summary>
-          <span>Connect an MCP client</span>
-          <small>
-            Advanced · use Codex, Cursor, or another developer tool to configure and test OpenClasp
-          </small>
-        </summary>
-        <section className="connectLayout">
-          <Panel title="MCP endpoint" subtitle="Developer tools and testing only">
-            <div className="endpoint">
-              <code>{endpoint}</code>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(endpoint);
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 2000);
-                }}
-              >
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
+            </section>
+          ) : null}
+
+          <details className="customRuntimeSetup">
+            <summary>Connect a custom or VM-hosted runtime</summary>
             <div className="connectSteps">
               <div className="connectStep">
                 <b>1</b>
-                <span>Add this MCP URL and complete OAuth.</span>
+                <span>Run the OpenClasp connector beside the agent.</span>
               </div>
               <div className="connectStep">
                 <b>2</b>
-                <span>
-                  Tell the agent: <code>Set yourself up on OpenClasp</code>.
-                </span>
+                <span>Expose its runtime through a public HTTPS domain.</span>
               </div>
               <div className="connectStep">
                 <b>3</b>
-                <span>Approve the proposed identity here.</span>
+                <span>Open the generated approval link and name the agent.</span>
               </div>
             </div>
-          </Panel>
-          <Panel title="What this connection does" subtitle="Identity and control plane only">
-            <ul className="checkList">
-              <li>OAuth opens in the browser</li>
-              <li>Each installation is explicitly approved</li>
-              <li>OpenClasp does not proxy conversation messages</li>
-              <li>This client is not listed as an agent</li>
-              <li>A cloud runtime is required before an agent can be published</li>
-            </ul>
-          </Panel>
-        </section>
-      </details>
+          </details>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -3708,7 +3684,6 @@ function AgentCard({
   runtime,
   runtimeWorking,
   deleteWorking,
-  onRuntime,
   onDisableRuntime,
   accessTokens,
   accessTokenWorking,
@@ -3727,7 +3702,6 @@ function AgentCard({
   runtime: Record<string, any> | undefined;
   runtimeWorking: boolean;
   deleteWorking: boolean;
-  onRuntime: (endpoint: string) => void;
   onDisableRuntime: () => void;
   accessTokens: Record<string, any>[];
   accessTokenWorking: boolean;
@@ -3745,18 +3719,19 @@ function AgentCard({
       : (agent.capabilities ?? [])
     ).join(', '),
   );
-  const [runtimeEndpoint, setRuntimeEndpoint] = useState(String(runtime?.endpoint ?? ''));
   const ready = published && runtime?.status === 'verified';
   const online = agent.presence?.status === 'online';
   const providerConnected = accessTokens.length > 0;
   const endpoint = String(runtime?.a2aEndpoint ?? agent.a2aEndpoint ?? 'Connect a runtime first');
   const identityLabel = agent.revoked
     ? 'REVOKED'
-    : agent.identityMode === 'owner_managed'
-      ? 'OWNER CREATED'
-      : agent.identityMode === 'oauth_installation'
-        ? 'AUTHENTICATED'
-        : 'VERIFIED';
+    : agent.identityMode === 'connector_claim'
+      ? 'AGENT DECLARED'
+      : agent.identityMode === 'owner_managed'
+        ? 'OWNER CREATED'
+        : agent.identityMode === 'oauth_installation'
+          ? 'AUTHENTICATED'
+          : 'VERIFIED';
   return (
     <article className="agentCard">
       <div className="agentTop">
@@ -3782,11 +3757,13 @@ function AgentCard({
       </div>
       <small>
         {agent.framework ? `${agent.framework} · ` : ''}
-        {agent.identityMode === 'owner_managed'
-          ? 'Owner-created · '
-          : agent.identityMode === 'oauth_installation'
-            ? 'OAuth-bound · '
-            : 'Ed25519 · '}
+        {agent.identityMode === 'connector_claim'
+          ? 'Connector-claimed · '
+          : agent.identityMode === 'owner_managed'
+            ? 'Owner-created · '
+            : agent.identityMode === 'oauth_installation'
+              ? 'OAuth-bound · '
+              : 'Ed25519 · '}
         Created {new Date(agent.createdAt).toLocaleDateString()}
       </small>
       <small>
@@ -3826,18 +3803,10 @@ function AgentCard({
           {runtime?.status === 'verified'
             ? 'The agent runtime registered itself successfully. Conversation bodies travel directly between agents.'
             : providerConnected
-              ? 'MCP is connected, but inbound A2A is not. Install the provider connector or deploy the sidecar; it registers this endpoint automatically.'
-              : 'Install a provider connector, deploy the sidecar, or register a native A2A endpoint.'}
+              ? 'The connector credential exists, but the runtime has not completed endpoint verification.'
+              : 'Start the connector beside the agent. Runtime endpoints cannot be entered from the dashboard.'}
         </p>
-        <input
-          type="url"
-          value={runtimeEndpoint}
-          onChange={(event) => setRuntimeEndpoint(event.target.value)}
-          placeholder="https://agent.example.com/openclasp"
-        />
-        <small>
-          Manual registration is only for a runtime that already implements OpenClasp A2A.
-        </small>
+        <small>The connector registers and verifies the HTTPS endpoint automatically.</small>
         <div className="agentActions">
           {runtime?.status === 'verified' ? (
             <button
@@ -3849,14 +3818,11 @@ function AgentCard({
               Disable runtime
             </button>
           ) : null}
-          <button
-            className="primary"
-            type="button"
-            disabled={runtimeWorking || !runtimeEndpoint.trim()}
-            onClick={() => onRuntime(runtimeEndpoint.trim())}
-          >
-            {runtimeWorking ? 'Verifying…' : runtime ? 'Rotate connection' : 'Verify & connect'}
-          </button>
+          {runtime?.status !== 'verified' ? (
+            <a className="primary" href="/connect">
+              Connector setup
+            </a>
+          ) : null}
         </div>
         {runtime?.lastError ? <small>Last session error: {runtime.lastError}</small> : null}
       </div>

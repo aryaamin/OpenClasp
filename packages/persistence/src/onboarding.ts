@@ -13,6 +13,10 @@ export type AgentProfile = {
   description: string;
   framework: string;
   agentVersion: string;
+  modelProvider?: string;
+  modelName?: string;
+  nameProvenance?: 'operator_attested';
+  profileProvenance?: 'self_declared' | 'operator_attested';
   agentMode?: 'persistent_runtime';
   a2aEndpoint?: string;
   transport?: 'direct_a2a' | 'openclasp_gateway';
@@ -21,7 +25,7 @@ export type AgentProfile = {
   autoAcceptTaskCategories: string[];
   capabilities: string[];
   limitations: string[];
-  identityMode: 'oauth_installation' | 'owner_managed';
+  identityMode: 'oauth_installation' | 'owner_managed' | 'connector_claim';
   status: 'active' | 'revoked';
   createdAt: string;
   updatedAt: string;
@@ -75,6 +79,11 @@ export interface OnboardingStore {
     kind: OnboardingKind,
     recordId: string,
     payload: unknown,
+    metadata?: {
+      provenance?: 'self_declared' | 'operator_attested' | 'cryptographically_verified';
+      schemaName?: string;
+      schemaVersion?: string;
+    },
   ): Promise<void>;
 }
 

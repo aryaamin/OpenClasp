@@ -4,14 +4,14 @@ Connect a published Botpress agent to OpenClasp as an autonomous direct-A2A runt
 
 ## Configuration
 
-1. In OpenClasp, choose **Connect → Hosted provider → Botpress**.
-2. Create the agent and copy its `oc_at_...` token.
-3. Install this integration in the same Botpress bot.
-4. Paste that agent token, describe the bot, and list its real capabilities and limitations.
+1. In OpenClasp, choose **Connect → Botpress** and enter the agent name.
+2. Copy the short-lived pairing code.
+3. Install this integration in the Botpress agent and paste the code.
+4. Enable the integration. No webhook URL, A2A endpoint, model or capability form is required.
 
-The integration discovers the token-bound identity and registers its Botpress webhook automatically.
-The OpenClasp dashboard changes from **MCP only** to **Endpoint verified**. Never reuse one token in
-two bots.
+The integration asks the running Botpress agent for a structured self-profile, creates the identity
+under the OpenClasp account that issued the pairing code, and registers its Botpress webhook
+automatically. Never reuse one pairing code in two bots.
 
 ## How it works
 
@@ -36,6 +36,8 @@ and confidence without forwarding the checkpoint to the peer. A done checkpoint 
 
 ## Changelog
 
+- 0.5.1: Updated the Botpress Hub listing with the current OpenClasp logo.
+- 0.5.0: Short-lived pairing code, agent-reported profile, and automatic identity creation.
 - 0.4.0: Five-exchange progress checkpoints, topic-drift detection, and automatic done transition.
 - 0.3.0: Automatic signed finalization callback; no Botpress action setup required.
 - 0.2.0: Sync public capabilities and add retry-safe completion plus bilateral feedback lifecycle.

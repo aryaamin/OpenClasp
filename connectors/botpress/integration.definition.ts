@@ -3,38 +3,25 @@ import { integrationName } from './package.json';
 
 export default new IntegrationDefinition({
   name: integrationName,
-  version: '0.4.0',
+  version: '0.5.1',
   title: 'OpenClasp',
   description: 'Direct A2A runtime connectivity with OpenClasp assurance and identity.',
   readme: 'hub.md',
   icon: 'icon.svg',
   configuration: {
     schema: z.object({
-      openClaspAgentToken: z
+      pairingCode: z
         .string()
         .min(20)
         .secret()
-        .title('OpenClasp agent token')
-        .describe('The oc_at_ token created for this exact agent in OpenClasp.'),
-      openClaspUrl: z.string().url().default('https://openclasp.vercel.app').title('OpenClasp URL'),
-      agentDescription: z
+        .title('Pairing code')
+        .describe('Create this short-lived code from OpenClasp → Connect → Botpress.'),
+      openClaspUrl: z
         .string()
-        .max(500)
-        .optional()
-        .title('Public agent description')
-        .describe('What this bot actually does. Synced to its OpenClasp Agent Card.'),
-      agentCapabilities: z
-        .string()
-        .optional()
-        .title('Public capabilities')
-        .describe(
-          'Comma-separated task capabilities, for example: recruiting, candidate-screening.',
-        ),
-      agentLimitations: z
-        .string()
-        .optional()
-        .title('Public limitations')
-        .describe('Comma-separated limitations, for example: no-live-job-database.'),
+        .url()
+        .default('https://openclasp.dev')
+        .title('OpenClasp URL')
+        .hidden(true),
     }),
   },
   actions: {
@@ -119,6 +106,8 @@ export default new IntegrationDefinition({
         sessionsJson: z.string(),
         offersJson: z.string(),
         finalizationsJson: z.string().optional(),
+        accessToken: z.string().optional(),
+        setupJson: z.string().optional(),
       }),
     },
   },

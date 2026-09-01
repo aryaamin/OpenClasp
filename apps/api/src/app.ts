@@ -14,6 +14,7 @@ import {
   LiveSessionEventSchema,
   InteractionCompletionReportSchema,
   InteractionFeedbackSchema,
+  ConnectorAgentProfileSchema,
   type PublicAgentCard,
 } from '../../../packages/protocol/src/index.js';
 import {
@@ -26,8 +27,6 @@ import type { AgentProfile, HostedRepository } from '../../../packages/persisten
 import { toA2AAgentCard } from '../../../packages/sidecar/src/index.js';
 import {
   approveAgentSetup,
-  createDashboardAgent,
-  createHostedProviderAgent,
   getOnboardingState,
   rejectAgentSetup,
 } from '../../../packages/persistence/src/onboarding.js';
@@ -73,11 +72,20 @@ type DashboardRepository = Pick<
       | 'touchAgentPresence'
       | 'getRuntimeVerificationKey'
       | 'registerAgentRuntime'
+      | 'listAgentRuntimes'
       | 'disableAgentRuntime'
       | 'deleteAgent'
       | 'issueAgentAccessToken'
       | 'listAgentAccessTokens'
       | 'revokeAgentAccessToken'
+      | 'createConnectorClaim'
+      | 'getConnectorClaim'
+      | 'pollConnectorClaim'
+      | 'approveConnectorClaim'
+      | 'rejectConnectorClaim'
+      | 'createProviderConnection'
+      | 'getProviderConnection'
+      | 'completeBotpressConnection'
     >
   > & {
     listContextualIntelligence?: (
@@ -104,6 +112,7 @@ export function buildApi(
         'req.headers.authorization',
         'req.headers.cookie',
         'req.headers.x-openclasp-internal-auth',
+        'req.headers.x-openclasp-pairing-code',
         'req.body.rawMessage',
         'req.body.privateKey',
       ],
@@ -488,6 +497,91 @@ export function buildApi(
       if (!repository || !owner) throw new Error('Hosted persistence is not configured');
       return getOnboardingState(repository, owner);
     });
+    router.post('/v0.1/connector-claims', async (request) => {
+      if (!repository?.createConnectorClaim)
+        throw new Error('Runtime connector claims are not configured');
+      const value = z
+        .object({
+          runtimeEndpoint: z.string().url().max(2048),
+          credentialPublicKey: z.string().min(1).max(8192),
+          profile: ConnectorAgentProfileSchema,
+        })
+        .strict()
+        .parse(request.body);
+      const claim = await repository.createConnectorClaim(value);
+      return {
+        ...claim,
+        confirmationUrl: `${publicBaseUrl(request)}/connect?claim=${encodeURIComponent(claim.claimId)}`,
+        pollIntervalSeconds: 3,
+      };
+    });
+    router.get('/v0.1/connector-claims/:id', async (request) => {
+      if (!repository?.getConnectorClaim)
+        throw new Error('Runtime connector claims are not configured');
+      return repository.getConnectorClaim((request.params as { id: string }).id);
+    });
+    router.post('/v0.1/connector-claims/:id/poll', async (request) => {
+      if (!repository?.pollConnectorClaim)
+        throw new Error('Runtime connector claims are not configured');
+      const claimSecret = request.headers['x-openclasp-claim-secret'];
+      if (typeof claimSecret !== 'string') {
+        const error = new Error('Connector claim secret required');
+        Object.assign(error, { statusCode: 401 });
+        throw error;
+      }
+      return repository.pollConnectorClaim((request.params as { id: string }).id, claimSecret);
+    });
+    router.post('/v0.1/connector-claims/:id/approve', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.approveConnectorClaim || !owner)
+        throw new Error('Runtime connector claims are not configured');
+      const { name } = z
+        .object({ name: z.string().trim().min(1).max(100) })
+        .strict()
+        .parse(request.body);
+      return repository.approveConnectorClaim(owner, (request.params as { id: string }).id, name);
+    });
+    router.post('/v0.1/connector-claims/:id/reject', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.rejectConnectorClaim || !owner)
+        throw new Error('Runtime connector claims are not configured');
+      return repository.rejectConnectorClaim(owner, (request.params as { id: string }).id);
+    });
+    router.post('/v0.1/provider-connections/botpress', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.createProviderConnection || !owner)
+        throw new Error('Botpress connections are not configured');
+      const { agentName } = z
+        .object({ agentName: z.string().trim().min(1).max(100) })
+        .strict()
+        .parse(request.body);
+      return repository.createProviderConnection(owner, 'botpress', agentName);
+    });
+    router.get('/v0.1/provider-connections/:id', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getProviderConnection || !owner)
+        throw new Error('Provider connections are not configured');
+      return repository.getProviderConnection(owner, (request.params as { id: string }).id);
+    });
+    router.post('/v0.1/provider-connections/botpress/complete', async (request) => {
+      if (!repository?.completeBotpressConnection)
+        throw new Error('Botpress connections are not configured');
+      const code = request.headers['x-openclasp-pairing-code'];
+      if (typeof code !== 'string' || code.length > 100 || !code.startsWith('oc_bp_')) {
+        const error = new Error('Botpress pairing code required');
+        Object.assign(error, { statusCode: 401 });
+        throw error;
+      }
+      const value = z
+        .object({
+          runtimeEndpoint: z.string().url().max(2048),
+          credentialPublicKey: z.string().min(1).max(8192),
+          profile: ConnectorAgentProfileSchema,
+        })
+        .strict()
+        .parse(request.body);
+      return repository.completeBotpressConnection(code, value);
+    });
     router.get('/v0.1/runtime/bootstrap', async (request) => {
       const owner = operatorId(request);
       const agentId = boundAgentId(request);
@@ -601,51 +695,6 @@ export function buildApi(
         .parse(request.body);
       return repository.saveSettings(owner, value);
     });
-    router.post('/v0.1/provider-connections', async (request) => {
-      const owner = operatorId(request);
-      if (!repository?.issueAgentAccessToken || !owner)
-        throw new Error('Hosted provider connections are not configured');
-      const value = z
-        .object({
-          provider: z.enum(['botpress', 'custom']),
-          agentName: z.string().trim().min(1).max(100),
-          projectName: z.string().trim().min(1).max(100),
-          description: z.string().trim().min(1).max(500),
-          capabilities: z.array(z.string().trim().min(1).max(100)).min(1).max(100),
-          limitations: z.array(z.string().trim().min(1).max(300)).max(100).default([]),
-          expiresInDays: z.number().int().min(1).max(365).default(365),
-        })
-        .parse(request.body);
-      const created = await createHostedProviderAgent(repository, owner, value);
-      try {
-        const accessToken = await repository.issueAgentAccessToken(owner, created.agent.agentId, {
-          name: 'Botpress',
-          expiresInDays: value.expiresInDays,
-        });
-        return { ...created, provider: value.provider, accessToken };
-      } catch (error) {
-        if (repository.deleteAgent)
-          await repository.deleteAgent(owner, created.agent.agentId).catch(() => undefined);
-        throw error;
-      }
-    });
-    router.post('/v0.1/quickstart/agent', async (request) => {
-      const owner = operatorId(request);
-      if (!repository || !owner) throw new Error('Hosted persistence is not configured');
-      const value = z
-        .object({
-          agentName: z.string().trim().min(1).max(100),
-          projectName: z.string().trim().min(1).max(100).default('My agents'),
-          description: z.string().trim().min(1).max(500),
-          framework: z.string().trim().min(1).max(100).optional(),
-          capabilities: z.array(z.string().trim().min(1).max(100)).min(1).max(20),
-          limitations: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
-        })
-        .strict()
-        .parse(request.body);
-      const created = await createDashboardAgent(repository, owner, value);
-      return created;
-    });
     router.post('/v0.1/agents', async (request) => {
       const owner = operatorId(request);
       const current = await scopedEngine(request);
@@ -677,6 +726,12 @@ export function buildApi(
         const publication = { agentId: id, published: false, updatedAt: new Date().toISOString() };
         await repository.upsert(owner, 'publication', id, publication);
         return publication;
+      }
+      if (repository.listAgentRuntimes) {
+        const runtime = (await repository.listAgentRuntimes(owner)).find(
+          (candidate) => candidate.agentId === id && candidate.status === 'verified',
+        );
+        if (!runtime) throw new Error('Verify the agent runtime before publishing');
       }
       const previous = await repository.getPublishedAgent(id);
       const card = await repository.publishAgent(
@@ -714,6 +769,12 @@ export function buildApi(
       };
       await repository.upsert(owner, 'agent_profile', id, agent);
       if (value.autoPublish) {
+        if (repository.listAgentRuntimes) {
+          const runtime = (await repository.listAgentRuntimes(owner)).find(
+            (candidate) => candidate.agentId === id && candidate.status === 'verified',
+          );
+          if (!runtime) throw new Error('Verify the agent runtime before publishing');
+        }
         const previous = await repository.getPublishedAgent(id);
         const card = await repository.publishAgent(
           owner,
@@ -730,19 +791,6 @@ export function buildApi(
       }
       return agent;
     });
-    router.put('/v0.1/agents/:id/runtime', async (request) => {
-      const owner = operatorId(request);
-      if (!repository?.registerAgentRuntime || !owner)
-        throw new Error('Hosted runtime delivery is not configured');
-      const endpoint = z
-        .object({ endpoint: z.string().url().max(2048) })
-        .parse(request.body).endpoint;
-      return repository.registerAgentRuntime(
-        owner,
-        (request.params as { id: string }).id,
-        endpoint,
-      );
-    });
     router.delete('/v0.1/agents/:id/runtime', async (request) => {
       const owner = operatorId(request);
       if (!repository?.disableAgentRuntime || !owner)
@@ -754,18 +802,6 @@ export function buildApi(
       if (!repository?.listAgentAccessTokens || !owner)
         throw new Error('Agent access tokens are not configured');
       return repository.listAgentAccessTokens(owner, (request.params as { id: string }).id);
-    });
-    router.post('/v0.1/agents/:id/access-tokens', async (request) => {
-      const owner = operatorId(request);
-      if (!repository?.issueAgentAccessToken || !owner)
-        throw new Error('Agent access tokens are not configured');
-      const value = z
-        .object({
-          name: z.string().trim().min(1).max(100),
-          expiresInDays: z.number().int().min(1).max(365).default(365),
-        })
-        .parse(request.body);
-      return repository.issueAgentAccessToken(owner, (request.params as { id: string }).id, value);
     });
     router.delete('/v0.1/agents/:id/access-tokens/:tokenId', async (request) => {
       const owner = operatorId(request);

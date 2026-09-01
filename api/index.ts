@@ -25,6 +25,14 @@ const ready = app.ready();
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+function isPublicConnectorClaimRoute(method: string, requestUrl: string) {
+  const path = new URL(requestUrl, 'https://openclasp.local').pathname;
+  if (method === 'POST' && path === '/v0.1/provider-connections/botpress/complete') return true;
+  if (method === 'POST' && path === '/v0.1/connector-claims') return true;
+  if (method === 'GET' && /^\/v0\.1\/connector-claims\/[0-9a-f-]+$/.test(path)) return true;
+  return method === 'POST' && /^\/v0\.1\/connector-claims\/[0-9a-f-]+\/poll$/.test(path);
+}
+
 function reject(response: ServerResponse, statusCode: number, error: string) {
   response.statusCode = statusCode;
   response.setHeader('content-type', 'application/json');
@@ -41,6 +49,12 @@ export default async function handler(request: IncomingMessage, response: Server
   const target = incoming.searchParams.get('path');
   if (target) request.url = target;
   if ((request.url ?? '').startsWith('/v0.1/')) {
+    if (isPublicConnectorClaimRoute(request.method ?? 'GET', request.url ?? '/')) {
+      request.headers['x-openclasp-internal-auth'] = internalAuthSecret;
+      await ready;
+      app.server.emit('request', request, response);
+      return;
+    }
     const authorization = request.headers.authorization;
     const bearerToken = authorization?.startsWith('Bearer ') ? authorization.slice(7) : undefined;
     const dashboardToken = bearerToken

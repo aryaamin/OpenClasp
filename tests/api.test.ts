@@ -327,12 +327,8 @@ describe('HTTP API', () => {
           payload: { endpoint: 'https://agent.example/openclasp' },
         })
       ).statusCode,
-    ).toBe(200);
-    expect(calls).toEqual([
-      'dashboard:user-a',
-      'settings:user-b',
-      'runtime:user-a:agent-a:https://agent.example/openclasp',
-    ]);
+    ).toBe(404);
+    expect(calls).toEqual(['dashboard:user-a', 'settings:user-b']);
     expect(
       (
         await app.inject({
@@ -431,13 +427,7 @@ describe('HTTP API', () => {
       headers: { 'x-openclasp-operator': 'user-a' },
       payload: { name: 'Botpress', expiresInDays: 365 },
     });
-    expect(issuedToken.statusCode).toBe(200);
-    expect(issuedToken.json()).toMatchObject({
-      agentId: 'agent-a',
-      name: 'Botpress',
-      scopes: ['mcp:access', 'runtime:connect'],
-    });
-    expect(calls.at(-1)).toBe('issue-token:user-a:agent-a:Botpress:365');
+    expect(issuedToken.statusCode).toBe(404);
     expect(
       (
         await app.inject({
@@ -673,16 +663,7 @@ describe('HTTP API', () => {
         expiresInDays: 365,
       },
     });
-    expect(providerConnection.statusCode).toBe(200);
-    expect(providerConnection.json()).toMatchObject({
-      agent: {
-        name: 'Recruiting agent',
-        framework: 'Botpress',
-        identityMode: 'owner_managed',
-      },
-      accessToken: { name: 'Botpress', scopes: ['mcp:access', 'runtime:connect'] },
-    });
-    expect(calls.at(-1)).toMatch(/^issue-token:user-a:agent_.*:Botpress:365$/);
+    expect(providerConnection.statusCode).toBe(404);
     const removedConversationRoute = await app.inject({
       method: 'POST',
       url: '/a2a/temporary/agent-a',

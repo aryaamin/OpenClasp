@@ -23,6 +23,8 @@ import {
   type LiveSessionEvent,
   type LiveSessionOffer,
   type PublicAgentCard,
+  type ConnectorAgentProfile,
+  type ConnectorProfileRequest,
 } from '../../protocol/src/index.js';
 import { createPublicKey, verify } from 'node:crypto';
 export { createIdentity } from '../../core/src/index.js';
@@ -267,6 +269,19 @@ export class OpenClaspClient {
   heartbeatRuntime(): Promise<{ status: 'online' | 'offline'; checkedAt: string }> {
     return this.request('/runtime/heartbeat', { method: 'POST' });
   }
+  createConnectorClaim(input: {
+    runtimeEndpoint: string;
+    credentialPublicKey: string;
+    profile: ConnectorAgentProfile;
+  }): Promise<ConnectorClaimStart> {
+    return this.request('/connector-claims', { method: 'POST', body: JSON.stringify(input) });
+  }
+  pollConnectorClaim(claimId: string, claimSecret: string): Promise<ConnectorClaimPoll> {
+    return this.request(`/connector-claims/${encodeURIComponent(claimId)}/poll`, {
+      method: 'POST',
+      headers: { 'x-openclasp-claim-secret': claimSecret },
+    });
+  }
 }
 
 export type RuntimeBootstrap = {
@@ -284,6 +299,21 @@ export type RuntimeConnection = {
   status: 'verified';
   verifiedAt: string;
   verificationKey: string;
+};
+
+export type ConnectorClaimStart = {
+  claimId: string;
+  claimSecret: string;
+  confirmationUrl: string;
+  status: 'pending';
+  expiresAt: string;
+  pollIntervalSeconds: number;
+};
+
+export type ConnectorClaimPoll = {
+  status: 'pending' | 'approved' | 'rejected' | 'connected' | 'expired';
+  agentId?: string;
+  credentialCiphertext?: string;
 };
 
 export function createSignedEvent(
@@ -541,6 +571,10 @@ export class HttpAgentRuntimeAdapter implements AgentRuntimeAdapter {
       accepted: decision.accepted === true,
       ...(typeof decision.sessionId === 'string' ? { sessionId: decision.sessionId } : {}),
     };
+  }
+
+  describeProfile(request: ConnectorProfileRequest) {
+    return this.post<ConnectorAgentProfile>('/openclasp/profile', request);
   }
 
   async activateSession(session: LiveSessionActivation) {

@@ -8,6 +8,8 @@ export const HOSTED_MIGRATIONS = [
   { version: 3, name: 'remove_hosted_conversations' },
   { version: 4, name: 'adaptive_assurance_probes' },
   { version: 5, name: 'assurance_decision_learning' },
+  { version: 6, name: 'connector_claims' },
+  { version: 7, name: 'provider_connections' },
 ] as const;
 
 async function applyBaseline(sql: Sql) {
@@ -405,6 +407,62 @@ async function addAssuranceDecisionLearning(sql: Sql) {
   `;
 }
 
+async function addConnectorClaims(sql: Sql) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_connector_claims (
+      claim_id UUID PRIMARY KEY,
+      secret_hash TEXT NOT NULL,
+      runtime_endpoint TEXT NOT NULL,
+      credential_public_key TEXT NOT NULL,
+      profile JSONB NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'connected', 'expired')),
+      operator_id TEXT,
+      agent_id TEXT,
+      credential_ciphertext TEXT,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      decided_at TIMESTAMPTZ,
+      connected_at TIMESTAMPTZ
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_connector_claims_expiry
+    ON openclasp_connector_claims(status, expires_at)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_connector_claims_owner
+    ON openclasp_connector_claims(operator_id, created_at DESC)
+  `;
+}
+
+async function addProviderConnections(sql: Sql) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS openclasp_provider_connections (
+      connection_id UUID PRIMARY KEY,
+      operator_id TEXT NOT NULL,
+      provider TEXT NOT NULL CHECK (provider IN ('botpress')),
+      agent_name TEXT NOT NULL,
+      code_hash TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'connected', 'expired')),
+      agent_id TEXT,
+      runtime_endpoint TEXT,
+      credential_public_key TEXT,
+      credential_ciphertext TEXT,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      connected_at TIMESTAMPTZ
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_provider_connections_owner
+    ON openclasp_provider_connections(operator_id, created_at DESC)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS openclasp_provider_connections_expiry
+    ON openclasp_provider_connections(status, expires_at)
+  `;
+}
+
 export async function runHostedMigrations(sql: Sql): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS openclasp_schema_migrations (
@@ -429,6 +487,8 @@ export async function runHostedMigrations(sql: Sql): Promise<void> {
     if (migration.version === 3) await removeHostedConversations(sql);
     if (migration.version === 4) await addAdaptiveAssuranceProbes(sql);
     if (migration.version === 5) await addAssuranceDecisionLearning(sql);
+    if (migration.version === 6) await addConnectorClaims(sql);
+    if (migration.version === 7) await addProviderConnections(sql);
     await sql`
       INSERT INTO openclasp_schema_migrations(version, name)
       VALUES (${migration.version}, ${migration.name})
@@ -489,4 +549,14 @@ export async function verifyHostedMigrations(sql: Sql): Promise<void> {
     !decisionTables[0]?.evaluations
   )
     throw new Error('Assurance decision learning tables are missing; run `pnpm migrate`');
+  const connectorTables = await sql`
+    SELECT to_regclass('public.openclasp_connector_claims') AS claims
+  `;
+  if (!connectorTables[0]?.claims)
+    throw new Error('Connector claim table is missing; run `pnpm migrate`');
+  const providerTables = await sql`
+    SELECT to_regclass('public.openclasp_provider_connections') AS connections
+  `;
+  if (!providerTables[0]?.connections)
+    throw new Error('Provider connection table is missing; run `pnpm migrate`');
 }

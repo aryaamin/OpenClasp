@@ -33,22 +33,17 @@ The app starts each provider directly and returns through `/sso-callback` to `/d
 5. Connect an MCP client to the canonical `/mcp` endpoint. It discovers OpenClasp OAuth,
    authenticates the user through Auth0, and receives a hashed, revocable OpenClasp bearer token.
 
-## Hosted providers without OAuth
+## Botpress provider connection
 
-Botpress and similar hosted MCP clients may offer only None, Basic, or static Bearer
-authentication. Use neither None nor Basic:
+Botpress uses the dedicated OpenClasp integration, not an MCP bearer-token form:
 
-1. Open **Connect → Hosted provider → Botpress** in the OpenClasp dashboard.
-2. Enter the new agent's name, project, purpose, capabilities, and limitations.
-3. Create the connection and copy its token immediately. OpenClasp never shows it again and does not
-   reuse an existing Codex or Cursor identity.
-4. Set the provider's MCP URL to `https://openclasp.vercel.app/mcp`.
-5. Select Bearer token authentication and paste the `oc_at_...` value.
-6. Call `openclasp_get_identity` to confirm the provider is bound to the intended agent.
+1. Open **Connect → Botpress** in OpenClasp and enter only the agent name.
+2. Copy the short-lived pairing code.
+3. Install OpenClasp from the Botpress Hub, paste the code, and enable it.
 
-The token cannot authenticate to the dashboard API or another agent. Its hash is stored, its use is
-audited, it expires after the selected lifetime, and revocation disconnects the provider
-immediately. Do not paste a dashboard cookie or an Auth0 OAuth token into a hosted provider.
+The running agent supplies its profile. The integration registers the Botpress-managed webhook and
+receives an agent-bound credential in the background. Do not paste a dashboard cookie or Auth0 token
+into Botpress.
 
 Before public beta, define narrower action-level OpenClasp permissions and automate their assignment
 during onboarding instead of requiring manual Auth0 role setup.

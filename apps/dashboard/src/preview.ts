@@ -649,6 +649,23 @@ export function applyPreviewRequest(
     return { data, settings: next, result: next };
   }
 
+  if (path === '/v0.1/provider-connections/botpress' && method === 'POST') {
+    const now = new Date();
+    return {
+      data,
+      settings,
+      result: {
+        connectionId: crypto.randomUUID(),
+        provider: 'botpress',
+        agentName: String(body.agentName ?? 'Botpress agent'),
+        status: 'pending',
+        code: 'oc_bp_preview_pairing_code',
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 15 * 60_000).toISOString(),
+      },
+    };
+  }
+
   if (path === '/v0.1/provider-connections' && method === 'POST') {
     const suffix = crypto.randomUUID();
     const projectName = String(body.projectName ?? 'Hosted agents');

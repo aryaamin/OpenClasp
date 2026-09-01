@@ -5,6 +5,8 @@ export * from './hosted.js';
 export * from './hosted-migrations.js';
 export * from './access-token.js';
 export * from './onboarding.js';
+export * from './connector-claim.js';
+export * from './provider-connection.js';
 export * from './relay.js';
 export * from './runtime.js';
 export * from './source-record.js';

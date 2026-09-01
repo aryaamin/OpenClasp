@@ -64,6 +64,21 @@ import {
 import type { AgentProfile } from './onboarding.js';
 import type { AgentInstallation } from './onboarding.js';
 import {
+  connectorClaimExpired,
+  createConnectorAgent,
+  createConnectorClaimInput,
+  encryptConnectorCredential,
+  matchesConnectorClaimSecret,
+  publicConnectorClaim,
+  type ConnectorClaim,
+} from './connector-claim.js';
+import {
+  createProviderConnectionInput,
+  hashProviderConnectionCode,
+  publicProviderConnection,
+  type ProviderConnection,
+} from './provider-connection.js';
+import {
   agentAccessTokenClientId,
   agentAccessTokenId,
   createAgentAccessToken,
@@ -621,6 +636,309 @@ export class HostedRepository {
 
   ensureSchema(): Promise<void> {
     return (this.initialized ??= verifyHostedMigrations(this.sql));
+  }
+
+  private connectorClaimFromRow(row: Record<string, any>): ConnectorClaim {
+    return {
+      claimId: String(row.claim_id),
+      secretHash: String(row.secret_hash),
+      runtimeEndpoint: String(row.runtime_endpoint),
+      credentialPublicKey: String(row.credential_public_key),
+      profile: row.profile,
+      status: row.status,
+      ...(row.operator_id ? { operatorId: String(row.operator_id) } : {}),
+      ...(row.agent_id ? { agentId: String(row.agent_id) } : {}),
+      ...(row.credential_ciphertext
+        ? { credentialCiphertext: String(row.credential_ciphertext) }
+        : {}),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      expiresAt: new Date(String(row.expires_at)).toISOString(),
+      ...(row.decided_at ? { decidedAt: new Date(String(row.decided_at)).toISOString() } : {}),
+      ...(row.connected_at
+        ? { connectedAt: new Date(String(row.connected_at)).toISOString() }
+        : {}),
+    };
+  }
+
+  private providerConnectionFromRow(row: Record<string, any>): ProviderConnection {
+    return {
+      connectionId: String(row.connection_id),
+      operatorId: String(row.operator_id),
+      provider: row.provider,
+      agentName: String(row.agent_name),
+      codeHash: String(row.code_hash),
+      status: row.status,
+      ...(row.agent_id ? { agentId: String(row.agent_id) } : {}),
+      ...(row.runtime_endpoint ? { runtimeEndpoint: String(row.runtime_endpoint) } : {}),
+      ...(row.credential_public_key
+        ? { credentialPublicKey: String(row.credential_public_key) }
+        : {}),
+      ...(row.credential_ciphertext
+        ? { credentialCiphertext: String(row.credential_ciphertext) }
+        : {}),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      expiresAt: new Date(String(row.expires_at)).toISOString(),
+      ...(row.connected_at
+        ? { connectedAt: new Date(String(row.connected_at)).toISOString() }
+        : {}),
+    };
+  }
+
+  async createProviderConnection(operatorId: string, provider: 'botpress', agentName: string) {
+    await this.ensureSchema();
+    await this.sql`
+      DELETE FROM openclasp_provider_connections
+      WHERE expires_at < NOW() - INTERVAL '7 days'
+    `;
+    const { connection, code } = createProviderConnectionInput(operatorId, provider, agentName);
+    await this.sql`
+      INSERT INTO openclasp_provider_connections(
+        connection_id, operator_id, provider, agent_name, code_hash, status, expires_at, created_at
+      ) VALUES (
+        ${connection.connectionId}, ${connection.operatorId}, ${connection.provider},
+        ${connection.agentName}, ${connection.codeHash}, 'pending',
+        ${connection.expiresAt}, ${connection.createdAt}
+      )
+    `;
+    return { ...publicProviderConnection(connection), code };
+  }
+
+  async getProviderConnection(operatorId: string, connectionId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT * FROM openclasp_provider_connections
+      WHERE connection_id = ${connectionId} AND operator_id = ${operatorId}
+      LIMIT 1
+    `;
+    if (!rows[0]) throw new Error('Provider connection not found');
+    const connection = this.providerConnectionFromRow(rows[0]);
+    if (connection.status === 'pending' && Date.parse(connection.expiresAt) <= Date.now()) {
+      await this.sql`
+        UPDATE openclasp_provider_connections SET status = 'expired'
+        WHERE connection_id = ${connectionId} AND status = 'pending'
+      `;
+      connection.status = 'expired';
+    }
+    return publicProviderConnection(connection);
+  }
+
+  async completeBotpressConnection(
+    code: string,
+    input: {
+      runtimeEndpoint: string;
+      credentialPublicKey: string;
+      profile: import('../../protocol/src/index.js').ConnectorAgentProfile;
+    },
+  ) {
+    await this.ensureSchema();
+    const codeHash = hashProviderConnectionCode(code);
+    const rows = await this.sql`
+      SELECT * FROM openclasp_provider_connections
+      WHERE code_hash = ${codeHash} AND provider = 'botpress'
+      LIMIT 1
+    `;
+    if (!rows[0]) throw new Error('Invalid Botpress pairing code');
+    const connection = this.providerConnectionFromRow(rows[0]);
+    if (Date.parse(connection.expiresAt) <= Date.now()) {
+      await this.sql`
+        UPDATE openclasp_provider_connections SET status = 'expired'
+        WHERE connection_id = ${connection.connectionId} AND status = 'pending'
+      `;
+      throw new Error('Botpress pairing code expired');
+    }
+    if (connection.status === 'connected') {
+      if (!connection.agentId || !connection.credentialCiphertext)
+        throw new Error('Botpress connection is incomplete');
+      return {
+        agentId: connection.agentId,
+        credentialCiphertext: connection.credentialCiphertext,
+        status: 'connected' as const,
+      };
+    }
+    if (connection.status !== 'pending') throw new Error('Botpress pairing code is unavailable');
+    await resolvePublicRuntimeEndpoint(input.runtimeEndpoint);
+    const { agent } = await createConnectorAgent(
+      this,
+      connection.operatorId,
+      connection.agentName,
+      { ...input.profile, framework: 'Botpress' },
+    );
+    const accessToken = await this.issueAgentAccessToken(connection.operatorId, agent.agentId, {
+      name: 'Botpress',
+      expiresInDays: 365,
+    });
+    const credentialCiphertext = encryptConnectorCredential(
+      input.credentialPublicKey,
+      accessToken.token,
+    );
+    await this.sql`
+      UPDATE openclasp_provider_connections
+      SET status = 'connected', agent_id = ${agent.agentId},
+          runtime_endpoint = ${input.runtimeEndpoint},
+          credential_public_key = ${input.credentialPublicKey},
+          credential_ciphertext = ${credentialCiphertext}, connected_at = NOW()
+      WHERE connection_id = ${connection.connectionId} AND status = 'pending'
+    `;
+    return { agentId: agent.agentId, credentialCiphertext, status: 'connected' as const };
+  }
+
+  async createConnectorClaim(input: {
+    runtimeEndpoint: string;
+    credentialPublicKey: string;
+    profile: import('../../protocol/src/index.js').ConnectorAgentProfile;
+  }) {
+    await this.ensureSchema();
+    await this.sql`
+      DELETE FROM openclasp_connector_claims
+      WHERE expires_at < NOW() - INTERVAL '7 days'
+    `;
+    await resolvePublicRuntimeEndpoint(input.runtimeEndpoint);
+    const { claim, claimSecret } = createConnectorClaimInput(input);
+    await this.sql`
+      INSERT INTO openclasp_connector_claims(
+        claim_id, secret_hash, runtime_endpoint, credential_public_key, profile,
+        status, expires_at, created_at
+      ) VALUES (
+        ${claim.claimId}, ${claim.secretHash}, ${claim.runtimeEndpoint},
+        ${claim.credentialPublicKey}, ${JSON.stringify(claim.profile)}::jsonb,
+        'pending', ${claim.expiresAt}, ${claim.createdAt}
+      )
+    `;
+    return { ...publicConnectorClaim(claim), claimSecret };
+  }
+
+  async getConnectorClaim(claimId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT * FROM openclasp_connector_claims WHERE claim_id = ${claimId} LIMIT 1
+    `;
+    if (!rows[0]) throw new Error('Connector claim not found');
+    const claim = this.connectorClaimFromRow(rows[0]);
+    if (
+      (claim.status === 'pending' || claim.status === 'approved') &&
+      connectorClaimExpired(claim)
+    ) {
+      await this.sql`
+        UPDATE openclasp_connector_claims SET status = 'expired', credential_ciphertext = NULL
+        WHERE claim_id = ${claimId} AND status IN ('pending', 'approved')
+      `;
+      if (claim.agentId)
+        await this.sql`
+          UPDATE openclasp_agent_access_tokens SET revoked_at = COALESCE(revoked_at, NOW())
+          WHERE agent_id = ${claim.agentId} AND name = 'Runtime connector'
+        `;
+      claim.status = 'expired';
+    }
+    return publicConnectorClaim(claim);
+  }
+
+  async pollConnectorClaim(claimId: string, claimSecret: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT * FROM openclasp_connector_claims WHERE claim_id = ${claimId} LIMIT 1
+    `;
+    if (!rows[0]) throw new Error('Connector claim not found');
+    const claim = this.connectorClaimFromRow(rows[0]);
+    if (!matchesConnectorClaimSecret(claim.secretHash, claimSecret))
+      throw new Error('Invalid connector claim secret');
+    if (
+      (claim.status === 'pending' || claim.status === 'approved') &&
+      connectorClaimExpired(claim)
+    ) {
+      await this.sql`
+        UPDATE openclasp_connector_claims SET status = 'expired', credential_ciphertext = NULL
+        WHERE claim_id = ${claimId} AND status IN ('pending', 'approved')
+      `;
+      if (claim.agentId)
+        await this.sql`
+          UPDATE openclasp_agent_access_tokens SET revoked_at = COALESCE(revoked_at, NOW())
+          WHERE agent_id = ${claim.agentId} AND name = 'Runtime connector'
+        `;
+      return { status: 'expired' as const };
+    }
+    return {
+      status: claim.status,
+      ...(claim.agentId ? { agentId: claim.agentId } : {}),
+      ...(claim.credentialCiphertext ? { credentialCiphertext: claim.credentialCiphertext } : {}),
+    };
+  }
+
+  async approveConnectorClaim(operatorId: string, claimId: string, name: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      SELECT * FROM openclasp_connector_claims WHERE claim_id = ${claimId} LIMIT 1
+    `;
+    if (!rows[0]) throw new Error('Connector claim not found');
+    const claim = this.connectorClaimFromRow(rows[0]);
+    if (connectorClaimExpired(claim)) throw new Error('Connector claim expired');
+    if (claim.status === 'rejected') throw new Error('Connector claim was rejected');
+    if (claim.status !== 'pending') {
+      if (claim.operatorId !== operatorId)
+        throw new Error('Connector claim belongs to another account');
+      return publicConnectorClaim(claim);
+    }
+    const reserved = await this.sql`
+      UPDATE openclasp_connector_claims
+      SET status = 'approved', operator_id = ${operatorId}, decided_at = NOW()
+      WHERE claim_id = ${claimId} AND status = 'pending' AND expires_at > NOW()
+      RETURNING claim_id
+    `;
+    if (!reserved.length) throw new Error('Connector claim is no longer pending');
+    try {
+      const { agent } = await createConnectorAgent(this, operatorId, name, claim.profile);
+      const accessToken = await this.issueAgentAccessToken(operatorId, agent.agentId, {
+        name: 'Runtime connector',
+        expiresInDays: 365,
+      });
+      const credentialCiphertext = encryptConnectorCredential(
+        claim.credentialPublicKey,
+        accessToken.token,
+      );
+      await this.sql`
+        UPDATE openclasp_connector_claims
+        SET agent_id = ${agent.agentId}, credential_ciphertext = ${credentialCiphertext}
+        WHERE claim_id = ${claimId} AND operator_id = ${operatorId}
+      `;
+      return {
+        ...publicConnectorClaim({
+          ...claim,
+          status: 'approved',
+          operatorId,
+          agentId: agent.agentId,
+          credentialCiphertext,
+          decidedAt: new Date().toISOString(),
+        }),
+        agent,
+      };
+    } catch (error) {
+      await this.sql`
+        UPDATE openclasp_connector_claims
+        SET status = 'rejected', credential_ciphertext = NULL
+        WHERE claim_id = ${claimId} AND operator_id = ${operatorId} AND agent_id IS NULL
+      `;
+      throw error;
+    }
+  }
+
+  async rejectConnectorClaim(operatorId: string, claimId: string) {
+    await this.ensureSchema();
+    const rows = await this.sql`
+      UPDATE openclasp_connector_claims
+      SET status = 'rejected', operator_id = ${operatorId}, decided_at = NOW()
+      WHERE claim_id = ${claimId} AND status = 'pending' AND expires_at > NOW()
+      RETURNING *
+    `;
+    if (!rows[0]) throw new Error('Connector claim is no longer pending');
+    return publicConnectorClaim(this.connectorClaimFromRow(rows[0]));
+  }
+
+  async completeConnectorClaim(agentId: string) {
+    await this.ensureSchema();
+    await this.sql`
+      UPDATE openclasp_connector_claims
+      SET status = 'connected', credential_ciphertext = NULL, connected_at = NOW()
+      WHERE agent_id = ${agentId} AND status = 'approved'
+    `;
   }
 
   private async appendSourceRecord(
@@ -1631,6 +1949,7 @@ export class HostedRepository {
       WHERE operator_id = ${operatorId} AND kind = 'agent_profile' AND record_id = ${agentId}
     `;
     await this.touchAgentPresence(operatorId, agentId);
+    await this.completeConnectorClaim(agentId);
     return {
       agentId,
       endpoint,

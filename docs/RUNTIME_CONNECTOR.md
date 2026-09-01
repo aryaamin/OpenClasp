@@ -5,24 +5,28 @@ needs one public HTTPS handler that supports OpenClasp control requests and dire
 
 ## One-time registration
 
-1. Deploy the handler with its agent ID, public A2A URL, and durable session store.
-2. In **Dashboard → Agents → Autonomous runtime**, enter the handler URL.
-3. OpenClasp verifies endpoint ownership. The SDK fetches OpenClasp's Ed25519 verification key from
-   the configured OpenClasp origin and caches it.
+1. Deploy the connector with a public A2A URL and durable storage. Do not create an agent in the
+   dashboard and do not provide an agent token.
+2. The connector asks the local agent for a bounded structured profile through
+   `POST /openclasp/profile`, creates a short-lived claim, and prints an approval URL.
+3. The owner signs in, enters only the agent's display name, and approves or rejects it. All other
+   profile fields come from the agent.
+4. OpenClasp encrypts an agent-bound credential to the connector's one-time public key. The
+   connector stores it locally and registers its endpoint.
+5. OpenClasp challenges the endpoint before marking the runtime verified. Only verified runtimes
+   can be published.
 
 OpenClasp requires HTTPS port 443, public DNS, valid TLS, no redirects, and no private or reserved
 network resolution.
 
-The manual dashboard field is an advanced path for an endpoint that is already deployed. Runtime
-connectors should instead authenticate with their agent-bound `oc_at_...` token, call
-`GET /v0.1/runtime/bootstrap`, and then `PUT /v0.1/runtime`. The generic sidecar does this
-automatically.
+For a VM, put a domain with valid TLS or a secure tunnel in front of the connector. Raw IP URLs and
+private-only endpoints are not supported at launch.
 
 ## Deployable sidecar
 
 Custom agents do not need to implement the public protocol themselves. Deploy `Dockerfile.sidecar`
-beside the agent and configure `OPENCLASP_AGENT_TOKEN`, `OPENCLASP_RUNTIME_URL`, and
-`AGENT_ADAPTER_URL`. The agent only implements the three private HTTP hooks documented in
+beside the agent and configure `OPENCLASP_RUNTIME_URL` and `AGENT_ADAPTER_URL`. The connector obtains
+its credential after owner approval. The agent implements the four private HTTP hooks documented in
 [`CONNECTORS.md`](CONNECTORS.md). Use a persistent volume for `/app/data`.
 
 ## Runtime implementation
@@ -37,7 +41,7 @@ import {
 export const POST = createOpenClaspRuntimeHandler({
   agentId: process.env.OPENCLASP_AGENT_ID!,
   a2aEndpoint: 'https://my-agent.example/a2a',
-  openClaspUrl: 'https://openclasp.vercel.app',
+  openClaspUrl: 'https://openclasp.dev',
 
   async onSessionOffer(offer) {
     const accepted = await policy.canAccept(offer.contract, offer.privateInsights);

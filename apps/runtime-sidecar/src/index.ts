@@ -1,8 +1,17 @@
 import { createServer, type IncomingHttpHeaders } from 'node:http';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  generateKeyPairSync,
+  privateDecrypt,
+  randomBytes,
+} from 'node:crypto';
+import {
+  CONNECTOR_PROFILE_REQUEST,
+  ConnectorAgentProfileSchema,
   LiveSessionActivationSchema,
   type LiveSessionActivation,
 } from '../../../packages/protocol/src/index.js';
@@ -100,6 +109,26 @@ function required(name: string) {
   return value;
 }
 
+async function readOptionalFile(filename: string) {
+  try {
+    return (await readFile(filename, 'utf8')).trim() || undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+async function saveCredential(filename: string, credential: string) {
+  await mkdir(dirname(filename), { recursive: true });
+  const temporary = `${filename}.${process.pid}.tmp`;
+  await writeFile(temporary, `${credential}\n`, { mode: 0o600 });
+  await rename(temporary, filename);
+  await chmod(filename, 0o600);
+}
+
+const wait = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
 function sdkBaseUrl(value: string) {
   return `${value.replace(/\/$/, '').replace(/\/v0\.1$/, '')}/v0.1`;
 }
@@ -125,23 +154,59 @@ async function readBody(request: NodeJS.ReadableStream, maximumBytes = 2_000_000
   return Buffer.concat(chunks).toString('utf8');
 }
 
-const accessToken = required('OPENCLASP_AGENT_TOKEN');
 const runtimeUrl = new URL(required('OPENCLASP_RUNTIME_URL'));
 if (runtimeUrl.protocol !== 'https:') throw new Error('OPENCLASP_RUNTIME_URL must use HTTPS');
 const agentAdapterUrl = required('AGENT_ADAPTER_URL');
-const openClaspUrl = process.env.OPENCLASP_URL?.trim() || 'https://openclasp.vercel.app';
-const client = new OpenClaspClient(sdkBaseUrl(openClaspUrl), accessToken);
-const bootstrap = await client.getRuntimeBootstrap();
-const sessions = new JsonFileRuntimeSessionStore(
-  process.env.OPENCLASP_SESSION_FILE?.trim() || './data/openclasp-sessions.json',
-  process.env.OPENCLASP_SESSION_SECRET?.trim() || accessToken,
-);
+const openClaspUrl = process.env.OPENCLASP_URL?.trim() || 'https://openclasp.dev';
+const credentialFile =
+  process.env.OPENCLASP_CREDENTIAL_FILE?.trim() || './data/openclasp-agent-token';
 const adapter = new HttpAgentRuntimeAdapter(agentAdapterUrl, {
   ...(process.env.AGENT_ADAPTER_TOKEN?.trim()
     ? { bearerToken: process.env.AGENT_ADAPTER_TOKEN.trim() }
     : {}),
   timeoutMs: Number(process.env.AGENT_ADAPTER_TIMEOUT_MS ?? 30_000),
 });
+let accessToken =
+  process.env.OPENCLASP_AGENT_TOKEN?.trim() || (await readOptionalFile(credentialFile));
+if (!accessToken) {
+  const profile = ConnectorAgentProfileSchema.parse(
+    await adapter.describeProfile(CONNECTOR_PROFILE_REQUEST),
+  );
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+  const claimClient = new OpenClaspClient(sdkBaseUrl(openClaspUrl));
+  const claim = await claimClient.createConnectorClaim({
+    runtimeEndpoint: runtimeUrl.toString(),
+    credentialPublicKey: publicKey,
+    profile,
+  });
+  console.log(`Approve this agent: ${claim.confirmationUrl}`);
+  while (!accessToken) {
+    if (Date.parse(claim.expiresAt) <= Date.now()) throw new Error('Connector claim expired');
+    await wait(Math.max(2, claim.pollIntervalSeconds) * 1000);
+    const result = await claimClient.pollConnectorClaim(claim.claimId, claim.claimSecret);
+    if (result.status === 'rejected') throw new Error('Connector claim was rejected');
+    if (result.status === 'expired') throw new Error('Connector claim expired');
+    if (result.status === 'approved' && result.credentialCiphertext) {
+      const credential = privateDecrypt(
+        { key: privateKey, oaepHash: 'sha256' },
+        Buffer.from(result.credentialCiphertext, 'base64url'),
+      ).toString('utf8');
+      if (!credential.startsWith('oc_at_')) throw new Error('Invalid connector credential');
+      await saveCredential(credentialFile, credential);
+      accessToken = credential;
+    }
+  }
+}
+const client = new OpenClaspClient(sdkBaseUrl(openClaspUrl), accessToken);
+const bootstrap = await client.getRuntimeBootstrap();
+const sessions = new JsonFileRuntimeSessionStore(
+  process.env.OPENCLASP_SESSION_FILE?.trim() || './data/openclasp-sessions.json',
+  process.env.OPENCLASP_SESSION_SECRET?.trim() || accessToken,
+);
 const handler = createAgentRuntimeConnector({
   agentId: bootstrap.agentId,
   a2aEndpoint: runtimeUrl.toString(),

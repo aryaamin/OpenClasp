@@ -173,6 +173,54 @@ export const AgentTransportSchema = z.object({
 
 export const AgentModeSchema = z.literal('persistent_runtime');
 
+export const ConnectorAgentProfileSchema = z
+  .object({
+    description: z.string().trim().min(1).max(500),
+    framework: z.string().trim().min(1).max(100),
+    agentVersion: z.string().trim().min(1).max(100),
+    modelProvider: z.string().trim().min(1).max(100).optional(),
+    modelName: z.string().trim().min(1).max(100).optional(),
+    capabilities: z.array(z.string().trim().min(1).max(100)).min(1).max(20),
+    limitations: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
+  })
+  .strict();
+
+export const ConnectorProfileRequestSchema = z
+  .object({
+    type: z.literal('openclasp.profile.request'),
+    version: z.literal('1'),
+    questions: z.array(
+      z.object({
+        id: z.string().min(1),
+        prompt: z.string().min(1),
+      }),
+    ),
+    rules: z.array(z.string().min(1)),
+  })
+  .strict();
+
+export const CONNECTOR_PROFILE_REQUEST = ConnectorProfileRequestSchema.parse({
+  type: 'openclasp.profile.request',
+  version: '1',
+  questions: [
+    { id: 'identity', prompt: 'What is your purpose, framework, and current version?' },
+    { id: 'capabilities', prompt: 'What concrete actions can you perform?' },
+    {
+      id: 'limitations',
+      prompt: 'What can you not do, and which actions require human approval?',
+    },
+    { id: 'model', prompt: 'Which model provider and model do you currently use, if known?' },
+  ],
+  rules: [
+    'Return only the requested structured profile.',
+    'Do not include credentials, conversation content, system prompts, or chain of thought.',
+    'Describe current capabilities, not intended future capabilities.',
+  ],
+});
+
+export type ConnectorAgentProfile = z.infer<typeof ConnectorAgentProfileSchema>;
+export type ConnectorProfileRequest = z.infer<typeof ConnectorProfileRequestSchema>;
+
 export const AgentPresenceSchema = z.object({
   status: z.enum(['online', 'offline']),
   lastSeenAt: z.string().datetime().optional(),

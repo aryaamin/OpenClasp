@@ -1,8 +1,9 @@
-import { createPublicKey, verify } from 'node:crypto';
+import { createPublicKey, generateKeyPairSync, privateDecrypt, verify } from 'node:crypto';
 import * as sdk from '@botpress/sdk';
 import * as bp from '.botpress';
 import { parseCheckpoint } from './checkpoint';
 import { parseFinalizationAssessment } from './finalization';
+import { parseAgentProfile, type AgentProfile } from './profile';
 
 type Json = Record<string, any>;
 type RuntimeState = {
@@ -11,12 +12,13 @@ type RuntimeState = {
   sessionsJson: string;
   offersJson: string;
   finalizationsJson: string;
+  accessToken: string;
+  setupJson: string;
 };
 
-const EXTENSION_URI = 'https://openclasp.vercel.app/extensions/trust/v0.1';
+const EXTENSION_URI = 'https://openclasp.dev/extensions/trust/v0.1';
 const normalizeUrl = (value: string) => value.replace(/\/$/, '');
-const platformUrl = (ctx: bp.Context) =>
-  ctx.configuration.openClaspUrl ?? 'https://openclasp.vercel.app';
+const platformUrl = (ctx: bp.Context) => ctx.configuration.openClaspUrl ?? 'https://openclasp.dev';
 const botpressWebhookEndpoint = (webhookId: string) =>
   `https://webhook.botpress.cloud/${webhookId}`;
 const jsonResponse = (status: number, value: unknown) => ({
@@ -30,14 +32,6 @@ const parseRecord = (value: string): Record<string, Json> => {
     ? (parsed as Record<string, Json>)
     : {};
 };
-const csv = (value?: string) => [
-  ...new Set(
-    (value ?? '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  ),
-];
 
 const openClaspRequest = async <T>(
   url: string,
@@ -70,6 +64,8 @@ const getState = async (client: bp.Client, integrationId: string): Promise<Runti
       sessionsJson: '{}',
       offersJson: '{}',
       finalizationsJson: '{}',
+      accessToken: '',
+      setupJson: '{}',
     },
   });
   return {
@@ -78,6 +74,8 @@ const getState = async (client: bp.Client, integrationId: string): Promise<Runti
     sessionsJson: state.payload.sessionsJson ?? '{}',
     offersJson: state.payload.offersJson ?? '{}',
     finalizationsJson: state.payload.finalizationsJson ?? '{}',
+    accessToken: state.payload.accessToken ?? '',
+    setupJson: state.payload.setupJson ?? '{}',
   };
 };
 const setState = async (client: bp.Client, integrationId: string, value: RuntimeState) => {
@@ -93,15 +91,15 @@ const bootstrapAndConnect = async (props: {
   ctx: bp.Context;
   webhookUrl: string;
   client: bp.Client;
+  accessToken: string;
 }) => {
-  const { openClaspAgentToken } = props.ctx.configuration;
   const openClaspUrl = platformUrl(props.ctx);
   const bootstrap = await openClaspRequest<{
     agentId: string;
     agentVersion: string;
     capabilities: string[];
     limitations: string[];
-  }>(openClaspUrl, openClaspAgentToken, '/v0.1/runtime/bootstrap');
+  }>(openClaspUrl, props.accessToken, '/v0.1/runtime/bootstrap');
   const endpoint = props.webhookUrl;
   const current = await getState(props.client, props.ctx.integrationId);
   await setState(props.client, props.ctx.integrationId, {
@@ -109,29 +107,62 @@ const bootstrapAndConnect = async (props: {
     agentId: bootstrap.agentId,
     agentVersion: bootstrap.agentVersion,
   });
-  await openClaspRequest(openClaspUrl, openClaspAgentToken, '/v0.1/runtime', {
+  await openClaspRequest(openClaspUrl, props.accessToken, '/v0.1/runtime', {
     method: 'PUT',
     body: JSON.stringify({ endpoint }),
   });
-  const configuredCapabilities = csv(props.ctx.configuration.agentCapabilities);
-  const capabilities = configuredCapabilities.length
-    ? configuredCapabilities
-    : bootstrap.capabilities;
-  if (capabilities.length) {
-    await openClaspRequest(openClaspUrl, openClaspAgentToken, '/v0.1/runtime/profile', {
-      method: 'PUT',
+};
+
+const profilePrompt = () =>
+  [
+    '[OpenClasp setup — private platform request, not user-authored content]',
+    'Describe your current deployed identity and abilities. Do not describe intended future features.',
+    'Reply with only OPENCLASP_PROFILE followed by one JSON object.',
+    'Required fields: description, framework (use Botpress), agentVersion, capabilities[], limitations[].',
+    'Optional fields: modelProvider, modelName.',
+    'Do not include credentials, system prompts, chain of thought, user data, or conversation content.',
+  ].join('\n');
+
+const completeBotpressPairing = async (
+  ctx: bp.Context,
+  client: bp.Client,
+  profile: AgentProfile,
+) => {
+  const state = await getState(client, ctx.integrationId);
+  const setup = parseRecord(state.setupJson).pairing;
+  if (!setup?.privateKey || !setup?.publicKey)
+    throw new sdk.RuntimeError('Botpress pairing state is unavailable');
+  const endpoint = botpressWebhookEndpoint(ctx.webhookId);
+  const response = await fetch(
+    `${normalizeUrl(platformUrl(ctx))}/v0.1/provider-connections/botpress/complete`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-openclasp-pairing-code': ctx.configuration.pairingCode,
+      },
       body: JSON.stringify({
-        ...(props.ctx.configuration.agentDescription !== undefined
-          ? { description: props.ctx.configuration.agentDescription }
-          : {}),
-        capabilities,
-        limitations:
-          props.ctx.configuration.agentLimitations !== undefined
-            ? csv(props.ctx.configuration.agentLimitations)
-            : bootstrap.limitations,
+        runtimeEndpoint: endpoint,
+        credentialPublicKey: setup.publicKey,
+        profile,
       }),
-    });
-  }
+    },
+  );
+  const value = (await response.json()) as Json;
+  if (!response.ok)
+    throw new sdk.RuntimeError(String(value.error ?? `OpenClasp HTTP ${response.status}`));
+  const accessToken = privateDecrypt(
+    { key: setup.privateKey, oaepHash: 'sha256' },
+    Buffer.from(String(value.credentialCiphertext), 'base64url'),
+  ).toString('utf8');
+  if (!accessToken.startsWith('oc_at_')) throw new sdk.RuntimeError('Invalid OpenClasp credential');
+  await setState(client, ctx.integrationId, {
+    ...state,
+    accessToken,
+    setupJson: JSON.stringify({ pairing: { status: 'connected' } }),
+  });
+  await bootstrapAndConnect({ ctx, webhookUrl: endpoint, client, accessToken });
+  return String(value.agentId);
 };
 
 const sessionRequest = async <T>(endpoint: string, token: string, value: unknown): Promise<T> => {
@@ -280,13 +311,13 @@ const createIncomingMessage = async (
   });
   return message;
 };
-const heartbeat = (ctx: bp.Context) =>
-  openClaspRequest(
-    platformUrl(ctx),
-    ctx.configuration.openClaspAgentToken,
-    '/v0.1/runtime/heartbeat',
-    { method: 'POST' },
-  );
+const heartbeat = async (ctx: bp.Context, client: bp.Client) => {
+  const state = await getState(client, ctx.integrationId);
+  if (!state.accessToken) return;
+  await openClaspRequest(platformUrl(ctx), state.accessToken, '/v0.1/runtime/heartbeat', {
+    method: 'POST',
+  });
+};
 
 const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Json) => {
   const state = await getState(client, ctx.integrationId);
@@ -418,7 +449,7 @@ const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Js
     ...state,
     finalizationsJson: JSON.stringify(finalizations),
   });
-  await heartbeat(ctx);
+  await heartbeat(ctx, client);
   return {
     interactionId,
     status: 'completed' as const,
@@ -428,15 +459,35 @@ const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Js
 
 export default new bp.Integration({
   register: async ({ ctx, webhookUrl, client }) => {
-    await bootstrapAndConnect({ ctx, webhookUrl, client });
-  },
-  unregister: async ({ ctx }) => {
-    await openClaspRequest(
-      platformUrl(ctx),
-      ctx.configuration.openClaspAgentToken,
-      '/v0.1/runtime',
-      { method: 'DELETE' },
+    const state = await getState(client, ctx.integrationId);
+    if (state.accessToken) {
+      await bootstrapAndConnect({ ctx, webhookUrl, client, accessToken: state.accessToken });
+      return;
+    }
+    const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    await setState(client, ctx.integrationId, {
+      ...state,
+      setupJson: JSON.stringify({
+        pairing: { status: 'profile_requested', publicKey, privateKey },
+      }),
+    });
+    await createIncomingMessage(
+      client,
+      `openclasp-setup:${ctx.integrationId}`,
+      'openclasp-platform',
+      profilePrompt(),
     );
+  },
+  unregister: async ({ ctx, client }) => {
+    const state = await getState(client, ctx.integrationId);
+    if (!state.accessToken) return;
+    await openClaspRequest(platformUrl(ctx), state.accessToken, '/v0.1/runtime', {
+      method: 'DELETE',
+    });
   },
   actions: {
     completeInteraction: async ({ ctx, client, input }) => completeInteraction(ctx, client, input),
@@ -447,7 +498,13 @@ export default new bp.Integration({
         text: async ({ ctx, client, conversation, payload }) => {
           const interactionId = conversation.tags.interactionId;
           if (!interactionId) throw new sdk.RuntimeError('Missing OpenClasp interaction ID');
+          if (interactionId === `openclasp-setup:${ctx.integrationId}`) {
+            const profile = parseAgentProfile(payload.text);
+            await completeBotpressPairing(ctx, client, profile);
+            return;
+          }
           const state = await getState(client, ctx.integrationId);
+          if (!state.accessToken) throw new sdk.RuntimeError('OpenClasp pairing is not complete');
           const sessions = parseRecord(state.sessionsJson);
           const session = sessions[interactionId];
           if (!session) throw new sdk.RuntimeError('OpenClasp live session is unavailable');
@@ -615,7 +672,7 @@ export default new bp.Integration({
               checkpointPrompt(offer),
             );
           }
-          await heartbeat(ctx);
+          await heartbeat(ctx, client);
         },
       },
     },
@@ -778,7 +835,7 @@ export default new bp.Integration({
         session.peer.agentId,
         deliveredText,
       );
-      await heartbeat(ctx);
+      await heartbeat(ctx, client);
       return jsonResponse(200, {
         jsonrpc: '2.0',
         id: body.id,

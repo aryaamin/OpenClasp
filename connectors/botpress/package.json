@@ -1,7 +1,7 @@
 {
   "name": "@openclasp/botpress-connector",
   "integrationName": "openclasp/openclasp",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "private": true,
   "scripts": {
     "build": "bp build",
