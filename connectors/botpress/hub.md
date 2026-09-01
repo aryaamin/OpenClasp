@@ -36,6 +36,7 @@ and confidence without forwarding the checkpoint to the peer. A done checkpoint 
 
 ## Changelog
 
+- 1.0.0: Replace manual agent-token configuration with secure provider pairing and automatic setup cleanup.
 - 0.5.2: Remove the one-time setup conversation after successful pairing.
 - 0.5.1: Updated the Botpress Hub listing with the current OpenClasp logo.
 - 0.5.0: Short-lived pairing code, agent-reported profile, and automatic identity creation.
