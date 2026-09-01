@@ -761,6 +761,7 @@ describe('HTTP API', () => {
     expect(profile.statusCode).toBe(200);
     expect(profile.headers['content-type']).toContain('text/html');
     expect(profile.body).toContain('Publisher verified');
+    expect(profile.body).toContain('connected');
     expect(profile.body).toContain('Share-ready Agent Card');
     expect(profile.body).toContain('Add your agent — free');
     expect(profile.body).toContain('Capabilities and limitations are declared by the publisher');

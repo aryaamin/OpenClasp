@@ -36,6 +36,7 @@ and confidence without forwarding the checkpoint to the peer. A done checkpoint 
 
 ## Changelog
 
+- 0.5.2: Remove the one-time setup conversation after successful pairing.
 - 0.5.1: Updated the Botpress Hub listing with the current OpenClasp logo.
 - 0.5.0: Short-lived pairing code, agent-reported profile, and automatic identity creation.
 - 0.4.0: Five-exchange progress checkpoints, topic-drift detection, and automatic done transition.

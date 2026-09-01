@@ -950,6 +950,8 @@ function AgentWorkspace({
             const runtime = data.runtimes.find((item) => item.agentId === agentId);
             const verified = !agent.revoked && Boolean(agent.identityMode);
             const online = agent.presence?.status === 'online';
+            const connected = runtime?.status === 'verified';
+            const available = connected || online;
             const published = data.publications.some(
               (item) => item.agentId === agentId && item.published,
             );
@@ -962,14 +964,14 @@ function AgentWorkspace({
                     aria-expanded={expanded}
                     onClick={() => toggleAgent(agentId, expanded)}
                   >
-                    <AgentMark name={String(agent.name ?? agentId)} online={online} />
+                    <AgentMark name={String(agent.name ?? agentId)} online={available} />
                     <span className="agentIdentity">
                       <strong>{agent.name ?? agentId}</strong>
                       <small>{agent.framework ?? 'Agent'}</small>
                     </span>
                     <span className="agentSignals">
-                      <span className={online ? 'signalOnline' : ''}>
-                        <Circle /> {online ? 'Online' : 'Offline'}
+                      <span className={available ? 'signalOnline' : ''}>
+                        <Circle /> {connected ? 'Connected' : online ? 'Online' : 'Offline'}
                       </span>
                       <span className={verified ? 'signalVerified' : ''}>
                         <ShieldCheck /> {verified ? 'Verified' : 'Unverified'}
@@ -1073,13 +1075,15 @@ function AgentWorkspace({
                       </span>
                       <span>
                         <b>
-                          {online
-                            ? 'Now'
-                            : agent.presence?.lastSeenAt
-                              ? relativeTime(agent.presence.lastSeenAt)
-                              : 'Never'}
+                          {connected
+                            ? 'Verified'
+                            : online
+                              ? 'Now'
+                              : agent.presence?.lastSeenAt
+                                ? relativeTime(agent.presence.lastSeenAt)
+                                : 'Never'}
                         </b>
-                        last active
+                        {connected ? 'runtime endpoint' : 'last active'}
                       </span>
                       {published ? (
                         <a
@@ -1744,14 +1748,17 @@ function Marketplace({ data }: { data: DashboardData }) {
           results.map((result) => {
             const agent = result.card;
             const online = agent.presence?.status === 'online';
+            const connected =
+              agent.verification?.status === 'verified' && Boolean(agent.transports?.length);
+            const available = connected || online;
             const intelligence = result.contextualReliability;
             return (
               <article className="marketCard" key={agent.agentId}>
                 <FrameCorners />
                 <div className="marketCardTop">
-                  <AgentMark name={String(agent.name ?? agent.agentId)} online={online} />
-                  <span className={online ? 'marketPresence online' : 'marketPresence'}>
-                    {online ? 'Online' : 'Offline'}
+                  <AgentMark name={String(agent.name ?? agent.agentId)} online={available} />
+                  <span className={available ? 'marketPresence online' : 'marketPresence'}>
+                    {connected ? 'Connected' : online ? 'Online' : 'Offline'}
                   </span>
                 </div>
                 <div className={`matchBadge ${result.match.label}`}>
@@ -3721,6 +3728,7 @@ function AgentCard({
   );
   const ready = published && runtime?.status === 'verified';
   const online = agent.presence?.status === 'online';
+  const connected = runtime?.status === 'verified';
   const providerConnected = accessTokens.length > 0;
   const endpoint = String(runtime?.a2aEndpoint ?? agent.a2aEndpoint ?? 'Connect a runtime first');
   const identityLabel = agent.revoked
@@ -3735,7 +3743,11 @@ function AgentCard({
   return (
     <article className="agentCard">
       <div className="agentTop">
-        <AgentMark name={String(agent.name ?? agent.agentId)} online={online} size="sm" />
+        <AgentMark
+          name={String(agent.name ?? agent.agentId)}
+          online={connected || online}
+          size="sm"
+        />
         <div className="agentBadges">
           <b className={runtime?.status === 'verified' ? 'onlineBadge' : 'offlineBadge'}>
             {runtime?.status === 'verified'
@@ -3767,9 +3779,11 @@ function AgentCard({
         Created {new Date(agent.createdAt).toLocaleDateString()}
       </small>
       <small>
-        {agent.presence?.lastSeenAt
-          ? `Last agent activity ${new Date(agent.presence.lastSeenAt).toLocaleString()}`
-          : 'No agent activity recorded yet'}
+        {connected
+          ? `Cloud runtime connected · endpoint verified ${new Date(runtime.verifiedAt).toLocaleString()}`
+          : agent.presence?.lastSeenAt
+            ? `Last agent activity ${new Date(agent.presence.lastSeenAt).toLocaleString()}`
+            : 'No agent activity recorded yet'}
       </small>
       {published ? (
         <div className="agentPublicLinks">

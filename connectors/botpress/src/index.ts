@@ -311,6 +311,21 @@ const createIncomingMessage = async (
   });
   return message;
 };
+const deleteSetupConversations = async (client: bp.Client, integrationId: string) => {
+  let nextToken: string | undefined;
+  do {
+    const page = await client.listConversations({
+      channel: 'a2a',
+      tags: { interactionId: `openclasp-setup:${integrationId}` },
+      pageSize: 100,
+      ...(nextToken ? { nextToken } : {}),
+    });
+    await Promise.all(
+      page.conversations.map((conversation) => client.deleteConversation({ id: conversation.id })),
+    );
+    nextToken = page.meta.nextToken;
+  } while (nextToken);
+};
 const heartbeat = async (ctx: bp.Context, client: bp.Client) => {
   const state = await getState(client, ctx.integrationId);
   if (!state.accessToken) return;
@@ -461,6 +476,11 @@ export default new bp.Integration({
   register: async ({ ctx, webhookUrl, client }) => {
     const state = await getState(client, ctx.integrationId);
     if (state.accessToken) {
+      try {
+        await deleteSetupConversations(client, ctx.integrationId);
+      } catch {
+        // Cleanup must not disconnect an already-paired runtime.
+      }
       await bootstrapAndConnect({ ctx, webhookUrl, client, accessToken: state.accessToken });
       return;
     }
@@ -501,6 +521,7 @@ export default new bp.Integration({
           if (interactionId === `openclasp-setup:${ctx.integrationId}`) {
             const profile = parseAgentProfile(payload.text);
             await completeBotpressPairing(ctx, client, profile);
+            await client.deleteConversation({ id: conversation.id });
             return;
           }
           const state = await getState(client, ctx.integrationId);

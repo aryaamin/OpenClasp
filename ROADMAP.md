@@ -10,7 +10,9 @@ interaction-centric dashboard.
 
 ## v0.2
 
-Production key-management adapters, service-account OAuth, live search providers, structured-record retention workers, contribution export/deletion workflows, and A2A conformance vectors.
+Production key-management adapters, service-account OAuth, live search providers, periodic cloud-runtime
+health probes for real availability, structured-record retention workers, contribution export/deletion
+workflows, and A2A conformance vectors.
 
 Before production interactions are treated as future intelligence data, complete the P0 data and
 governance gates in [`docs/GO_LIVE_PLAN.md`](docs/GO_LIVE_PLAN.md): versioned migrations,
