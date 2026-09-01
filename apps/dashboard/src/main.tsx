@@ -785,6 +785,13 @@ type ScorecardMetric = {
   evidence: number;
 };
 
+function confirmAgentDeletion(agent: Record<string, any>) {
+  const agentId = String(agent.agentId);
+  return window.confirm(
+    `Delete “${String(agent.name ?? agentId)}” from OpenClasp?\n\nIts provider connection, runtime, token, publication and profile will be removed. Signed interaction and receipt history will be retained. You should also uninstall the connector from its provider.`,
+  );
+}
+
 function AgentWorkspace({
   data,
   navigate,
@@ -846,6 +853,22 @@ function AgentWorkspace({
       await refreshDashboard();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not respond to request');
+    } finally {
+      setWorking('');
+    }
+  };
+
+  const deleteAgent = async (agent: Record<string, any>) => {
+    const agentId = String(agent.agentId);
+    if (!confirmAgentDeletion(agent)) return;
+    setWorking(`delete:${agentId}`);
+    setError('');
+    try {
+      await api(`/v0.1/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' });
+      setExpandedAgent('');
+      await refreshDashboard();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Agent deletion failed');
     } finally {
       setWorking('');
     }
@@ -1176,6 +1199,16 @@ function AgentWorkspace({
                         </ol>
                       )}
                     </section>
+                    <div className="agentActions agentManagementActions">
+                      <button
+                        className="secondary dangerButton"
+                        type="button"
+                        disabled={Boolean(working)}
+                        onClick={() => void deleteAgent(agent)}
+                      >
+                        {working === `delete:${agentId}` ? 'Deleting…' : 'Delete agent'}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </article>
@@ -2794,12 +2827,7 @@ function Agents({
   };
   const deleteAgent = async (agent: Record<string, any>) => {
     const agentId = String(agent.agentId);
-    if (
-      !window.confirm(
-        `Delete “${String(agent.name ?? agentId)}”?\n\nIts runtime, publication, presence and MCP binding will be removed. Signed interaction and receipt history will be retained.`,
-      )
-    )
-      return;
+    if (!confirmAgentDeletion(agent)) return;
     setWorking(`delete:${agentId}`);
     setError('');
     try {

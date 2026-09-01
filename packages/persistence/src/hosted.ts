@@ -2018,6 +2018,14 @@ export class HostedRepository {
       WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
     `;
     await this.sql`
+      DELETE FROM openclasp_provider_connections
+      WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
+    `;
+    await this.sql`
+      DELETE FROM openclasp_connector_claims
+      WHERE operator_id = ${operatorId} AND agent_id = ${agentId}
+    `;
+    await this.sql`
       DELETE FROM openclasp_records
       WHERE operator_id = ${operatorId}
         AND (
