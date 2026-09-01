@@ -41,7 +41,7 @@ export const pageMeta: Record<
   connect: {
     label: 'connect',
     title: 'Connect',
-    lede: 'Approve an identity. OpenClasp handles the rest.',
+    lede: 'Add a persistent cloud agent and connect its runtime.',
     eyebrow: 'setup',
   },
   marketplace: {

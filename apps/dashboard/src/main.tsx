@@ -3138,7 +3138,6 @@ function Connect({
   api: (path: string, init?: RequestInit) => Promise<unknown>;
 }) {
   const endpoint = `${new URL(__OPENCLASP_PUBLIC_URL__).origin}/mcp`;
-  const [connectionType, setConnectionType] = useState<'interactive' | 'hosted'>('hosted');
   const [copied, setCopied] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [working, setWorking] = useState('');
@@ -3280,244 +3279,218 @@ function Connect({
           )}
         </section>
       )}
-      <div className="connectionTypePicker" role="tablist" aria-label="Agent connection type">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={connectionType === 'hosted'}
-          className={connectionType === 'hosted' ? 'active' : ''}
-          onClick={() => setConnectionType('hosted')}
-        >
-          Hosted provider
-          <small>Botpress and similar platforms</small>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={connectionType === 'interactive'}
-          className={connectionType === 'interactive' ? 'active' : ''}
-          onClick={() => setConnectionType('interactive')}
-        >
-          Interactive agent
-          <small>Codex, Cursor, and OAuth clients</small>
-        </button>
-      </div>
-      {connectionType === 'hosted' ? (
-        <section className="connectLayout providerConnectLayout">
-          <Panel title="Add a hosted agent" subtitle="Creates an isolated identity and credential">
-            {providerResult ? (
-              <div className="providerResult">
-                <div className="successBanner">
-                  <strong>{providerResult.agent.name} created</strong>
-                  <span>{providerResult.agent.agentId}</span>
+      <section className="connectLayout providerConnectLayout">
+        <Panel title="Add a cloud agent" subtitle="Creates an isolated identity and credential">
+          {providerResult ? (
+            <div className="providerResult">
+              <div className="successBanner">
+                <strong>{providerResult.agent.name} created</strong>
+                <span>{providerResult.agent.agentId}</span>
+              </div>
+              <label>
+                <span>MCP URL</span>
+                <code>{endpoint}</code>
+              </label>
+              <label>
+                <span>Agent token — copy it now; it will not be shown again</span>
+                <code>{providerResult.accessToken.token}</code>
+              </label>
+              <small>
+                This agent-bound token authorizes MCP and automatic runtime registration. It cannot
+                connect or manage another agent.
+              </small>
+              <div className="agentActions">
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(providerResult.accessToken.token);
+                    setTokenCopied(true);
+                    window.setTimeout(() => setTokenCopied(false), 2000);
+                  }}
+                >
+                  {tokenCopied ? 'Copied' : 'Copy token'}
+                </button>
+                <button className="primary" type="button" onClick={() => navigate('agents')}>
+                  View agent
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form className="providerForm" onSubmit={(event) => void connectHostedProvider(event)}>
+              <label>
+                <span>Provider</span>
+                <select
+                  value={providerForm.provider}
+                  onChange={(event) =>
+                    setProviderForm((value) => ({
+                      ...value,
+                      provider: event.target.value as 'botpress' | 'custom',
+                    }))
+                  }
+                >
+                  <option value="botpress">Botpress</option>
+                  <option value="custom">Custom / self-hosted</option>
+                </select>
+              </label>
+              <label>
+                <span>Agent name</span>
+                <input
+                  required
+                  maxLength={100}
+                  value={providerForm.agentName}
+                  onChange={(event) =>
+                    setProviderForm((value) => ({ ...value, agentName: event.target.value }))
+                  }
+                  placeholder="Procurement agent"
+                />
+              </label>
+              <label>
+                <span>Project</span>
+                <input
+                  required
+                  maxLength={100}
+                  value={providerForm.projectName}
+                  onChange={(event) =>
+                    setProviderForm((value) => ({ ...value, projectName: event.target.value }))
+                  }
+                  placeholder="Operations"
+                />
+              </label>
+              <label className="fullWidth">
+                <span>Purpose</span>
+                <textarea
+                  required
+                  maxLength={500}
+                  value={providerForm.description}
+                  onChange={(event) =>
+                    setProviderForm((value) => ({ ...value, description: event.target.value }))
+                  }
+                  placeholder="Sources approved inventory within budget and supplier policy"
+                />
+              </label>
+              <label>
+                <span>Capabilities, comma-separated</span>
+                <input
+                  required
+                  value={providerForm.capabilities}
+                  onChange={(event) =>
+                    setProviderForm((value) => ({ ...value, capabilities: event.target.value }))
+                  }
+                  placeholder="supplier discovery, quote comparison, purchase preparation"
+                />
+              </label>
+              <label>
+                <span>Limitations, comma-separated</span>
+                <input
+                  value={providerForm.limitations}
+                  onChange={(event) =>
+                    setProviderForm((value) => ({ ...value, limitations: event.target.value }))
+                  }
+                  placeholder="no payments without human approval"
+                />
+              </label>
+              <label>
+                <span>Credential expiry</span>
+                <select
+                  value={providerForm.expiresInDays}
+                  onChange={(event) =>
+                    setProviderForm((value) => ({
+                      ...value,
+                      expiresInDays: Number(event.target.value),
+                    }))
+                  }
+                >
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                  <option value={365}>1 year</option>
+                </select>
+              </label>
+              <div className="providerSubmit fullWidth">
+                <p>This does not reuse or modify your Codex agent.</p>
+                <button className="primary" type="submit" disabled={working === 'hosted-provider'}>
+                  {working === 'hosted-provider' ? 'Creating…' : 'Create agent credentials'}
+                </button>
+              </div>
+              {providerError ? (
+                <div className="loginError fullWidth" role="alert">
+                  {providerError}
                 </div>
-                <label>
-                  <span>MCP URL</span>
-                  <code>{endpoint}</code>
-                </label>
-                <label>
-                  <span>Agent token — copy it now; it will not be shown again</span>
-                  <code>{providerResult.accessToken.token}</code>
-                </label>
-                <small>
-                  This agent-bound token authorizes MCP and automatic runtime registration. It
-                  cannot connect or manage another agent.
-                </small>
-                <div className="agentActions">
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(providerResult.accessToken.token);
-                      setTokenCopied(true);
-                      window.setTimeout(() => setTokenCopied(false), 2000);
-                    }}
-                  >
-                    {tokenCopied ? 'Copied' : 'Copy token'}
-                  </button>
-                  <button className="primary" type="button" onClick={() => navigate('agents')}>
-                    View agent
-                  </button>
+              ) : null}
+            </form>
+          )}
+        </Panel>
+        <Panel
+          title={providerForm.provider === 'botpress' ? 'Configure Botpress' : 'Deploy the sidecar'}
+          subtitle={
+            providerForm.provider === 'botpress'
+              ? 'MCP and inbound runtime are separate connections'
+              : 'Runs beside an agent on any cloud'
+          }
+        >
+          {providerForm.provider === 'botpress' ? (
+            <>
+              <div className="connectSteps">
+                <div className="connectStep">
+                  <b>1</b>
+                  <span>Add the displayed MCP URL with Bearer authentication.</span>
+                </div>
+                <div className="connectStep">
+                  <b>2</b>
+                  <span>
+                    Paste the generated <code>oc_at_…</code> agent token.
+                  </span>
+                </div>
+                <div className="connectStep">
+                  <b>3</b>
+                  <span>Install the OpenClasp Botpress runtime integration for inbound A2A.</span>
                 </div>
               </div>
-            ) : (
-              <form
-                className="providerForm"
-                onSubmit={(event) => void connectHostedProvider(event)}
-              >
-                <label>
-                  <span>Provider</span>
-                  <select
-                    value={providerForm.provider}
-                    onChange={(event) =>
-                      setProviderForm((value) => ({
-                        ...value,
-                        provider: event.target.value as 'botpress' | 'custom',
-                      }))
-                    }
-                  >
-                    <option value="botpress">Botpress</option>
-                    <option value="custom">Custom / self-hosted</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Agent name</span>
-                  <input
-                    required
-                    maxLength={100}
-                    value={providerForm.agentName}
-                    onChange={(event) =>
-                      setProviderForm((value) => ({ ...value, agentName: event.target.value }))
-                    }
-                    placeholder="Recruiting agent"
-                  />
-                </label>
-                <label>
-                  <span>Project</span>
-                  <input
-                    required
-                    maxLength={100}
-                    value={providerForm.projectName}
-                    onChange={(event) =>
-                      setProviderForm((value) => ({ ...value, projectName: event.target.value }))
-                    }
-                    placeholder="Recruiting"
-                  />
-                </label>
-                <label className="fullWidth">
-                  <span>Purpose</span>
-                  <textarea
-                    required
-                    maxLength={500}
-                    value={providerForm.description}
-                    onChange={(event) =>
-                      setProviderForm((value) => ({ ...value, description: event.target.value }))
-                    }
-                    placeholder="Matches suitable candidates with open roles"
-                  />
-                </label>
-                <label>
-                  <span>Capabilities, comma-separated</span>
-                  <input
-                    required
-                    value={providerForm.capabilities}
-                    onChange={(event) =>
-                      setProviderForm((value) => ({ ...value, capabilities: event.target.value }))
-                    }
-                    placeholder="candidate matching, interview coordination"
-                  />
-                </label>
-                <label>
-                  <span>Limitations, comma-separated</span>
-                  <input
-                    value={providerForm.limitations}
-                    onChange={(event) =>
-                      setProviderForm((value) => ({ ...value, limitations: event.target.value }))
-                    }
-                    placeholder="no final hiring decisions"
-                  />
-                </label>
-                <label>
-                  <span>Credential expiry</span>
-                  <select
-                    value={providerForm.expiresInDays}
-                    onChange={(event) =>
-                      setProviderForm((value) => ({
-                        ...value,
-                        expiresInDays: Number(event.target.value),
-                      }))
-                    }
-                  >
-                    <option value={30}>30 days</option>
-                    <option value={90}>90 days</option>
-                    <option value={365}>1 year</option>
-                  </select>
-                </label>
-                <div className="providerSubmit fullWidth">
-                  <p>This does not reuse or modify your Codex agent.</p>
-                  <button
-                    className="primary"
-                    type="submit"
-                    disabled={working === 'hosted-provider'}
-                  >
-                    {working === 'hosted-provider' ? 'Creating…' : 'Create agent credentials'}
-                  </button>
+              <div className="notice providerNotice">
+                MCP proves outbound tool access only. Autonomous runtime becomes connected only
+                after the Botpress integration registers its webhook successfully.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="connectSteps">
+                <div className="connectStep">
+                  <b>1</b>
+                  <span>
+                    Deploy <code>Dockerfile.sidecar</code> beside the agent.
+                  </span>
                 </div>
-                {providerError ? (
-                  <div className="loginError fullWidth" role="alert">
-                    {providerError}
-                  </div>
-                ) : null}
-              </form>
-            )}
-          </Panel>
-          <Panel
-            title={
-              providerForm.provider === 'botpress' ? 'Configure Botpress' : 'Deploy the sidecar'
-            }
-            subtitle={
-              providerForm.provider === 'botpress'
-                ? 'MCP and inbound runtime are separate connections'
-                : 'Runs beside an agent on any cloud'
-            }
-          >
-            {providerForm.provider === 'botpress' ? (
-              <>
-                <div className="connectSteps">
-                  <div className="connectStep">
-                    <b>1</b>
-                    <span>Add the displayed MCP URL with Bearer authentication.</span>
-                  </div>
-                  <div className="connectStep">
-                    <b>2</b>
-                    <span>
-                      Paste the generated <code>oc_at_…</code> agent token.
-                    </span>
-                  </div>
-                  <div className="connectStep">
-                    <b>3</b>
-                    <span>Install the OpenClasp Botpress runtime integration for inbound A2A.</span>
-                  </div>
+                <div className="connectStep">
+                  <b>2</b>
+                  <span>
+                    Set <code>OPENCLASP_AGENT_TOKEN</code>, <code>OPENCLASP_RUNTIME_URL</code>, and{' '}
+                    <code>AGENT_ADAPTER_URL</code>.
+                  </span>
                 </div>
-                <div className="notice providerNotice">
-                  MCP proves outbound tool access only. Autonomous runtime becomes connected only
-                  after the Botpress integration registers its webhook successfully.
+                <div className="connectStep">
+                  <b>3</b>
+                  <span>
+                    The sidecar verifies and registers itself; no endpoint paste is needed.
+                  </span>
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="connectSteps">
-                  <div className="connectStep">
-                    <b>1</b>
-                    <span>
-                      Deploy <code>Dockerfile.sidecar</code> beside the agent.
-                    </span>
-                  </div>
-                  <div className="connectStep">
-                    <b>2</b>
-                    <span>
-                      Set <code>OPENCLASP_AGENT_TOKEN</code>, <code>OPENCLASP_RUNTIME_URL</code>,
-                      and <code>AGENT_ADAPTER_URL</code>.
-                    </span>
-                  </div>
-                  <div className="connectStep">
-                    <b>3</b>
-                    <span>
-                      The sidecar verifies and registers itself; no endpoint paste is needed.
-                    </span>
-                  </div>
-                </div>
-                <div className="notice providerNotice">
-                  The application implements three internal POST hooks: session-offer,
-                  session-activated, and message. Agent-to-agent content remains off OpenClasp.
-                </div>
-              </>
-            )}
-          </Panel>
-        </section>
-      ) : (
+              </div>
+              <div className="notice providerNotice">
+                The application implements three internal POST hooks: session-offer,
+                session-activated, and message. Agent-to-agent content remains off OpenClasp.
+              </div>
+            </>
+          )}
+        </Panel>
+      </section>
+      <details className="mcpClientSection">
+        <summary>
+          <span>Connect an MCP client</span>
+          <small>
+            Advanced · use Codex, Cursor, or another developer tool to configure and test OpenClasp
+          </small>
+        </summary>
         <section className="connectLayout">
-          <Panel title="Connect with OAuth" subtitle="For interactive MCP clients">
+          <Panel title="MCP endpoint" subtitle="Developer tools and testing only">
             <div className="endpoint">
               <code>{endpoint}</code>
               <button
@@ -3548,16 +3521,17 @@ function Connect({
               </div>
             </div>
           </Panel>
-          <Panel title="MCP clients" subtitle="Identity and control plane only">
+          <Panel title="What this connection does" subtitle="Identity and control plane only">
             <ul className="checkList">
               <li>OAuth opens in the browser</li>
               <li>Each installation is explicitly approved</li>
               <li>OpenClasp does not proxy conversation messages</li>
-              <li>Connect your cloud runtime before publishing</li>
+              <li>This client is not listed as an agent</li>
+              <li>A cloud runtime is required before an agent can be published</li>
             </ul>
           </Panel>
         </section>
-      )}
+      </details>
     </>
   );
 }
