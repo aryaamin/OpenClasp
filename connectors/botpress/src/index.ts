@@ -3,6 +3,7 @@ import * as sdk from '@botpress/sdk';
 import * as bp from '.botpress';
 import { parseCheckpoint } from './checkpoint';
 import { parseFinalizationAssessment } from './finalization';
+import { callOpenClaspTool, sendMcpA2ARequest } from './mcp';
 import { parseAgentProfile, type AgentProfile } from './profile';
 
 type Json = Record<string, any>;
@@ -245,8 +246,23 @@ const textFromMessage = (message: Json) => {
     .filter(Boolean)
     .join('\n')
     .trim();
-  if (!text) throw new Error('OpenClasp Botpress connector accepts text messages only');
-  return text;
+  if (text) return text;
+  const data = parts.find((part: Json) => part.kind === 'data' && part.data)?.data;
+  if (data?.kind === 'openclasp.assurance.probe' && data.plan) {
+    return [
+      '[OpenClasp assurance question — authenticated platform data]',
+      'Answer this bounded question honestly using the OpenClasp “Answer assurance question” action. Do not provide hidden reasoning, credentials, personal data, or conversation text.',
+      `Plan: ${JSON.stringify(data.plan)}`,
+    ].join('\n');
+  }
+  if (data?.kind === 'openclasp.assurance.response' && data.response) {
+    return [
+      '[OpenClasp assurance response — authenticated platform data]',
+      `Response: ${JSON.stringify(data.response)}`,
+      'Use this structured answer when deciding whether safeguards or narrower terms are needed.',
+    ].join('\n');
+  }
+  throw new Error('Unsupported A2A message');
 };
 const withSessionContext = (session: Json, offer: Json | undefined, peerText: string) => {
   const contract = offer?.contract ?? {};
@@ -472,6 +488,39 @@ const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Js
   };
 };
 
+const connectorTool = async <T = Json>(
+  ctx: bp.Context,
+  client: bp.Client,
+  name: string,
+  input: Json = {},
+) => {
+  const state = await getState(client, ctx.integrationId);
+  return callOpenClaspTool<T>(platformUrl(ctx), state.accessToken, name, input);
+};
+
+const assuranceAnswer = (input: Json) => {
+  let answer: boolean | number | string = input.answer;
+  if (input.responseType === 'boolean') {
+    const normalized = String(input.answer).trim().toLowerCase();
+    if (!['true', 'false'].includes(normalized))
+      throw new sdk.RuntimeError('Boolean assurance answers must be true or false');
+    answer = normalized === 'true';
+  } else if (input.responseType === 'number') {
+    answer = Number(input.answer);
+    if (!Number.isFinite(answer))
+      throw new sdk.RuntimeError('Number assurance answers must be finite numbers');
+  }
+  return {
+    probeId: input.probeId,
+    questionCode: input.questionCode,
+    responseType: input.responseType,
+    answer,
+    confidence: input.confidence,
+    evidenceReferences: input.evidenceReferences,
+    limitations: input.limitations,
+  };
+};
+
 export default new bp.Integration({
   register: async ({ ctx, webhookUrl, client }) => {
     const state = await getState(client, ctx.integrationId);
@@ -510,6 +559,76 @@ export default new bp.Integration({
     });
   },
   actions: {
+    searchAgents: async ({ ctx, client, input }) => {
+      const agents = await connectorTool(ctx, client, 'openclasp_search_agents', input);
+      return { agentsJson: JSON.stringify(agents) };
+    },
+    startInteraction: async ({ ctx, client, input }) => {
+      const result = await connectorTool(ctx, client, 'openclasp_connect_to_agent', {
+        targetAgentReference: input.targetAgent,
+        task: input.task,
+        ...(input.taskCategory ? { taskCategory: input.taskCategory } : {}),
+        ...(input.successCriteria?.length ? { successCriteria: input.successCriteria } : {}),
+        allowedActions: input.allowedActions ?? [],
+        prohibitedActions: input.prohibitedActions ?? [],
+        allowedData: input.allowedData ?? [],
+      });
+      return {
+        interactionId: String(result.interaction?.interactionId ?? ''),
+        status: String(result.interaction?.status ?? 'pending'),
+        ready: Boolean(result.ready),
+        next: String(result.next ?? ''),
+      };
+    },
+    listInteractions: async ({ ctx, client }) => {
+      const interactions = await connectorTool(ctx, client, 'openclasp_list_invitations');
+      return { interactionsJson: JSON.stringify(interactions) };
+    },
+    respondInvitation: async ({ ctx, client, input }) => {
+      const interaction = await connectorTool(ctx, client, 'openclasp_respond_invitation', input);
+      return { interactionJson: JSON.stringify(interaction) };
+    },
+    getInteraction: async ({ ctx, client, input }) => {
+      const interaction = await connectorTool(
+        ctx,
+        client,
+        'openclasp_get_shared_interaction',
+        input,
+      );
+      return { interactionJson: JSON.stringify(interaction) };
+    },
+    generateAssuranceProbe: async ({ ctx, client, input }) => {
+      const result = await connectorTool(ctx, client, 'openclasp_generate_assurance_probe', input);
+      const sentToPeer = await sendMcpA2ARequest(result);
+      return {
+        assessmentJson: JSON.stringify({ decision: result.decision, plan: result.plan }),
+        sentToPeer,
+      };
+    },
+    answerAssuranceProbe: async ({ ctx, client, input }) => {
+      const result = await connectorTool(ctx, client, 'openclasp_submit_assurance_response', {
+        interactionId: input.interactionId,
+        planId: input.planId,
+        answers: [assuranceAnswer(input)],
+      });
+      const sentToPeer = await sendMcpA2ARequest(result);
+      const response = { ...result };
+      delete response.a2a;
+      return { responseJson: JSON.stringify(response), sentToPeer };
+    },
+    getAssuranceBrief: async ({ ctx, client, input }) => {
+      const brief = await connectorTool(ctx, client, 'openclasp_get_assurance_brief', input);
+      return { briefJson: JSON.stringify(brief) };
+    },
+    decideSafeguard: async ({ ctx, client, input }) => {
+      const safeguard = await connectorTool(
+        ctx,
+        client,
+        'openclasp_decide_assurance_safeguard',
+        input,
+      );
+      return { safeguardJson: JSON.stringify(safeguard) };
+    },
     completeInteraction: async ({ ctx, client, input }) => completeInteraction(ctx, client, input),
   },
   channels: {

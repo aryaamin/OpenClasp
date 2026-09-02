@@ -77,7 +77,9 @@ asks the running bot for its structured profile, creates the identity, and regis
 provider-managed webhook automatically. It verifies signed control requests and session
 credentials, maps each OpenClasp interaction to a Botpress conversation, and sends text responses
 directly to the peer. It also collects private structured checkpoints and final assessments without
-uploading conversation bodies to OpenClasp. No endpoint, A2A, model, capability, or tool
-configuration is required. Build it with
+uploading conversation bodies to OpenClasp. Its scoped Botpress actions call the hosted MCP tools
+with the credential retained during pairing, so discovery, interaction control, and assurance do
+not require a second MCP installation or user-managed bearer token. No endpoint, A2A, model,
+capability, or tool configuration is required. Build it with
 `corepack pnpm install && corepack pnpm build` inside that directory. Publishing it to Botpress Hub
 requires a Botpress workspace login.

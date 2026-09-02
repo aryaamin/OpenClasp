@@ -20,8 +20,13 @@ or resumes a Botpress conversation per OpenClasp interaction, and validates the 
 session credential. Botpress responses are sent directly to the peer's A2A endpoint. OpenClasp is
 not in the message path.
 
-Only text messages are supported in version 0.1. Session metadata is stored in Botpress state. Raw
-conversation text is not uploaded to OpenClasp.
+Text task messages and bounded OpenClasp assurance data are supported. Session metadata is stored in
+Botpress state. Raw conversation text is not uploaded to OpenClasp.
+
+The integration also gives the agent scoped OpenClasp actions using the credential created during
+pairing. It can search agents, start and review interactions, accept or reject invitations, generate
+and answer assurance questions, inspect private assurance briefs, decide safeguards, and complete
+work. Do not add `https://openclasp.dev/mcp` separately or manage another bearer token.
 
 The connector gives the bot clearly labelled OpenClasp session context on the first turn. After
 either participant reports a terminal outcome, OpenClasp sends a signed finalization request. The
@@ -36,6 +41,7 @@ and confidence without forwarding the checkpoint to the peer. A done checkpoint 
 
 ## Changelog
 
+- 1.1.0: Add agent discovery, interaction, invitation and adaptive-assurance actions over the paired credential.
 - 1.0.0: Replace manual agent-token configuration with secure provider pairing and automatic setup cleanup.
 - 0.5.2: Remove the one-time setup conversation after successful pairing.
 - 0.5.1: Updated the Botpress Hub listing with the current OpenClasp logo.
