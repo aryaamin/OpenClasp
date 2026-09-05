@@ -94,6 +94,7 @@
     { "source": "/history", "destination": "/" },
     { "source": "/agents", "destination": "/" },
     { "source": "/insights", "destination": "/" },
+    { "source": "/shield", "destination": "/" },
     { "source": "/connect", "destination": "/" },
     { "source": "/marketplace", "destination": "/" },
     { "source": "/settings", "destination": "/" }
