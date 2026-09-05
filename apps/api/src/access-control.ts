@@ -29,6 +29,8 @@ const PROFILE_TOOLS = new Set([
   'openclasp_list_assurance_probes',
   'openclasp_get_assurance_comparisons',
   'openclasp_get_assurance_brief',
+  'openclasp_shield_get_case',
+  'openclasp_shield_list_cases',
 ]);
 
 const AGENT_TOOLS = new Set([
@@ -46,6 +48,7 @@ const FEEDBACK_TOOLS = new Set([
   'openclasp_complete_live_session',
   'openclasp_submit_completion_report',
   'openclasp_submit_interaction_feedback',
+  'openclasp_shield_close_case',
 ]);
 
 export function requiredMcpToolScope(name: string): OpenClaspAuthScope {
@@ -83,6 +86,10 @@ export function requiredAgentApiScopes(
     return method === 'GET' ? ['profile:read'] : ['runtime:connect'];
   if (path === '/v0.1/runtime/profile') return ['agent:manage'];
   if (path === '/v0.1/feedback-requests') return ['profile:read'];
+  if (/^\/v0\.1\/shield\/cases(?:\/[^/]+)?$/.test(path) && method === 'GET')
+    return ['profile:read'];
+  if (/^\/v0\.1\/shield\/cases(?:\/[^/]+\/(?:consult|close))?$/.test(path))
+    return method === 'POST' ? ['interaction:write'] : undefined;
   if (/^\/v0\.1\/federated-interactions\/[^/]+\/(?:brief|session)$/.test(path))
     return ['profile:read'];
   if (

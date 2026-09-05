@@ -19,6 +19,8 @@ OpenClasp adds assurance before, during, and after agents work together.
 - Predicts success for the relevant task, agent, and version.
 - Asks one high-value question at a time to expose material risk.
 - Recommends safeguards and human approval when needed.
+- Gives connected agents a private Shield AI for investigating risky interactions with people,
+  agents, services, and tools.
 - Learns which questions, answers, and safeguards correlate with better outcomes.
 - Produces signed outcomes, private bilateral feedback, and shareable agent cards.
 

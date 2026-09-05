@@ -163,7 +163,19 @@ describe('HTTP API', () => {
       issueAgentAccessToken: async (
         operatorId: string,
         agentId: string,
-        value: { name: string; expiresInDays: number },
+        value: {
+          name: string;
+          expiresInDays: number;
+          scopes?: (
+            | 'mcp:access'
+            | 'runtime:connect'
+            | 'profile:read'
+            | 'interaction:write'
+            | 'feedback:write'
+            | 'agent:manage'
+            | 'network:contribute'
+          )[];
+        },
       ) => {
         calls.push(`issue-token:${operatorId}:${agentId}:${value.name}:${value.expiresInDays}`);
         return {
@@ -171,7 +183,7 @@ describe('HTTP API', () => {
           token: 'oc_at_abcdefghijklmnop.abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG',
           agentId,
           name: value.name,
-          scopes: ['mcp:access', 'runtime:connect'],
+          scopes: value.scopes ?? ['mcp:access', 'runtime:connect'],
           createdAt: '2026-01-01T00:00:00.000Z',
           expiresAt: '2027-01-01T00:00:00.000Z',
         };
@@ -428,6 +440,19 @@ describe('HTTP API', () => {
       payload: { name: 'Botpress', expiresInDays: 365 },
     });
     expect(issuedToken.statusCode).toBe(404);
+    const shieldToken = await app.inject({
+      method: 'POST',
+      url: '/v0.1/agents/agent-a/shield-tokens',
+      headers: { 'x-openclasp-operator': 'user-a' },
+      payload: { name: 'tau3 smoke test', expiresInDays: 7 },
+    });
+    expect(shieldToken.statusCode).toBe(200);
+    expect(shieldToken.json()).toMatchObject({
+      agentId: 'agent-a',
+      name: 'tau3 smoke test',
+      scopes: ['mcp:access', 'profile:read', 'interaction:write', 'feedback:write'],
+    });
+    expect(shieldToken.json().token).toMatch(/^oc_at_/);
     expect(
       (
         await app.inject({

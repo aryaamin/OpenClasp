@@ -9,6 +9,7 @@ import {
   ScanLine,
   Search,
   Settings,
+  Shield,
   Store,
   Sun,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ const pageIcons = {
   history: History,
   agents: ScanLine,
   insights: BarChart3,
+  shield: Shield,
   connect: Plus,
   marketplace: Store,
   settings: Settings,

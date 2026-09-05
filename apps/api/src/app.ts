@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   AgentIdentitySchema,
@@ -15,6 +16,9 @@ import {
   InteractionCompletionReportSchema,
   InteractionFeedbackSchema,
   ConnectorAgentProfileSchema,
+  ShieldCaseSchema,
+  ShieldGuidanceSchema,
+  ShieldOutcomeSchema,
   type PublicAgentCard,
 } from '../../../packages/protocol/src/index.js';
 import {
@@ -32,6 +36,12 @@ import {
 } from '../../../packages/persistence/src/onboarding.js';
 import { FixedWindowRateLimiter } from './security.js';
 import { renderAgentCardImage } from './agent-card-image.js';
+import {
+  createShieldCase,
+  consultShield,
+  ShieldCaseInputSchema,
+  ShieldConsultInputSchema,
+} from '../../../packages/mcp-server/src/shield-agent.js';
 
 type DashboardRepository = Pick<
   HostedRepository,
@@ -86,6 +96,12 @@ type DashboardRepository = Pick<
       | 'createProviderConnection'
       | 'getProviderConnection'
       | 'completeBotpressConnection'
+      | 'saveShieldCase'
+      | 'getShieldCase'
+      | 'listShieldCases'
+      | 'saveShieldConsultation'
+      | 'listShieldConsultations'
+      | 'saveShieldOutcome'
     >
   > & {
     listContextualIntelligence?: (
@@ -114,6 +130,8 @@ export function buildApi(
         'req.headers.x-openclasp-internal-auth',
         'req.headers.x-openclasp-pairing-code',
         'req.body.rawMessage',
+        'req.body.message',
+        'req.body.situationContext',
         'req.body.privateKey',
       ],
     },
@@ -432,7 +450,154 @@ export function buildApi(
         profileDeltas: [],
         intelligenceSummaries: [],
         runtimes: [],
+        shieldCases: [],
+        shieldConsultations: [],
+        shieldOutcomes: [],
       };
+    });
+    router.get('/v0.1/shield/cases', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.listShieldCases || !owner)
+        throw new Error('OpenClasp Shield is not configured');
+      const agentId =
+        typeof request.headers['x-openclasp-bound-agent'] === 'string'
+          ? request.headers['x-openclasp-bound-agent']
+          : undefined;
+      return repository.listShieldCases(owner, agentId);
+    });
+    router.post('/v0.1/shield/cases', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.saveShieldCase || !owner)
+        throw new Error('OpenClasp Shield is not configured');
+      const input = ShieldCaseInputSchema.parse(request.body);
+      enforceBoundAgent(request, input.agentId);
+      const agent = (await repository.list(owner)).find(
+        (row) => row.kind === 'agent_profile' && row.recordId === input.agentId,
+      );
+      if (!agent) throw new Error('Owned agent not found');
+      return repository.saveShieldCase(owner, createShieldCase(input));
+    });
+    router.get('/v0.1/shield/cases/:id', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getShieldCase || !repository.listShieldConsultations || !owner)
+        throw new Error('OpenClasp Shield is not configured');
+      const caseId = (request.params as { id: string }).id;
+      const caseRecord = await repository.getShieldCase(owner, caseId);
+      if (!caseRecord) throw new Error('Shield case not found');
+      enforceBoundAgent(request, caseRecord.agentId);
+      const rows = await repository.list(owner);
+      return {
+        case: caseRecord,
+        consultations: await repository.listShieldConsultations(owner, caseId),
+        outcomes: rows
+          .filter((row) => row.kind === 'shield_outcome')
+          .map((row) => ShieldOutcomeSchema.parse(row.payload))
+          .filter((outcome) => outcome.caseId === caseId),
+      };
+    });
+    router.post('/v0.1/shield/cases/:id/consult', async (request) => {
+      const owner = operatorId(request);
+      if (
+        !repository?.getShieldCase ||
+        !repository.saveShieldCase ||
+        !repository.saveShieldConsultation ||
+        !repository.listShieldConsultations ||
+        !owner
+      )
+        throw new Error('OpenClasp Shield is not configured');
+      const caseId = (request.params as { id: string }).id;
+      const caseRecord = await repository.getShieldCase(owner, caseId);
+      if (!caseRecord) throw new Error('Shield case not found');
+      enforceBoundAgent(request, caseRecord.agentId);
+      const input = ShieldConsultInputSchema.parse(request.body);
+      const previous = await repository.listShieldConsultations(owner, caseId);
+      const result = await consultShield(caseRecord, input, previous);
+      await repository.saveShieldConsultation(owner, result.consultation);
+      await repository.saveShieldCase(owner, result.caseRecord);
+      return result;
+    });
+    router.post('/v0.1/shield/cases/:id/guidance', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.getShieldCase || !repository.saveShieldCase || !owner)
+        throw new Error('OpenClasp Shield is not configured');
+      if (request.headers['x-openclasp-credential-type'] === 'agent_access_token') {
+        const error = new Error('Only the authenticated owner can instruct Shield');
+        Object.assign(error, { statusCode: 403 });
+        throw error;
+      }
+      const caseId = (request.params as { id: string }).id;
+      const caseRecord = await repository.getShieldCase(owner, caseId);
+      if (!caseRecord) throw new Error('Shield case not found');
+      if (caseRecord.status === 'closed') throw new Error('Shield case is closed');
+      const input = z
+        .object({
+          instruction: z.string().trim().min(1).max(2000),
+          scope: z.enum(['case', 'agent']).default('case'),
+        })
+        .strict()
+        .parse(request.body);
+      const guidance = ShieldGuidanceSchema.parse({
+        guidanceId: randomUUID(),
+        instruction: input.instruction,
+        scope: input.scope,
+        createdAt: new Date().toISOString(),
+      });
+      return repository.saveShieldCase(
+        owner,
+        ShieldCaseSchema.parse({
+          ...caseRecord,
+          ownerGuidance: [...caseRecord.ownerGuidance, guidance],
+          updatedAt: guidance.createdAt,
+        }),
+      );
+    });
+    router.post('/v0.1/shield/cases/:id/close', async (request) => {
+      const owner = operatorId(request);
+      if (
+        !repository?.getShieldCase ||
+        !repository.saveShieldCase ||
+        !repository.saveShieldOutcome ||
+        !owner
+      )
+        throw new Error('OpenClasp Shield is not configured');
+      const caseId = (request.params as { id: string }).id;
+      const caseRecord = await repository.getShieldCase(owner, caseId);
+      if (!caseRecord) throw new Error('Shield case not found');
+      if (caseRecord.status === 'closed') throw new Error('Shield case is already closed');
+      enforceBoundAgent(request, caseRecord.agentId);
+      const input = z
+        .object({
+          result: ShieldOutcomeSchema.shape.result,
+          acceptedAdvice: z.boolean(),
+          actionTaken: ShieldOutcomeSchema.shape.actionTaken,
+          observedImpact: ShieldOutcomeSchema.shape.observedImpact,
+        })
+        .strict()
+        .parse(request.body);
+      const now = new Date().toISOString();
+      const outcome = ShieldOutcomeSchema.parse({
+        protocolVersion: '0.1',
+        outcomeId: randomUUID(),
+        caseId,
+        agentId: caseRecord.agentId,
+        ...input,
+        reportedBy:
+          request.headers['x-openclasp-credential-type'] === 'agent_access_token'
+            ? 'protected_agent'
+            : 'owner',
+        createdAt: now,
+      });
+      await repository.saveShieldOutcome(owner, outcome);
+      await repository.saveShieldCase(
+        owner,
+        ShieldCaseSchema.parse({
+          ...caseRecord,
+          status: 'closed',
+          updatedAt: now,
+          closedAt: now,
+        }),
+      );
+      return outcome;
     });
     router.get('/v0.1/intelligence', async (request) => {
       const owner = operatorId(request);
@@ -803,6 +968,22 @@ export function buildApi(
       if (!repository?.listAgentAccessTokens || !owner)
         throw new Error('Agent access tokens are not configured');
       return repository.listAgentAccessTokens(owner, (request.params as { id: string }).id);
+    });
+    router.post('/v0.1/agents/:id/shield-tokens', async (request) => {
+      const owner = operatorId(request);
+      if (!repository?.issueAgentAccessToken || !owner)
+        throw new Error('Shield access tokens are not configured');
+      const input = z
+        .object({
+          name: z.string().trim().min(1).max(100).default('τ³ benchmark'),
+          expiresInDays: z.number().int().min(1).max(30).default(7),
+        })
+        .strict()
+        .parse(request.body ?? {});
+      return repository.issueAgentAccessToken(owner, (request.params as { id: string }).id, {
+        ...input,
+        scopes: ['mcp:access', 'profile:read', 'interaction:write', 'feedback:write'],
+      });
     });
     router.delete('/v0.1/agents/:id/access-tokens/:tokenId', async (request) => {
       const owner = operatorId(request);

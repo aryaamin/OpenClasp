@@ -40,6 +40,532 @@
   --radius-xl: calc(var(--radius) * 1.5);
 }
 
+.shieldPage {
+  display: grid;
+  gap: 28px;
+}
+
+.shieldHero,
+.shieldCreate > header,
+.shieldCaseHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+.shieldHero h1 {
+  max-width: 760px;
+  margin: 8px 0 10px;
+  font-size: clamp(38px, 5vw, 66px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+
+.shieldHero p,
+.shieldCaseHead p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 17px;
+}
+
+.shieldHero .landingPrimary svg,
+.shieldComposer .landingPrimary svg {
+  width: 16px;
+}
+
+.shieldHeroActions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shieldHeroActions label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.shieldHeroActions select,
+.shieldToken input {
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  background: var(--bg-input);
+  padding: 10px 12px;
+}
+
+.shieldToken {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(280px, 2fr) auto auto;
+  gap: 10px;
+  align-items: end;
+  padding: 18px;
+  border: 1px solid var(--warn-line);
+  background: var(--warn-dim);
+}
+
+.shieldToken div {
+  display: grid;
+  gap: 4px;
+}
+
+.shieldToken p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.shieldToken input {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.shieldCreate,
+.shieldCase,
+.shieldCases,
+.shieldReply,
+.shieldCaseControls form {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.shieldCreate {
+  padding: clamp(24px, 4vw, 42px);
+}
+
+.shieldCreate h2,
+.shieldCaseHead h2 {
+  margin: 5px 0 8px;
+  font-size: clamp(26px, 3vw, 40px);
+  letter-spacing: -0.04em;
+}
+
+.shieldCreate > header > button,
+.shieldCaseControls button {
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.shieldFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 28px 0;
+}
+
+.shieldFormGrid label,
+.shieldCaseControls form,
+.shieldComposer {
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.shieldFormGrid label.wide {
+  grid-column: 1 / -1;
+}
+
+.shieldFormGrid input,
+.shieldFormGrid select,
+.shieldFormGrid textarea,
+.shieldComposer textarea,
+.shieldCaseControls input,
+.shieldCaseControls select {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  background: var(--bg-input);
+  padding: 12px 13px;
+  font-family: var(--font);
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.shieldFormGrid textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.shieldWorkspace {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.shieldCases {
+  position: sticky;
+  top: 96px;
+  display: grid;
+  padding: 16px;
+}
+
+.shieldCases > .eyebrow {
+  padding: 4px 8px 12px;
+}
+
+.shieldCases button {
+  display: grid;
+  gap: 4px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 14px 8px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shieldCases button.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.shieldCases button span {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.shieldCase {
+  min-width: 0;
+}
+
+.shieldCaseHead {
+  padding: clamp(22px, 4vw, 38px);
+  border-bottom: 1px solid var(--border);
+}
+
+.shieldRisk {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--warn-line);
+  color: var(--warn);
+  background: var(--warn-dim);
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.shieldRisk svg {
+  width: 15px;
+}
+
+.shieldRisk.critical,
+.shieldRisk.high {
+  border-color: var(--danger-line);
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.shieldRisk.low {
+  color: var(--live);
+  background: var(--live-dim);
+}
+
+.shieldGuidanceList {
+  padding: 22px clamp(22px, 4vw, 38px);
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-dim);
+}
+
+.shieldGuidanceList p {
+  margin: 8px 0 0;
+}
+
+.shieldConversation {
+  display: grid;
+  gap: 14px;
+  padding: clamp(18px, 3vw, 30px);
+}
+
+.shieldReply {
+  padding: 22px;
+}
+
+.shieldReply > header,
+.shieldReply > header span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.shieldReply > header span {
+  justify-content: flex-start;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.shieldReply > header svg {
+  width: 17px;
+}
+
+.shieldReply > header b {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.shieldReply > p {
+  margin: 18px 0;
+  white-space: pre-wrap;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.shieldReply ul {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  color: var(--text-muted);
+}
+
+.shieldQuestions {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-left: 2px solid var(--accent);
+  background: var(--bg-well);
+}
+
+.shieldQuestions span {
+  color: var(--text-muted);
+}
+
+.shieldAnalysisGrid {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.shieldAnalysisGrid > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-well);
+}
+
+.shieldAnalysisGrid p,
+.shieldAnalysisGrid small {
+  margin: 0;
+}
+
+.shieldAnalysisGrid small {
+  grid-column: 2;
+  color: var(--text-faint);
+}
+
+.shieldTag {
+  padding: 3px 6px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.shieldTag.contradicted,
+.shieldTag.critical,
+.shieldTag.high {
+  border-color: var(--danger-line);
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.shieldTag.verified,
+.shieldTag.supported,
+.shieldTag.low {
+  color: var(--live);
+  background: var(--live-dim);
+}
+
+.shieldActionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.shieldActionGrid section {
+  padding: 16px;
+  border: 1px solid var(--border);
+}
+
+.shieldActionGrid ol,
+.shieldActionGrid ul {
+  margin: 10px 0 0;
+}
+
+.shieldSuggestedResponse {
+  margin: 18px 0 0;
+  padding: 16px;
+  border-left: 2px solid var(--live);
+  background: var(--live-dim);
+}
+
+.shieldSuggestedResponse p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.shieldReply footer {
+  margin-top: 18px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.shieldEmpty {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  padding: 34px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.shieldEmpty svg {
+  width: 38px;
+  height: 38px;
+  margin-bottom: 12px;
+  color: var(--accent);
+}
+
+.shieldEmpty p {
+  max-width: 480px;
+  margin: 6px 0 0;
+}
+
+.shieldComposer {
+  padding: 0 clamp(18px, 3vw, 30px) 28px;
+}
+
+.shieldComposer textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.shieldComposer .landingPrimary {
+  justify-self: start;
+}
+
+.shieldComposer small {
+  color: var(--text-faint);
+  text-transform: none;
+}
+
+.shieldCaseControls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  border-top: 1px solid var(--border);
+  background: var(--border);
+}
+
+.shieldCaseControls form {
+  padding: 22px;
+  border: 0;
+}
+
+.shieldCaseControls form > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.shieldCaseControls button {
+  justify-self: start;
+  padding: 6px 0;
+}
+
+.shieldCaseControls .shieldCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.shieldCaseControls .shieldCheckbox input {
+  width: auto;
+}
+
+.shieldClosed {
+  display: flex;
+  gap: 12px;
+  padding: 24px 30px;
+  border-top: 1px solid var(--border);
+  color: var(--live);
+}
+
+.shieldClosed span {
+  display: grid;
+  color: var(--text-muted);
+}
+
+.shieldClosed strong {
+  color: var(--live);
+  text-transform: capitalize;
+}
+
+@media (max-width: 860px) {
+  .shieldHero,
+  .shieldCreate > header,
+  .shieldCaseHead {
+    flex-direction: column;
+  }
+
+  .shieldWorkspace,
+  .shieldCaseControls,
+  .shieldActionGrid,
+  .shieldToken {
+    grid-template-columns: 1fr;
+  }
+
+  .shieldCases {
+    position: static;
+  }
+}
+
+@media (max-width: 620px) {
+  .shieldFormGrid,
+  .shieldCaseControls form > div {
+    grid-template-columns: 1fr;
+  }
+
+  .shieldFormGrid label.wide {
+    grid-column: auto;
+  }
+}
+
 :root {
   color-scheme: dark;
   --font: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;

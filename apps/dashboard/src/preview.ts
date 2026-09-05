@@ -37,6 +37,9 @@ export type DashboardData = {
   assuranceEvaluations: Record<string, any>[];
   assuranceProbePlans: Record<string, any>[];
   assuranceProbeResponses: Record<string, any>[];
+  shieldCases: Record<string, any>[];
+  shieldConsultations: Record<string, any>[];
+  shieldOutcomes: Record<string, any>[];
 };
 
 export type Settings = {
@@ -549,6 +552,68 @@ export function createPreviewData(): DashboardData {
       },
     ],
     accessTokens: [],
+    shieldCases: [
+      {
+        protocolVersion: '0.1',
+        caseId: '77777777-7777-4777-8777-777777777777',
+        agentId: 'agent_atlas',
+        title: 'Unverified refund exception',
+        goal: 'Resolve a refund request without bypassing the approved exception policy.',
+        brief: 'The customer says a manager promised a full refund, but no approval is visible.',
+        proposedAction: 'Issue a $500 refund',
+        counterparty: { type: 'human' },
+        status: 'awaiting_input',
+        riskTier: 'high',
+        facts: [],
+        evidence: [],
+        policies: [
+          {
+            policyId: '88888888-8888-4888-8888-888888888888',
+            title: 'Refund approval',
+            statement: 'Refunds outside the standard window require recorded manager approval.',
+          },
+        ],
+        ownerGuidance: [],
+        latestConsultationId: '99999999-9999-4999-8999-999999999999',
+        latestDisposition: 'gather_evidence',
+        createdAt: ago(32),
+        updatedAt: ago(28),
+      },
+    ],
+    shieldConsultations: [
+      {
+        protocolVersion: '0.1',
+        consultationId: '99999999-9999-4999-8999-999999999999',
+        caseId: '77777777-7777-4777-8777-777777777777',
+        agentId: 'agent_atlas',
+        inputDigest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        analysis: {
+          reply:
+            'Do not issue the refund yet. The manager promise is material but currently unsupported. Check the CRM and offline approval notes, then request supervisor approval if no record exists.',
+          situationSummary: 'A refund exception depends on an unverified manager authorization.',
+          disposition: 'gather_evidence',
+          riskTier: 'high',
+          confidence: 0.78,
+          rationale: [
+            'The proposed refund is outside the normal policy.',
+            'The claimed authorization is not backed by a system record.',
+          ],
+          claims: [],
+          manipulationSignals: [],
+          missingEvidence: ['Recorded manager authorization'],
+          questionsToAsk: ['What approval reference or representative name can be verified?'],
+          nextSteps: ['Search approval records', 'Escalate if no authoritative record exists'],
+          safeguards: ['Require supervisor approval'],
+        },
+        generation: {
+          mode: 'ai',
+          model: 'anthropic/claude-sonnet-5',
+          promptVersion: 'shield-agent-v1',
+        },
+        createdAt: ago(28),
+      },
+    ],
+    shieldOutcomes: [],
     assuranceAssessments: [
       {
         assessmentId: '11111111-1111-4111-8111-111111111111',
@@ -647,6 +712,138 @@ export function applyPreviewRequest(
       rawConversationsStored: false as const,
     } as Settings;
     return { data, settings: next, result: next };
+  }
+
+  if (path === '/v0.1/shield/cases' && method === 'POST') {
+    const now = new Date().toISOString();
+    const caseRecord = {
+      protocolVersion: '0.1',
+      caseId: crypto.randomUUID(),
+      agentId: String(body.agentId),
+      title: String(body.title),
+      goal: String(body.goal),
+      brief: String(body.brief ?? ''),
+      ...(body.proposedAction ? { proposedAction: String(body.proposedAction) } : {}),
+      counterparty: body.counterparty ?? { type: 'unknown' },
+      status: 'open',
+      riskTier: 'medium',
+      facts: body.facts ?? [],
+      evidence: body.evidence ?? [],
+      policies:
+        (body.policies as Record<string, any>[] | undefined)?.map((item) => ({
+          policyId: crypto.randomUUID(),
+          ...item,
+        })) ?? [],
+      ownerGuidance: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    return {
+      data: { ...data, shieldCases: [caseRecord, ...data.shieldCases] },
+      settings,
+      result: caseRecord,
+    };
+  }
+
+  const shieldConsult = path.match(/^\/v0\.1\/shield\/cases\/([^/]+)\/consult$/);
+  if (shieldConsult && method === 'POST') {
+    const caseId = decodeURIComponent(shieldConsult[1] ?? '');
+    const selected = data.shieldCases.find((item) => item.caseId === caseId);
+    const consultationId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const consultation = {
+      protocolVersion: '0.1',
+      consultationId,
+      caseId,
+      agentId: selected?.agentId,
+      inputDigest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      analysis: {
+        reply:
+          'I would not treat the current claim as verified. Check the authoritative record, ask one targeted question, and require approval before any irreversible action.',
+        situationSummary: 'Decision support requested with transient current-turn context.',
+        disposition: 'gather_evidence',
+        riskTier: 'high',
+        confidence: 0.72,
+        rationale: ['A material claim is not independently supported.'],
+        claims: [],
+        manipulationSignals: [],
+        missingEvidence: ['Authoritative support for the requested exception'],
+        questionsToAsk: ['What verifiable record supports this request?'],
+        nextSteps: ['Check the system of record', 'Escalate if the exception remains unsupported'],
+        safeguards: ['Require approval before acting'],
+      },
+      generation: {
+        mode: 'ai',
+        model: 'anthropic/claude-sonnet-5',
+        promptVersion: 'shield-agent-v1',
+      },
+      createdAt,
+    };
+    const caseRecord = {
+      ...selected,
+      status: 'awaiting_input',
+      riskTier: 'high',
+      latestConsultationId: consultationId,
+      latestDisposition: 'gather_evidence',
+      updatedAt: createdAt,
+    };
+    return {
+      data: {
+        ...data,
+        shieldCases: data.shieldCases.map((item) => (item.caseId === caseId ? caseRecord : item)),
+        shieldConsultations: [...data.shieldConsultations, consultation],
+      },
+      settings,
+      result: { caseRecord, consultation },
+    };
+  }
+
+  const shieldGuidance = path.match(/^\/v0\.1\/shield\/cases\/([^/]+)\/guidance$/);
+  if (shieldGuidance && method === 'POST') {
+    const caseId = decodeURIComponent(shieldGuidance[1] ?? '');
+    const guidance = {
+      guidanceId: crypto.randomUUID(),
+      instruction: String(body.instruction),
+      scope: body.scope ?? 'case',
+      createdAt: new Date().toISOString(),
+    };
+    const nextCases = data.shieldCases.map((item) =>
+      item.caseId === caseId
+        ? { ...item, ownerGuidance: [...(item.ownerGuidance ?? []), guidance] }
+        : item,
+    );
+    return { data: { ...data, shieldCases: nextCases }, settings, result: nextCases };
+  }
+
+  const shieldClose = path.match(/^\/v0\.1\/shield\/cases\/([^/]+)\/close$/);
+  if (shieldClose && method === 'POST') {
+    const caseId = decodeURIComponent(shieldClose[1] ?? '');
+    const selected = data.shieldCases.find((item) => item.caseId === caseId);
+    const createdAt = new Date().toISOString();
+    const outcome = {
+      protocolVersion: '0.1',
+      outcomeId: crypto.randomUUID(),
+      caseId,
+      agentId: selected?.agentId,
+      result: body.result,
+      acceptedAdvice: Boolean(body.acceptedAdvice),
+      actionTaken: String(body.actionTaken),
+      reportedBy: 'owner',
+      createdAt,
+    };
+    return {
+      data: {
+        ...data,
+        shieldCases: data.shieldCases.map((item) =>
+          item.caseId === caseId
+            ? { ...item, status: 'closed', updatedAt: createdAt, closedAt: createdAt }
+            : item,
+        ),
+        shieldOutcomes: [...data.shieldOutcomes, outcome],
+      },
+      settings,
+      result: outcome,
+    };
   }
 
   if (path === '/v0.1/provider-connections/botpress' && method === 'POST') {
@@ -789,6 +986,30 @@ export function applyPreviewRequest(
       result: {
         ...record,
         token: `oc_at_${tokenId}.preview_agent_access_token_secret_not_for_production`,
+      },
+    };
+  }
+  const shieldToken = path.match(/^\/v0\.1\/agents\/([^/]+)\/shield-tokens$/);
+  if (shieldToken && method === 'POST') {
+    const agentId = decodeURIComponent(shieldToken[1] ?? '');
+    const tokenId = crypto.randomUUID().replaceAll('-', '').slice(0, 16);
+    const createdAt = new Date();
+    const record = {
+      tokenId,
+      agentId,
+      name: String(body.name ?? 'τ³ benchmark'),
+      scopes: ['mcp:access', 'profile:read', 'interaction:write', 'feedback:write'],
+      createdAt: createdAt.toISOString(),
+      expiresAt: new Date(
+        createdAt.getTime() + Number(body.expiresInDays ?? 7) * 86_400_000,
+      ).toISOString(),
+    };
+    return {
+      data: { ...data, accessTokens: [record, ...data.accessTokens] },
+      settings,
+      result: {
+        ...record,
+        token: `oc_at_${tokenId}.preview_shield_token_secret_not_for_production`,
       },
     };
   }

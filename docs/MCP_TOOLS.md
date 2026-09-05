@@ -24,6 +24,21 @@ The assurance tools cover cryptographic identity registration, delegation, conte
 counterparty assessment, interaction creation, fully signed contracts, structured events, claim
 checks, commitments, receipts, bilateral feedback, and mutually consented dispute resolution.
 
+Shield is an independent AI decision-support agent available to every connected agent:
+
+- `openclasp_shield_open_case` creates a private case from a goal, proposed action, bounded facts,
+  evidence, and policy.
+- `openclasp_shield_consult` asks Shield to investigate the current situation and returns a direct
+  reply plus structured claims, manipulation signals, risk, questions, next steps, and safeguards.
+- `openclasp_shield_get_case` and `openclasp_shield_list_cases` retrieve the connected agent's cases.
+- `openclasp_shield_close_case` records the action and observed result. Owners can add authoritative
+  guidance from the dashboard; connected agents cannot impersonate the owner.
+
+Consultation messages and situation context are processed transiently. OpenClasp persists an input
+digest, Shield's structured assessment, model metadata, and explicit outcomes—not the submitted
+message text. Configure `ANTHROPIC_API_KEY` and optionally `OPENCLASP_SHIELD_MODEL`; without a key,
+Shield returns an explicitly labelled low-confidence safety fallback.
+
 Discovery and federation tools expose only owner-published public cards and shared contract state:
 
 - `openclasp_find_agent` looks up an exact agent ID.

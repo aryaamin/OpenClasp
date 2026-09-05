@@ -48,6 +48,9 @@ export const SOURCE_JOURNAL_RECORD_KINDS = new Set([
   'profile_delta',
   'receipt',
   'revocation',
+  'shield_case',
+  'shield_consultation',
+  'shield_outcome',
 ]);
 
 export function shouldJournalSourceRecord(kind: string): boolean {
@@ -78,11 +81,14 @@ const SHARED_RECORD_KINDS = new Set([
 
 const ENTITY_REFERENCE_FIELDS = [
   'agentId',
+  'caseId',
   'contractHash',
   'counterpartyAgentId',
   'decisionId',
   'deploymentId',
   'interactionId',
+  'consultationId',
+  'outcomeId',
   'projectId',
   'reportId',
   'reportingAgentId',

@@ -41,6 +41,7 @@ describe('production security boundaries', () => {
       ),
     ).toEqual(['feedback:write']);
     expect(requiredAgentApiScopes('GET', '/v0.1/dashboard')).toBeUndefined();
+    expect(requiredAgentApiScopes('POST', '/v0.1/agents/agent-a/shield-tokens')).toBeUndefined();
     expect(
       requiredAgentApiScopes('GET', '/v0.1/federated-interactions/interaction-id/assurance-probes'),
     ).toEqual(['profile:read']);

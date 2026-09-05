@@ -20,6 +20,7 @@ import { AgentMark, FrameCorners } from '@/components/agent-mark';
 import { AppShell } from '@/components/app-shell';
 import { ClaspMark } from '@/components/clasp-mark';
 import { FirstRunGuide } from '@/components/first-run-guide';
+import { ShieldWorkspace } from '@/components/shield-workspace';
 import { LandingBackdrop, LandingDiagram } from '@/components/landing-scene';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -86,6 +87,9 @@ type DashboardData = {
   assuranceEvaluations: Record<string, any>[];
   assuranceProbePlans: Record<string, any>[];
   assuranceProbeResponses: Record<string, any>[];
+  shieldCases: Record<string, any>[];
+  shieldConsultations: Record<string, any>[];
+  shieldOutcomes: Record<string, any>[];
 };
 
 type Settings = {
@@ -123,6 +127,9 @@ const emptyData: DashboardData = {
   assuranceEvaluations: [],
   assuranceProbePlans: [],
   assuranceProbeResponses: [],
+  shieldCases: [],
+  shieldConsultations: [],
+  shieldOutcomes: [],
 };
 const defaultSettings: Settings = {
   displayName: '',
@@ -746,6 +753,17 @@ function PageContent({
   if (page === 'agents')
     return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'insights') return <Insights data={data} />;
+  if (page === 'shield')
+    return (
+      <ShieldWorkspace
+        agents={data.agents}
+        cases={data.shieldCases}
+        consultations={data.shieldConsultations}
+        outcomes={data.shieldOutcomes}
+        api={api}
+        refreshDashboard={refreshDashboard}
+      />
+    );
   if (page !== 'dashboard')
     return (
       <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />
@@ -3757,7 +3775,7 @@ function AgentCard({
   const ready = published && runtime?.status === 'verified';
   const online = agent.presence?.status === 'online';
   const connected = runtime?.status === 'verified';
-  const providerConnected = accessTokens.length > 0;
+  const providerConnected = accessTokens.some((token) => token.scopes?.includes('runtime:connect'));
   const endpoint = String(runtime?.a2aEndpoint ?? agent.a2aEndpoint ?? 'Connect a runtime first');
   const identityLabel = agent.revoked
     ? 'REVOKED'
@@ -3872,10 +3890,10 @@ function AgentCard({
         <div className="accessTokenBox">
           <div className="accessTokenHead">
             <div>
-              <strong>Provider connections</strong>
+              <strong>Agent access tokens</strong>
               <span>{accessTokens.length} ACTIVE</span>
             </div>
-            <p>Created through Connect. Revoke a provider here if its credential is exposed.</p>
+            <p>Provider and Shield test credentials. Revoke any token that is exposed.</p>
           </div>
           <div className="tokenList">
             {accessTokens.map((token) => (
@@ -3895,7 +3913,11 @@ function AgentCard({
                   type="button"
                   disabled={accessTokenWorking}
                   onClick={() => {
-                    if (window.confirm(`Revoke “${String(token.name)}”? Botpress will disconnect.`))
+                    if (
+                      window.confirm(
+                        `Revoke “${String(token.name)}”? Any integration using it will disconnect.`,
+                      )
+                    )
                       void onRevokeAccessToken(String(token.tokenId));
                   }}
                 >

@@ -14,6 +14,7 @@ import type { Page } from '@/lib/navigation';
 
 const views = [
   { page: 'dashboard' as const, label: 'agents' },
+  { page: 'shield' as const, label: 'shield' },
   { page: 'marketplace' as const, label: 'marketplace' },
   { page: 'settings' as const, label: 'settings' },
 ];
@@ -35,7 +36,8 @@ export function AppShell({
   onSignOut: () => void;
   children: ReactNode;
 }) {
-  const current = page === 'marketplace' || page === 'settings' ? page : 'dashboard';
+  const current =
+    page === 'marketplace' || page === 'settings' || page === 'shield' ? page : 'dashboard';
   const name = user.name || 'OpenClasp user';
 
   return (

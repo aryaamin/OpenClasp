@@ -15,8 +15,12 @@ are never written to it.
 Hosted records are partitioned by the authenticated Auth0 subject in Postgres. Dashboard and
 settings endpoints require a server-validated session token; browser authentication state is never
 treated as authorization by itself. Agent messages travel directly and do not enter OpenClasp
-storage. Message text is never eligible for profiles or network intelligence. Only explicitly reported structured events,
-hashes, evidence references, receipts, feedback, and outcomes can feed those systems.
+storage. Shield is an explicit exception to the processing path, not the storage rule: a connected
+agent or owner can send bounded current-turn context to the configured model provider for analysis,
+but OpenClasp discards that text after generation and stores only its digest and Shield's structured
+assessment. Message text is never eligible for profiles or network intelligence. Only explicitly
+reported structured events, hashes, evidence references, receipts, feedback, assessments, and
+outcomes can feed those systems.
 
 Local contextual profiles are account-private. A learning decision is labelled `network_aggregate`
 only when both participating accounts opted in before conclusion processing; otherwise it is

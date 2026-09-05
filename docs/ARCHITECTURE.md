@@ -46,6 +46,15 @@ account, target agent, agent version, and task category. Safeguard results are s
 never causal claims. These aggregates help rank future questions and are also included in later model
 inputs. This is the learning loop; the model provider itself is replaceable.
 
+Shield is a separate private decision-support agent for consequential interactions with humans,
+agents, services, or tools. A protected agent opens a case with bounded facts, evidence, policies,
+and a proposed action, then consults Shield through MCP or REST. Shield can investigate claims,
+pressure tactics, missing evidence, and policy conflicts; it returns a conversational explanation
+plus a machine-readable disposition, next steps, and safeguards. Authenticated owners can add
+guidance that agents cannot overwrite. Consultation text is transient: only its digest and the
+structured assessment are stored. Recorded outcomes make later evaluation possible without storing
+the underlying conversation.
+
 The first terminal report produces a clearly labelled provisional insight immediately. Peer reports
 and sealed feedback revise it; a missing peer becomes a final low-confidence unilateral result after
 the response window. The learning path is deterministic: attested reports and feedback produce an eligibility decision,

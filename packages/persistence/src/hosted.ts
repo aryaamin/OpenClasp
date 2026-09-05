@@ -38,6 +38,9 @@ import {
   LearningEligibilityDecisionSchema,
   PublicAgentCardSchema,
   ReceiptSchema,
+  ShieldCaseSchema,
+  ShieldConsultationSchema,
+  ShieldOutcomeSchema,
   canonicalHash,
   verifyObject,
   type FederatedInteraction,
@@ -59,7 +62,11 @@ import {
   type InteractionContract,
   type InteractionFeedback,
   type InteractionConclusion,
+  type OpenClaspAuthScope,
   type PublicAgentCard,
+  type ShieldCase,
+  type ShieldConsultation,
+  type ShieldOutcome,
 } from '../../protocol/src/index.js';
 import type { AgentProfile } from './onboarding.js';
 import type { AgentInstallation } from './onboarding.js';
@@ -127,7 +134,10 @@ export type HostedRecordKind =
   | 'installation'
   | 'setup_request'
   | 'publication'
-  | 'presence';
+  | 'presence'
+  | 'shield_case'
+  | 'shield_consultation'
+  | 'shield_outcome';
 
 export type { PublicAgentCard, FederatedInteraction } from '../../protocol/src/index.js';
 
@@ -1174,6 +1184,86 @@ export class HostedRepository {
     }));
   }
 
+  async saveShieldCase(operatorId: string, value: ShieldCase): Promise<ShieldCase> {
+    const caseRecord = ShieldCaseSchema.parse(value);
+    await this.upsert(operatorId, 'shield_case', caseRecord.caseId, caseRecord, {
+      journal: true,
+      schemaName: 'openclasp.shield.case',
+      schemaVersion: '1',
+      entityRefs: { caseId: caseRecord.caseId, agentId: caseRecord.agentId },
+      retentionClass: 'audit',
+      learningScope: 'local_only',
+    });
+    return caseRecord;
+  }
+
+  async getShieldCase(operatorId: string, caseId: string): Promise<ShieldCase | undefined> {
+    const row = (await this.list(operatorId)).find(
+      (record) => record.kind === 'shield_case' && record.recordId === caseId,
+    );
+    if (!row) return undefined;
+    return ShieldCaseSchema.parse(row.payload);
+  }
+
+  async listShieldCases(operatorId: string, agentId?: string): Promise<ShieldCase[]> {
+    return (await this.list(operatorId))
+      .filter((record) => record.kind === 'shield_case')
+      .map((record) => ShieldCaseSchema.parse(record.payload))
+      .filter((caseRecord) => !agentId || caseRecord.agentId === agentId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async saveShieldConsultation(
+    operatorId: string,
+    value: ShieldConsultation,
+  ): Promise<ShieldConsultation> {
+    const consultation = ShieldConsultationSchema.parse(value);
+    await this.upsert(
+      operatorId,
+      'shield_consultation',
+      consultation.consultationId,
+      consultation,
+      {
+        journal: true,
+        schemaName: 'openclasp.shield.consultation',
+        schemaVersion: '1',
+        entityRefs: {
+          caseId: consultation.caseId,
+          agentId: consultation.agentId,
+          consultationId: consultation.consultationId,
+        },
+        retentionClass: 'audit',
+        learningScope: 'local_only',
+      },
+    );
+    return consultation;
+  }
+
+  async listShieldConsultations(operatorId: string, caseId: string): Promise<ShieldConsultation[]> {
+    return (await this.list(operatorId))
+      .filter((record) => record.kind === 'shield_consultation')
+      .map((record) => ShieldConsultationSchema.parse(record.payload))
+      .filter((consultation) => consultation.caseId === caseId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async saveShieldOutcome(operatorId: string, value: ShieldOutcome): Promise<ShieldOutcome> {
+    const outcome = ShieldOutcomeSchema.parse(value);
+    await this.upsert(operatorId, 'shield_outcome', outcome.outcomeId, outcome, {
+      journal: true,
+      schemaName: 'openclasp.shield.outcome',
+      schemaVersion: '1',
+      entityRefs: {
+        caseId: outcome.caseId,
+        agentId: outcome.agentId,
+        outcomeId: outcome.outcomeId,
+      },
+      retentionClass: 'audit',
+      learningScope: 'local_only',
+    });
+    return outcome;
+  }
+
   async dashboard(operatorId: string) {
     await this.ensureSchema();
     const dueFeedback = await this.sql`
@@ -1330,6 +1420,9 @@ export class HostedRepository {
       assuranceEvaluations: assuranceEvaluationRows.map((row) => row.payload),
       assuranceProbePlans: assurancePlanRows.map((row) => row.payload),
       assuranceProbeResponses: assuranceResponseRows.map((row) => row.payload),
+      shieldCases: ofKind('shield_case'),
+      shieldConsultations: ofKind('shield_consultation'),
+      shieldOutcomes: ofKind('shield_outcome'),
       federatedInteractions,
       liveSessions: liveSessionRows.map((row) => ({
         interactionId: String(row.interaction_id),
@@ -1410,7 +1503,7 @@ export class HostedRepository {
   async issueAgentAccessToken(
     operatorId: string,
     agentId: string,
-    input: { name: string; expiresInDays: number },
+    input: { name: string; expiresInDays: number; scopes?: OpenClaspAuthScope[] },
   ): Promise<AgentAccessTokenMetadata & { token: string }> {
     await this.ensureSchema();
     const agents = await this.sql`
@@ -1426,9 +1519,11 @@ export class HostedRepository {
     const { tokenId, token, tokenHash } = createAgentAccessToken();
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + input.expiresInDays * 86_400_000);
-    // The credential is bound to one agent. It may use MCP outbound and let that
-    // same agent register its own inbound runtime; it cannot manage other agents.
-    const scopes = DEFAULT_AGENT_AUTH_SCOPES;
+    // The credential is bound to one agent. Callers may further reduce its default
+    // scopes for a specific integration, but cannot grant unsupported scopes.
+    const scopes = input.scopes ?? DEFAULT_AGENT_AUTH_SCOPES;
+    if (!scopes.length || scopes.some((scope) => !DEFAULT_AGENT_AUTH_SCOPES.includes(scope)))
+      throw new Error('Agent access token contains an unsupported scope');
     await this.sql`
       INSERT INTO openclasp_agent_access_tokens(
         token_id, operator_id, agent_id, name, token_hash, scopes, expires_at, created_at

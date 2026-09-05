@@ -15,6 +15,8 @@ import {
   LiveSessionEventSchema,
   ProgressCheckpointSchema,
   ReceiptSchema,
+  ShieldCaseSchema,
+  ShieldOutcomeSchema,
   TrustEnvelopeSchema,
   canonicalHash,
   type FederatedInteraction,
@@ -28,6 +30,12 @@ import {
 } from '../../persistence/src/onboarding.js';
 import { buildPublicAgentCard } from '../../persistence/src/hosted.js';
 import { generateAssuranceProbePlan } from './assurance-ai.js';
+import {
+  createShieldCase,
+  consultShield,
+  ShieldCaseInputSchema,
+  ShieldConsultInputSchema,
+} from './shield-agent.js';
 
 export const OPENCLASP_TOOL_NAMES = [
   'openclasp_create_identity',
@@ -77,6 +85,11 @@ export const OPENCLASP_TOOL_NAMES = [
   'openclasp_get_assurance_comparisons',
   'openclasp_get_assurance_brief',
   'openclasp_decide_assurance_safeguard',
+  'openclasp_shield_open_case',
+  'openclasp_shield_consult',
+  'openclasp_shield_get_case',
+  'openclasp_shield_list_cases',
+  'openclasp_shield_close_case',
 ] as const;
 
 export const HOSTED_OPENCLASP_TOOL_NAMES = OPENCLASP_TOOL_NAMES.filter(
@@ -134,7 +147,7 @@ const LiveSessionEventInputSchema = z
   });
 
 export const OPENCLASP_MCP_INSTRUCTIONS =
-  'Start with openclasp_connection_status and heartbeat while active. Inspect contextual intelligence before choosing a peer. Keep traffic on direct A2A. Agree terms, then generate a pre-task assurance probe before material work and a post-task probe after it. Checkpoint when blocked, drifting, or nearly done. On any terminal outcome call openclasp_complete_live_session with honest structured feedback. Never upload transcripts, chain-of-thought, or invented evidence.';
+  'Start with openclasp_connection_status and heartbeat while active. Before a consequential decision, open or consult a Shield case and provide only bounded facts, evidence, and policy. For agent agreements, use pre-task and post-task assurance. Checkpoint when blocked or drifting. Record terminal outcomes honestly. Never upload transcripts, chain-of-thought, secrets, or invented evidence.';
 
 export function buildMcpServer(engine = new TrustEngine()) {
   const server = new McpServer(
@@ -267,6 +280,12 @@ type AgentDirectory = {
     status: 'accepted' | 'rejected' | 'modified',
     decisionReason?: string,
   ): Promise<any>;
+  saveShieldCase?(operatorId: string, value: any): Promise<any>;
+  getShieldCase?(operatorId: string, caseId: string): Promise<any | undefined>;
+  listShieldCases?(operatorId: string, agentId?: string): Promise<any[]>;
+  saveShieldConsultation?(operatorId: string, value: any): Promise<any>;
+  listShieldConsultations?(operatorId: string, caseId: string): Promise<any[]>;
+  saveShieldOutcome?(operatorId: string, value: any): Promise<any>;
   touchAgentPresence(operatorId: string, agentId: string): Promise<unknown>;
 };
 
@@ -2053,6 +2072,169 @@ export function registerOpenClaspTools(
           input.decisionReason,
         ),
       );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[47],
+    {
+      title: 'Open a Shield case',
+      description:
+        'Open a private decision-support case before a consequential interaction or action. Raw conversation bodies are not required or stored.',
+      inputSchema: ShieldCaseInputSchema.omit({ agentId: true }),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.saveShieldCase) throw new Error('OpenClasp Shield is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const caseRecord = createShieldCase({ ...input, agentId: binding.agent.agentId });
+      return text(await agentDirectory.saveShieldCase(connection.operatorId, caseRecord));
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[48],
+    {
+      title: 'Consult the Shield agent',
+      description:
+        'Ask Shield to investigate a situation, challenge unsupported claims, inspect supplied evidence and policy, and recommend defensible next steps.',
+      inputSchema: z
+        .object({ caseId: z.string().uuid(), ...ShieldConsultInputSchema.shape })
+        .strict(),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (
+        !agentDirectory?.getShieldCase ||
+        !agentDirectory.saveShieldCase ||
+        !agentDirectory.saveShieldConsultation ||
+        !agentDirectory.listShieldConsultations
+      )
+        throw new Error('OpenClasp Shield is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const caseRecord = await agentDirectory.getShieldCase(connection.operatorId, input.caseId);
+      if (!caseRecord || caseRecord.agentId !== binding.agent.agentId)
+        throw new Error('Shield case not found');
+      const previous = await agentDirectory.listShieldConsultations(
+        connection.operatorId,
+        input.caseId,
+      );
+      const consultationInput = ShieldConsultInputSchema.parse({
+        message: input.message,
+        situationContext: input.situationContext,
+        ...(input.proposedAction ? { proposedAction: input.proposedAction } : {}),
+        facts: input.facts,
+        evidence: input.evidence,
+        policies: input.policies,
+      });
+      const result = await consultShield(caseRecord, consultationInput, previous);
+      await agentDirectory.saveShieldConsultation(connection.operatorId, result.consultation);
+      await agentDirectory.saveShieldCase(connection.operatorId, result.caseRecord);
+      return text(result);
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[49],
+    {
+      title: 'Get a Shield case',
+      description:
+        'Get one private Shield case with its structured assessments. Raw consultation inputs are not retained.',
+      inputSchema: z.object({ caseId: z.string().uuid() }).strict(),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (input, context) => {
+      if (!agentDirectory?.getShieldCase || !agentDirectory.listShieldConsultations)
+        throw new Error('OpenClasp Shield is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const caseRecord = await agentDirectory.getShieldCase(connection.operatorId, input.caseId);
+      if (!caseRecord || caseRecord.agentId !== binding.agent.agentId)
+        throw new Error('Shield case not found');
+      return text({
+        case: caseRecord,
+        consultations: await agentDirectory.listShieldConsultations(
+          connection.operatorId,
+          input.caseId,
+        ),
+      });
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[50],
+    {
+      title: 'List Shield cases',
+      description: 'List this connected agent’s private Shield decision-support cases.',
+      inputSchema: z.object({}).strict(),
+      annotations: READ_ONLY_TOOL,
+    },
+    async (_input, context) => {
+      if (!agentDirectory?.listShieldCases) throw new Error('OpenClasp Shield is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      return text(
+        await agentDirectory.listShieldCases(connection.operatorId, binding.agent.agentId),
+      );
+    },
+  );
+  server.registerTool(
+    OPENCLASP_TOOL_NAMES[51],
+    {
+      title: 'Close a Shield case',
+      description:
+        'Close a Shield case with the observed result so future decision support can be evaluated against outcomes.',
+      inputSchema: z
+        .object({
+          caseId: z.string().uuid(),
+          result: ShieldOutcomeSchema.shape.result,
+          acceptedAdvice: z.boolean(),
+          actionTaken: ShieldOutcomeSchema.shape.actionTaken,
+          observedImpact: ShieldOutcomeSchema.shape.observedImpact,
+        })
+        .strict(),
+      annotations: WRITE_TOOL,
+    },
+    async (input, context) => {
+      if (
+        !agentDirectory?.getShieldCase ||
+        !agentDirectory.saveShieldCase ||
+        !agentDirectory.saveShieldOutcome
+      )
+        throw new Error('OpenClasp Shield is not configured');
+      const binding = await requireBoundAgent(context);
+      if (!binding) throw new Error('A bound MCP installation is required');
+      const connection = installationContext(context);
+      const caseRecord = await agentDirectory.getShieldCase(connection.operatorId, input.caseId);
+      if (!caseRecord || caseRecord.agentId !== binding.agent.agentId)
+        throw new Error('Shield case not found');
+      if (caseRecord.status === 'closed') throw new Error('Shield case is already closed');
+      const now = new Date().toISOString();
+      const outcome = ShieldOutcomeSchema.parse({
+        protocolVersion: '0.1',
+        outcomeId: crypto.randomUUID(),
+        caseId: input.caseId,
+        agentId: binding.agent.agentId,
+        result: input.result,
+        acceptedAdvice: input.acceptedAdvice,
+        actionTaken: input.actionTaken,
+        ...(input.observedImpact ? { observedImpact: input.observedImpact } : {}),
+        reportedBy: 'protected_agent',
+        createdAt: now,
+      });
+      await agentDirectory.saveShieldOutcome(connection.operatorId, outcome);
+      await agentDirectory.saveShieldCase(
+        connection.operatorId,
+        ShieldCaseSchema.parse({
+          ...caseRecord,
+          status: 'closed',
+          updatedAt: now,
+          closedAt: now,
+        }),
+      );
+      return text(outcome);
     },
   );
   return server;

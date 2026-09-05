@@ -6,6 +6,7 @@ import {
   Moon,
   Plus,
   ScanLine,
+  Shield,
   Settings,
   Sun,
 } from 'lucide-react';
@@ -41,6 +42,7 @@ const navIcons = {
   history: History,
   agents: ScanLine,
   insights: BarChart3,
+  shield: Shield,
   connect: Plus,
   settings: Settings,
 } as const;

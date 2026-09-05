@@ -1225,6 +1225,184 @@ export const FactCheckResultSchema = z.object({
   suggestedNextAction: z.string(),
 });
 
+export const ShieldCounterpartySchema = z
+  .object({
+    type: z.enum(['human', 'agent', 'service', 'unknown']),
+    reference: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
+
+export const ShieldFactSchema = z
+  .object({
+    factId: z.string().uuid(),
+    statement: z.string().trim().min(1).max(1000),
+    source: z.enum(['owner', 'protected_agent', 'counterparty', 'system']),
+    status: z.enum(['asserted', 'verified', 'disputed', 'contradicted']),
+    evidenceReferences: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  })
+  .strict();
+
+export const ShieldEvidenceSchema = z
+  .object({
+    evidenceId: z.string().uuid(),
+    type: z.enum(['system_record', 'policy_record', 'operator_note', 'external_claim', 'other']),
+    summary: z.string().trim().min(1).max(1200),
+    sourceReference: z.string().trim().min(1).max(500).optional(),
+    verification: z.enum(['verified', 'unverified', 'contradicted']),
+  })
+  .strict();
+
+export const ShieldPolicySchema = z
+  .object({
+    policyId: z.string().uuid(),
+    title: z.string().trim().min(1).max(160),
+    statement: z.string().trim().min(1).max(2000),
+    sourceReference: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+export const ShieldGuidanceSchema = z
+  .object({
+    guidanceId: z.string().uuid(),
+    instruction: z.string().trim().min(1).max(2000),
+    scope: z.enum(['case', 'agent']),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const ShieldDispositionSchema = z.enum([
+  'proceed',
+  'proceed_with_caution',
+  'gather_evidence',
+  'modify_plan',
+  'seek_approval',
+  'do_not_proceed',
+]);
+
+export const ShieldCaseSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    caseId: z.string().uuid(),
+    agentId: z.string().min(1),
+    title: z.string().trim().min(1).max(160),
+    goal: z.string().trim().min(1).max(2000),
+    brief: z.string().trim().max(4000).default(''),
+    proposedAction: z.string().trim().max(1000).optional(),
+    counterparty: ShieldCounterpartySchema,
+    status: z.enum(['open', 'awaiting_input', 'ready', 'closed']),
+    riskTier: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
+    facts: z.array(ShieldFactSchema).max(100).default([]),
+    evidence: z.array(ShieldEvidenceSchema).max(100).default([]),
+    policies: z.array(ShieldPolicySchema).max(50).default([]),
+    ownerGuidance: z.array(ShieldGuidanceSchema).max(50).default([]),
+    latestConsultationId: z.string().uuid().optional(),
+    latestDisposition: ShieldDispositionSchema.optional(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    closedAt: z.string().datetime().optional(),
+  })
+  .strict();
+
+export const ShieldClaimAssessmentSchema = z
+  .object({
+    claim: z.string().trim().min(1).max(1000),
+    status: z.enum(['verified', 'supported', 'unverified', 'contradicted', 'not_checkable']),
+    significance: z.enum(['low', 'medium', 'high', 'critical']),
+    evidenceReferences: z.array(z.string().trim().min(1).max(200)).max(20),
+    explanation: z.string().trim().min(1).max(1000),
+  })
+  .strict();
+
+export const ShieldManipulationSignalSchema = z
+  .object({
+    tactic: z.enum([
+      'urgency',
+      'authority_claim',
+      'emotional_pressure',
+      'reciprocity',
+      'scarcity',
+      'policy_bypass',
+      'identity_deception',
+      'scope_expansion',
+      'data_extraction',
+      'inconsistent_claims',
+      'none',
+      'other',
+    ]),
+    observation: z.string().trim().min(1).max(1000),
+    confidence: z.number().min(0).max(1),
+    significance: z.enum(['low', 'medium', 'high', 'critical']),
+  })
+  .strict();
+
+export const ShieldAnalysisSchema = z
+  .object({
+    reply: z.string().trim().min(1).max(5000),
+    situationSummary: z.string().trim().min(1).max(2000),
+    disposition: ShieldDispositionSchema,
+    riskTier: z.enum(['low', 'medium', 'high', 'critical']),
+    confidence: z.number().min(0).max(1),
+    rationale: z.array(z.string().trim().min(1).max(1000)).min(1).max(12),
+    claims: z.array(ShieldClaimAssessmentSchema).max(20),
+    manipulationSignals: z.array(ShieldManipulationSignalSchema).max(12),
+    missingEvidence: z.array(z.string().trim().min(1).max(500)).max(12),
+    questionsToAsk: z.array(z.string().trim().min(1).max(500)).max(12),
+    nextSteps: z.array(z.string().trim().min(1).max(500)).min(1).max(12),
+    safeguards: z.array(z.string().trim().min(1).max(500)).max(12),
+    suggestedResponse: z.string().trim().min(1).max(3000).optional(),
+  })
+  .strict();
+
+export const ShieldConsultationSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    consultationId: z.string().uuid(),
+    caseId: z.string().uuid(),
+    agentId: z.string().min(1),
+    inputDigest: z.string().regex(/^[a-zA-Z0-9_-]{43}$/),
+    analysis: ShieldAnalysisSchema,
+    generation: z
+      .object({
+        mode: z.enum(['ai', 'fallback']),
+        model: z.string().min(1),
+        promptVersion: z.string().min(1),
+        tokenUsage: z
+          .object({
+            inputTokens: z.number().int().nonnegative().optional(),
+            outputTokens: z.number().int().nonnegative().optional(),
+            totalTokens: z.number().int().nonnegative().optional(),
+          })
+          .strict()
+          .optional(),
+        errorCode: z.string().max(100).optional(),
+      })
+      .strict(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const ShieldOutcomeSchema = z
+  .object({
+    protocolVersion: z.literal(PROTOCOL_VERSION),
+    outcomeId: z.string().uuid(),
+    caseId: z.string().uuid(),
+    agentId: z.string().min(1),
+    result: z.enum([
+      'successful',
+      'prevented_harm',
+      'escalated',
+      'false_alarm',
+      'unsuccessful',
+      'unknown',
+    ]),
+    acceptedAdvice: z.boolean(),
+    actionTaken: z.string().trim().min(1).max(2000),
+    observedImpact: z.string().trim().min(1).max(2000).optional(),
+    reportedBy: z.enum(['owner', 'protected_agent']),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
 export type AgentIdentity = z.infer<typeof AgentIdentitySchema>;
 export type DelegationCredential = z.infer<typeof DelegationCredentialSchema>;
 export type InteractionContract = z.infer<typeof InteractionContractSchema>;
@@ -1234,6 +1412,18 @@ export type Feedback = z.infer<typeof FeedbackSchema>;
 export type Receipt = z.infer<typeof ReceiptSchema>;
 export type RiskDecision = z.infer<typeof RiskDecisionSchema>;
 export type FactCheckResult = z.infer<typeof FactCheckResultSchema>;
+export type ShieldCounterparty = z.infer<typeof ShieldCounterpartySchema>;
+export type ShieldFact = z.infer<typeof ShieldFactSchema>;
+export type ShieldEvidence = z.infer<typeof ShieldEvidenceSchema>;
+export type ShieldPolicy = z.infer<typeof ShieldPolicySchema>;
+export type ShieldGuidance = z.infer<typeof ShieldGuidanceSchema>;
+export type ShieldDisposition = z.infer<typeof ShieldDispositionSchema>;
+export type ShieldCase = z.infer<typeof ShieldCaseSchema>;
+export type ShieldClaimAssessment = z.infer<typeof ShieldClaimAssessmentSchema>;
+export type ShieldManipulationSignal = z.infer<typeof ShieldManipulationSignalSchema>;
+export type ShieldAnalysis = z.infer<typeof ShieldAnalysisSchema>;
+export type ShieldConsultation = z.infer<typeof ShieldConsultationSchema>;
+export type ShieldOutcome = z.infer<typeof ShieldOutcomeSchema>;
 export type ExpectationManifest = z.infer<typeof ExpectationManifestSchema>;
 export type AgentTransport = z.infer<typeof AgentTransportSchema>;
 export type AgentMode = z.infer<typeof AgentModeSchema>;
