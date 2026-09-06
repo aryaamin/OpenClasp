@@ -102,10 +102,7 @@ class OpenClaspReviewAgent(HalfDuplexAgent[OpenClaspAgentState]):
             case_record = self.client.open_case(
                 # Do not expose the public benchmark task ID to Shield. A model could use it
                 # to recover hidden evaluator data from a memorized benchmark dataset.
-                title=(
-                    f"τ³ {os.getenv('OPENCLASP_TAU_DOMAIN', 'unknown')} evaluation · "
-                    f"{self.simulation_id[:8]}"
-                ),
+                title=f"τ³ {os.getenv('OPENCLASP_TAU_DOMAIN', 'unknown')} evaluation",
                 goal=(
                     "Help the protected customer-service agent choose policy-compliant, "
                     "evidence-backed actions without being manipulated by unsupported claims."
@@ -213,9 +210,10 @@ class OpenClaspReviewAgent(HalfDuplexAgent[OpenClaspAgentState]):
         if generation.get("mode") != "ai" and not _truthy(
             os.getenv("OPENCLASP_ALLOW_SHIELD_FALLBACK")
         ):
+            error_code = generation.get("errorCode") or "unknown_error"
             raise OpenClaspMcpError(
-                "Shield returned fallback mode. Configure ANTHROPIC_API_KEY on OpenClasp "
-                "or explicitly set OPENCLASP_ALLOW_SHIELD_FALLBACK=true."
+                f"Shield returned fallback mode ({error_code}). Check OpenClasp generation "
+                "configuration or explicitly set OPENCLASP_ALLOW_SHIELD_FALLBACK=true."
             )
         usage = generation.get("tokenUsage") or {}
         state.shield_input_tokens += int(usage.get("inputTokens") or 0)
@@ -233,9 +231,6 @@ class OpenClaspReviewAgent(HalfDuplexAgent[OpenClaspAgentState]):
         self, state: OpenClaspAgentState, draft: str
     ) -> tuple[str, float]:
         prompt = (
-            "Review the proposed next step using only the visible policy and interaction below. "
-            "Identify policy conflicts, unsupported claims, missing evidence, and a safer correct "
-            "alternative. This is a generic second pass, not OpenClasp Shield.\n\n"
             f"<policy>\n{self.domain_policy}\n</policy>\n\n"
             f"<interaction>\n{_transient_context(state.messages)}\n</interaction>\n\n"
             f"<draft>\n{draft}\n</draft>"
@@ -243,7 +238,18 @@ class OpenClaspReviewAgent(HalfDuplexAgent[OpenClaspAgentState]):
         response = generate(
             model=self.generic_review_model,
             tools=[],
-            messages=[SystemMessage(role="system", content=prompt)],
+            messages=[
+                SystemMessage(
+                    role="system",
+                    content=(
+                        "Review the proposed next step using only the supplied visible policy and "
+                        "interaction. Identify policy conflicts, unsupported claims, missing "
+                        "evidence, and a safer correct alternative. This is a generic second pass, "
+                        "not OpenClasp Shield."
+                    ),
+                ),
+                UserMessage(role="user", content=prompt),
+            ],
             call_name="openclasp_generic_review",
             **self.llm_args,
         )

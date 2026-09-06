@@ -50,11 +50,13 @@ The cancellation scenario for reservation `EHGLP3` is current airline task `0`.
 uv run python ../openclasp/benchmarks/tau3/run_experiment.py \
   --mode baseline --domain airline --task-ids 0 --num-trials 1 \
   --agent-llm openai/gpt-4.1 --user-llm openai/gpt-4.1 \
+  --agent-llm-args '{}' --user-llm-args '{}' \
   --save-to oc_baseline_smoke --summary-file oc_baseline_smoke.json
 
 uv run python ../openclasp/benchmarks/tau3/run_experiment.py \
   --mode shield --domain airline --task-ids 0 --num-trials 1 \
   --agent-llm openai/gpt-4.1 --user-llm openai/gpt-4.1 \
+  --agent-llm-args '{}' --user-llm-args '{}' \
   --save-to oc_shield_smoke --summary-file oc_shield_smoke.json
 ```
 
@@ -62,15 +64,16 @@ Open the trajectories with `uv run tau2 view`. The smoke test proves wiring only
 
 ## 4. Run a controlled sample
 
-Use identical domain, models, task IDs, trials, seed, temperature, and concurrency for all three
+Use identical domain, models, model arguments, task IDs, trials, seed, and concurrency for all three
 runs. Start with 20 airline tasks and four trials:
 
 ```bash
 for mode in baseline generic-review shield; do
   uv run python ../openclasp/benchmarks/tau3/run_experiment.py \
     --mode "$mode" --domain airline --num-tasks 20 --num-trials 4 \
-    --seed 300 --temperature 0 --max-concurrency 1 \
+    --seed 300 --max-concurrency 1 \
     --agent-llm openai/gpt-4.1 --user-llm openai/gpt-4.1 \
+    --agent-llm-args '{}' --user-llm-args '{}' \
     --save-to "oc_${mode}_airline_20x4" \
     --summary-file "oc_${mode}_airline_20x4.json"
 done
@@ -100,3 +103,6 @@ specialized method helped. The meaningful signal is Shield outperforming both.
   transport debugging.
 - The adapter deliberately uses `workers=0`; thread concurrency is supported, process workers are not
   because post-run outcomes must map back to their Shield cases.
+- Per-task τ³ logs are enabled automatically because the current custom-agent interface exposes the
+  simulation identifier through that context. This identifier is used locally for outcome joins and
+  is not sent to Shield.

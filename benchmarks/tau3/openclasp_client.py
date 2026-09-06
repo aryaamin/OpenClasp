@@ -14,7 +14,7 @@ class OpenClaspMcpError(RuntimeError):
 
 
 class OpenClaspMcpClient:
-    def __init__(self, base_url: str, token: str, timeout_seconds: float = 40.0):
+    def __init__(self, base_url: str, token: str, timeout_seconds: float = 58.0):
         if not base_url.startswith(("http://", "https://")):
             raise ValueError("OPENCLASP_URL must be an HTTP(S) URL")
         if not token.startswith("oc_at_"):

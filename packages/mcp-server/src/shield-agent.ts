@@ -20,6 +20,13 @@ import {
 
 export const SHIELD_PROMPT_VERSION = 'shield-agent-v1';
 export const DEFAULT_SHIELD_MODEL = 'claude-sonnet-5';
+const DEFAULT_SHIELD_TIMEOUT_MS = 50_000;
+
+function shieldTimeoutMs(): number {
+  const configured = Number(process.env.OPENCLASP_SHIELD_TIMEOUT_MS);
+  if (!Number.isFinite(configured)) return DEFAULT_SHIELD_TIMEOUT_MS;
+  return Math.min(55_000, Math.max(5_000, Math.trunc(configured)));
+}
 
 export const ShieldCaseInputSchema = z
   .object({
@@ -228,7 +235,7 @@ const generateWithAnthropic: ShieldAgentGenerator = async ({
   const agent = new ToolLoopAgent({
     model: anthropic(model),
     instructions: shieldInstructions(),
-    stopWhen: isStepCount(8),
+    stopWhen: isStepCount(5),
     tools: {
       inspect_case: tool({
         description:
@@ -267,7 +274,7 @@ const generateWithAnthropic: ShieldAgentGenerator = async ({
         nextSteps: item.analysis.nextSteps,
       })),
     }),
-    abortSignal: AbortSignal.timeout(25_000),
+    abortSignal: AbortSignal.timeout(shieldTimeoutMs()),
   });
   return {
     analysis: ShieldAnalysisSchema.parse(result.output),
@@ -282,15 +289,17 @@ const generateWithAnthropic: ShieldAgentGenerator = async ({
   };
 };
 
-function fallbackAnalysis(caseRecord: ShieldCase): ShieldAnalysis {
+function fallbackAnalysis(caseRecord: ShieldCase, errorCode?: string): ShieldAnalysis {
   const missingEvidence = [
     ...(caseRecord.policies.length ? [] : ['Applicable policy or decision boundary']),
     ...(caseRecord.evidence.length ? [] : ['Authoritative evidence supporting material claims']),
   ];
   const disposition = missingEvidence.length ? 'gather_evidence' : 'proceed_with_caution';
+  const missingConfiguration = errorCode === 'anthropic_api_key_missing';
   return ShieldAnalysisSchema.parse({
-    reply:
-      'Shield AI is not configured, so I cannot perform an independent semantic investigation. Gather the listed evidence and do not treat this fallback as approval.',
+    reply: missingConfiguration
+      ? 'Shield AI is not configured, so I cannot perform an independent semantic investigation. Gather the listed evidence and do not treat this fallback as approval.'
+      : 'Shield AI generation was temporarily unavailable, so no independent semantic investigation was completed. Retry the consultation and do not treat this fallback as approval.',
     situationSummary: caseRecord.proposedAction
       ? `The protected agent is considering: ${caseRecord.proposedAction}`
       : 'The protected agent requested decision support without a concrete proposed action.',
@@ -303,7 +312,9 @@ function fallbackAnalysis(caseRecord: ShieldCase): ShieldAnalysis {
     missingEvidence,
     questionsToAsk: missingEvidence.map((item) => `What verified source establishes: ${item}?`),
     nextSteps: [
-      'Configure the Anthropic API key for full Shield analysis.',
+      missingConfiguration
+        ? 'Configure the Anthropic API key for full Shield analysis.'
+        : 'Retry the Shield consultation before making a consequential decision.',
       ...(missingEvidence.length ? ['Collect authoritative evidence before acting.'] : []),
     ],
     safeguards: ['Require human review for consequential actions while Shield AI is unavailable.'],
@@ -333,10 +344,14 @@ export async function consultShield(
         : error instanceof Error
           ? error.name.slice(0, 100)
           : 'generation_failed';
+    console.error('[shield] generation failed', {
+      errorCode,
+      model: process.env.OPENCLASP_SHIELD_MODEL?.trim() || DEFAULT_SHIELD_MODEL,
+    });
   }
   const consultationId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const analysis = generation?.analysis ?? fallbackAnalysis(caseRecord);
+  const analysis = generation?.analysis ?? fallbackAnalysis(caseRecord, errorCode);
   const record = ShieldConsultationSchema.parse({
     protocolVersion: '0.1',
     consultationId,

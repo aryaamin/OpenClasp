@@ -120,4 +120,28 @@ describe('OpenClasp Shield agent', () => {
     expect(result.consultation.analysis.reply).toContain('not configured');
     expect(result.consultation.analysis.confidence).toBeLessThan(0.5);
   });
+
+  it('labels transient generation failures without claiming configuration is missing', async () => {
+    const result = await consultShield(
+      caseRecord(),
+      {
+        message: 'What should I do?',
+        situationContext: '',
+        facts: [],
+        evidence: [],
+        policies: [],
+      },
+      [],
+      async () => {
+        throw new DOMException('Timed out', 'TimeoutError');
+      },
+    );
+
+    expect(result.consultation.generation).toMatchObject({
+      mode: 'fallback',
+      errorCode: 'TimeoutError',
+    });
+    expect(result.consultation.analysis.reply).toContain('temporarily unavailable');
+    expect(result.consultation.analysis.reply).not.toContain('not configured');
+  });
 });

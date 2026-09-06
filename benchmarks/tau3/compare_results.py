@@ -53,11 +53,19 @@ def main() -> None:
     generic = load(args.generic_review)
     shield = load(args.shield)
     signatures = {
-        (value["domain"], value["agentModel"], value["userModel"], value["seed"], value["numTrials"])
+        (
+            value["domain"],
+            value["agentModel"],
+            value["userModel"],
+            json.dumps(value.get("agentLlmArgs", {}), sort_keys=True),
+            json.dumps(value.get("userLlmArgs", {}), sort_keys=True),
+            value["seed"],
+            value["numTrials"],
+        )
         for value in (baseline, generic, shield)
     }
     if len(signatures) != 1:
-        raise ValueError("Runs are not comparable: domain/model/seed/trial settings differ")
+        raise ValueError("Runs are not comparable: domain/model/args/seed/trial settings differ")
     vs_baseline, baseline_pairs = paired_delta(baseline, shield)
     vs_generic, generic_pairs = paired_delta(generic, shield)
     print(stats("baseline", baseline))

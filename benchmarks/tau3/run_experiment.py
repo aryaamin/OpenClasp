@@ -15,6 +15,16 @@ from openclasp_agent import close_shield_cases, register_openclasp_agents
 from openclasp_client import OpenClaspMcpClient
 
 
+def json_object(value: str) -> dict[str, object]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise argparse.ArgumentTypeError(f"invalid JSON: {error.msg}") from error
+    if not isinstance(parsed, dict):
+        raise argparse.ArgumentTypeError("LLM arguments must be a JSON object")
+    return parsed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -29,7 +39,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--generic-review-model")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--seed", type=int, default=300)
-    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--agent-llm-args", type=json_object, default={})
+    parser.add_argument("--user-llm-args", type=json_object, default={})
     parser.add_argument("--retrieval-config")
     parser.add_argument("--trigger", choices=["decisions", "actions", "all"], default="decisions")
     parser.add_argument("--save-to")
@@ -66,13 +77,17 @@ def main() -> None:
         agent=agent,
         llm_agent=args.agent_llm,
         llm_user=args.user_llm,
-        llm_args_agent={"temperature": args.temperature},
-        llm_args_user={"temperature": args.temperature},
+        llm_args_agent=args.agent_llm_args,
+        llm_args_user=args.user_llm_args,
         task_ids=args.task_ids,
         num_tasks=args.num_tasks,
         num_trials=args.num_trials,
         max_concurrency=args.max_concurrency,
         workers=0,
+        # Current τ³ exposes its per-run simulation ID to custom agent factories only
+        # while per-task logging is enabled. The adapter needs that ID to join Shield
+        # cases to evaluator outcomes without exposing hidden task data to Shield.
+        verbose_logs=True,
         seed=args.seed,
         retrieval_config=args.retrieval_config,
         save_to=save_to,
@@ -90,6 +105,8 @@ def main() -> None:
         "agent": agent,
         "agentModel": args.agent_llm,
         "userModel": args.user_llm,
+        "agentLlmArgs": args.agent_llm_args,
+        "userLlmArgs": args.user_llm_args,
         "seed": args.seed,
         "numTrials": args.num_trials,
         "simulationCount": len(results.simulations),

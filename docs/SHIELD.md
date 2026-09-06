@@ -25,8 +25,10 @@ situation context are sent to the configured model provider for generation and a
 OpenClasp. Do not submit secrets or full transcripts.
 
 Set `ANTHROPIC_API_KEY` to enable model-backed investigation. `OPENCLASP_SHIELD_MODEL` can override
-the default Anthropic model. If generation is unavailable, Shield returns an explicit low-confidence
-fallback and does not pretend that an AI investigation occurred.
+the default Anthropic model. `OPENCLASP_SHIELD_TIMEOUT_MS` can set a 5–55 second generation deadline;
+the default is 50 seconds to remain below the hosted function limit. If generation is unavailable,
+Shield returns an explicit low-confidence fallback and does not pretend that an AI investigation
+occurred.
 
 ## τ³ benchmark
 
