@@ -1,6 +1,14 @@
 import crypto from 'node:crypto';
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { generateText, isStepCount, Output, ToolLoopAgent, tool } from 'ai';
+import { createAnthropic, type AnthropicLanguageModelOptions } from '@ai-sdk/anthropic';
+import {
+  generateText,
+  isStepCount,
+  NoObjectGeneratedError,
+  NoOutputGeneratedError,
+  Output,
+  ToolLoopAgent,
+  tool,
+} from 'ai';
 import { z } from 'zod';
 import {
   ShieldAnalysisSchema,
@@ -18,7 +26,7 @@ import {
   type ShieldPolicy,
 } from '../../protocol/src/index.js';
 
-export const SHIELD_PROMPT_VERSION = 'shield-agent-v2';
+export const SHIELD_PROMPT_VERSION = 'shield-agent-v3';
 export const DEFAULT_SHIELD_MODEL = 'claude-sonnet-5';
 const DEFAULT_SHIELD_TIMEOUT_MS = 50_000;
 
@@ -277,11 +285,29 @@ const generateFastWithAnthropic: ShieldAgentGenerator = async ({
     instructions: fastShieldInstructions(),
     prompt: generationPrompt(caseRecord, consultation, previousConsultations),
     output: Output.object({ schema: ShieldAnalysisSchema }),
-    maxOutputTokens: 2500,
+    maxOutputTokens: 3000,
+    providerOptions: {
+      anthropic: {
+        thinking: { type: 'disabled' },
+        effort: 'low',
+      } satisfies AnthropicLanguageModelOptions,
+    },
     abortSignal: AbortSignal.timeout(shieldTimeoutMs()),
   });
+  let output: ShieldAnalysis;
+  try {
+    output = ShieldAnalysisSchema.parse(result.output);
+  } catch (error) {
+    if (NoOutputGeneratedError.isInstance(error)) {
+      Object.assign(error, {
+        openclaspFinishReason: result.finishReason,
+        openclaspTotalTokens: result.usage.totalTokens,
+      });
+    }
+    throw error;
+  }
   return {
-    analysis: ShieldAnalysisSchema.parse(result.output),
+    analysis: output,
     model: `anthropic/${model}`,
     strategy: 'fast',
     tokenUsage: {
@@ -407,6 +433,29 @@ function fallbackAnalysis(caseRecord: ShieldCase, errorCode?: string): ShieldAna
   });
 }
 
+function generationErrorMetadata(error: unknown) {
+  if (NoObjectGeneratedError.isInstance(error)) {
+    return {
+      finishReason: error.finishReason,
+      totalTokens: error.usage?.totalTokens,
+      generatedTextLength: error.text?.length,
+      cause: error.cause instanceof Error ? error.cause.name : undefined,
+    };
+  }
+  if (NoOutputGeneratedError.isInstance(error)) {
+    const metadata = error as typeof error & {
+      openclaspFinishReason?: string;
+      openclaspTotalTokens?: number;
+    };
+    return {
+      finishReason: metadata.openclaspFinishReason,
+      totalTokens: metadata.openclaspTotalTokens,
+      cause: error.cause instanceof Error ? error.cause.name : undefined,
+    };
+  }
+  return {};
+}
+
 export async function consultShield(
   caseValue: ShieldCase,
   consultationValue: ShieldConsultInput,
@@ -448,6 +497,7 @@ export async function consultShield(
       strategy: consultationInput.analysisDepth,
       durationMs: Date.now() - startedAt,
       model: process.env.OPENCLASP_SHIELD_MODEL?.trim() || DEFAULT_SHIELD_MODEL,
+      ...generationErrorMetadata(error),
     });
   }
   const consultationId = crypto.randomUUID();
