@@ -320,7 +320,13 @@ const generateDeepWithAnthropic: ShieldAgentGenerator = async ({
             ids: z.array(z.string().uuid()).max(20).default([]),
           })
           .strict(),
-        execute: async ({ focus, ids }) => inspectCase(caseRecord, focus, ids),
+        execute: async ({
+          focus,
+          ids,
+        }: {
+          focus: 'goal' | 'facts' | 'evidence' | 'policy' | 'owner_guidance';
+          ids: string[];
+        }) => inspectCase(caseRecord, focus, ids),
       }),
     },
     output: Output.object({ schema: ShieldAnalysisSchema }),
