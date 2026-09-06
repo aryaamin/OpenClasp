@@ -91,8 +91,10 @@ describe('OpenClasp Shield agent', () => {
     expect(result.consultation.generation).toMatchObject({
       mode: 'ai',
       model: 'anthropic/test-model',
+      strategy: 'fast',
       tokenUsage: { totalTokens: 30 },
     });
+    expect(result.consultation.generation.durationMs).toBeGreaterThanOrEqual(0);
     expect(JSON.stringify(result.consultation)).not.toContain(secretMessage);
     expect(result.consultation.inputDigest).toHaveLength(43);
   });
@@ -116,6 +118,7 @@ describe('OpenClasp Shield agent', () => {
     expect(result.consultation.generation).toMatchObject({
       mode: 'fallback',
       errorCode: 'anthropic_api_key_missing',
+      strategy: 'fast',
     });
     expect(result.consultation.analysis.reply).toContain('not configured');
     expect(result.consultation.analysis.confidence).toBeLessThan(0.5);
@@ -143,5 +146,44 @@ describe('OpenClasp Shield agent', () => {
     });
     expect(result.consultation.analysis.reply).toContain('temporarily unavailable');
     expect(result.consultation.analysis.reply).not.toContain('not configured');
+  });
+
+  it('uses deep analysis only when explicitly requested', async () => {
+    let observedDepth = '';
+    const result = await consultShield(
+      caseRecord(),
+      {
+        message: 'Investigate this claim in depth.',
+        situationContext: '',
+        analysisDepth: 'deep',
+        facts: [],
+        evidence: [],
+        policies: [],
+      },
+      [],
+      async ({ consultation }) => {
+        observedDepth = consultation.analysisDepth;
+        return {
+          model: 'anthropic/test-model',
+          analysis: {
+            reply: 'Investigate the approval source.',
+            situationSummary: 'The authority claim remains unsupported.',
+            disposition: 'gather_evidence',
+            riskTier: 'high',
+            confidence: 0.8,
+            rationale: ['No verified approval is present.'],
+            claims: [],
+            manipulationSignals: [],
+            missingEvidence: ['Recorded approval'],
+            questionsToAsk: ['What is the approval reference?'],
+            nextSteps: ['Verify the approval reference'],
+            safeguards: ['Do not issue the refund before verification'],
+          },
+        };
+      },
+    );
+
+    expect(observedDepth).toBe('deep');
+    expect(result.consultation.generation).toMatchObject({ strategy: 'deep' });
   });
 });

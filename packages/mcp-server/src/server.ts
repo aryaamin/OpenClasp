@@ -2097,7 +2097,7 @@ export function registerOpenClaspTools(
     {
       title: 'Consult the Shield agent',
       description:
-        'Ask Shield to investigate a situation, challenge unsupported claims, inspect supplied evidence and policy, and recommend defensible next steps.',
+        'Ask Shield to review a situation and recommend defensible next steps. Fast analysis is the default for inline decisions; request deep analysis for an explicit investigation.',
       inputSchema: z
         .object({ caseId: z.string().uuid(), ...ShieldConsultInputSchema.shape })
         .strict(),
@@ -2124,6 +2124,7 @@ export function registerOpenClaspTools(
       const consultationInput = ShieldConsultInputSchema.parse({
         message: input.message,
         situationContext: input.situationContext,
+        analysisDepth: input.analysisDepth,
         ...(input.proposedAction ? { proposedAction: input.proposedAction } : {}),
         facts: input.facts,
         evidence: input.evidence,

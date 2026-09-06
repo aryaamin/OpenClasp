@@ -100,6 +100,7 @@ export function ShieldWorkspace({
         body: JSON.stringify({
           message,
           situationContext: '',
+          analysisDepth: 'deep',
           facts: [],
           evidence: [],
           policies: [],

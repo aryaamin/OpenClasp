@@ -1366,6 +1366,8 @@ export const ShieldConsultationSchema = z
         mode: z.enum(['ai', 'fallback']),
         model: z.string().min(1),
         promptVersion: z.string().min(1),
+        strategy: z.enum(['fast', 'deep']).optional(),
+        durationMs: z.number().int().nonnegative().optional(),
         tokenUsage: z
           .object({
             inputTokens: z.number().int().nonnegative().optional(),

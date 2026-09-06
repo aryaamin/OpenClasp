@@ -39,6 +39,9 @@ class CaseRun:
     shield_input_tokens: int = 0
     shield_output_tokens: int = 0
     shield_total_tokens: int = 0
+    shield_generation_ms: int = 0
+    fast_consultations: int = 0
+    deep_consultations: int = 0
 
 
 CASE_RUNS: dict[str, CaseRun] = {}
@@ -55,6 +58,9 @@ class OpenClaspAgentState(BaseModel):
     shield_input_tokens: int = 0
     shield_output_tokens: int = 0
     shield_total_tokens: int = 0
+    shield_generation_ms: int = 0
+    fast_consultations: int = 0
+    deep_consultations: int = 0
 
 
 class OpenClaspReviewAgent(HalfDuplexAgent[OpenClaspAgentState]):
@@ -219,12 +225,19 @@ class OpenClaspReviewAgent(HalfDuplexAgent[OpenClaspAgentState]):
         state.shield_input_tokens += int(usage.get("inputTokens") or 0)
         state.shield_output_tokens += int(usage.get("outputTokens") or 0)
         state.shield_total_tokens += int(usage.get("totalTokens") or 0)
+        state.shield_generation_ms += int(generation.get("durationMs") or 0)
+        strategy = generation.get("strategy")
+        state.fast_consultations += int(strategy == "fast")
+        state.deep_consultations += int(strategy == "deep")
         with CASE_RUNS_LOCK:
             case_run = CASE_RUNS.get(state.simulation_id)
             if case_run:
                 case_run.shield_input_tokens = state.shield_input_tokens
                 case_run.shield_output_tokens = state.shield_output_tokens
                 case_run.shield_total_tokens = state.shield_total_tokens
+                case_run.shield_generation_ms = state.shield_generation_ms
+                case_run.fast_consultations = state.fast_consultations
+                case_run.deep_consultations = state.deep_consultations
         return json.dumps(consultation.get("analysis", {}), ensure_ascii=False)
 
     def _generic_review(
@@ -280,11 +293,63 @@ def register_openclasp_agents() -> None:
 def close_shield_cases(results: Any, client: OpenClaspMcpClient) -> list[dict[str, Any]]:
     closed: list[dict[str, Any]] = []
     failures: list[str] = []
+    with CASE_RUNS_LOCK:
+        pending_runs = dict(CASE_RUNS)
+        CASE_RUNS.clear()
+
+    def close_run(
+        simulation_id: str,
+        run: CaseRun,
+        *,
+        reward: float | None,
+        termination: str,
+        result: str,
+        completed: bool,
+    ) -> None:
+        try:
+            record = client.close_case(
+                case_id=run.case_id,
+                result=result,
+                accepted_advice=run.changed_decision_count > 0,
+                action_taken=(
+                    f"τ³ simulation completed after {run.consultation_count} Shield consultations; "
+                    f"Shield changed {run.changed_decision_count} drafted decisions."
+                    if completed
+                    else "τ³ attempt ended before an evaluable simulation was produced."
+                ),
+                observed_impact=f"τ³ reward={reward}; termination={termination}",
+            )
+            closed.append(
+                {
+                    "simulationId": simulation_id,
+                    "taskId": run.task_id,
+                    "caseId": run.case_id,
+                    "reward": reward,
+                    "result": result,
+                    "consultations": run.consultation_count,
+                    "changedDecisions": run.changed_decision_count,
+                    "fastConsultations": run.fast_consultations,
+                    "deepConsultations": run.deep_consultations,
+                    "shieldGenerationMs": run.shield_generation_ms,
+                    "shieldInputTokens": run.shield_input_tokens,
+                    "shieldOutputTokens": run.shield_output_tokens,
+                    "shieldTotalTokens": run.shield_total_tokens,
+                    "outcomeId": record.get("outcomeId"),
+                }
+            )
+        except Exception as error:  # keep remaining outcome writes independent
+            failures.append(f"{simulation_id}: {error}")
+
     for simulation in results.simulations:
-        with CASE_RUNS_LOCK:
-            run = CASE_RUNS.get(simulation.id)
+        run = pending_runs.pop(simulation.id, None)
+        termination = str(
+            getattr(simulation.termination_reason, "value", simulation.termination_reason)
+        )
         if run is None:
-            failures.append(f"No Shield case mapping for simulation {simulation.id}")
+            # τ³ creates a fresh placeholder ID after exhausting retries. Each real attempt
+            # has its own case mapping and is closed below as an unevaluable attempt.
+            if termination != "infrastructure_error":
+                failures.append(f"No Shield case mapping for simulation {simulation.id}")
             continue
         reward = simulation.reward_info.reward if simulation.reward_info else None
         outcome = (
@@ -294,34 +359,24 @@ def close_shield_cases(results: Any, client: OpenClaspMcpClient) -> list[dict[st
             if reward >= 0.999
             else "unsuccessful"
         )
-        termination = getattr(simulation.termination_reason, "value", simulation.termination_reason)
-        try:
-            record = client.close_case(
-                case_id=run.case_id,
-                result=outcome,
-                accepted_advice=run.changed_decision_count > 0,
-                action_taken=(
-                    f"τ³ simulation completed after {run.consultation_count} Shield consultations; "
-                    f"Shield changed {run.changed_decision_count} drafted decisions."
-                ),
-                observed_impact=f"τ³ reward={reward}; termination={termination}",
-            )
-            closed.append(
-                {
-                    "simulationId": simulation.id,
-                    "taskId": simulation.task_id,
-                    "caseId": run.case_id,
-                    "reward": reward,
-                    "consultations": run.consultation_count,
-                    "changedDecisions": run.changed_decision_count,
-                    "shieldInputTokens": run.shield_input_tokens,
-                    "shieldOutputTokens": run.shield_output_tokens,
-                    "shieldTotalTokens": run.shield_total_tokens,
-                    "outcomeId": record.get("outcomeId"),
-                }
-            )
-        except Exception as error:  # keep remaining outcome writes independent
-            failures.append(f"{simulation.id}: {error}")
+        close_run(
+            simulation.id,
+            run,
+            reward=reward,
+            termination=termination,
+            result=outcome,
+            completed=True,
+        )
+
+    for simulation_id, run in pending_runs.items():
+        close_run(
+            simulation_id,
+            run,
+            reward=None,
+            termination="infrastructure_error",
+            result="unknown",
+            completed=False,
+        )
     if failures:
         raise OpenClaspMcpError("Could not close all Shield cases: " + "; ".join(failures))
     return closed

@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from tau2.data_model.message import AssistantMessage, SystemMessage, UserMessage
 
-from openclasp_agent import OpenClaspAgentState, OpenClaspReviewAgent
+from openclasp_agent import (
+    CASE_RUNS,
+    CaseRun,
+    OpenClaspAgentState,
+    OpenClaspReviewAgent,
+    close_shield_cases,
+)
 
 
 class GenericReviewTests(unittest.TestCase):
@@ -37,6 +44,46 @@ class GenericReviewTests(unittest.TestCase):
         self.assertEqual(result, "Review result")
         self.assertEqual(cost, 0.01)
         self.assertTrue(any(isinstance(message, UserMessage) for message in captured))
+
+
+class ShieldCaseCleanupTests(unittest.TestCase):
+    def setUp(self):
+        CASE_RUNS.clear()
+
+    def tearDown(self):
+        CASE_RUNS.clear()
+
+    def test_closes_retry_cases_when_tau_returns_an_infra_error_placeholder(self):
+        CASE_RUNS["real-attempt-id"] = CaseRun(
+            case_id="case-id",
+            task_id="39",
+            consultation_count=1,
+        )
+        calls = []
+
+        class FakeClient:
+            def close_case(self, **kwargs):
+                calls.append(kwargs)
+                return {"outcomeId": "outcome-id"}
+
+        results = SimpleNamespace(
+            simulations=[
+                SimpleNamespace(
+                    id="infra-placeholder-id",
+                    task_id="39",
+                    reward_info=None,
+                    termination_reason=SimpleNamespace(value="infrastructure_error"),
+                )
+            ]
+        )
+
+        closed = close_shield_cases(results, FakeClient())
+
+        self.assertEqual(len(closed), 1)
+        self.assertEqual(closed[0]["simulationId"], "real-attempt-id")
+        self.assertEqual(closed[0]["result"], "unknown")
+        self.assertEqual(calls[0]["result"], "unknown")
+        self.assertEqual(CASE_RUNS, {})
 
 
 if __name__ == "__main__":

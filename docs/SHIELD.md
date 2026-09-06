@@ -9,13 +9,14 @@ requests, changed payment details, or ambiguous authority could cause a bad deci
 1. Call `openclasp_shield_open_case` with the goal, counterparty type, proposed action, and any
    bounded facts, evidence, or policy.
 2. Call `openclasp_shield_consult` when the agent needs help. Provide only the minimum current-turn
-   context needed for the decision.
+   context needed for the decision. The default `analysisDepth: "fast"` performs one bounded model
+   generation for inline decisions. Use `analysisDepth: "deep"` only for an explicit investigation.
 3. Use Shield's conversational reply and structured disposition to gather evidence, modify the plan,
    seek approval, proceed with safeguards, or stop.
 4. Call `openclasp_shield_close_case` with the action taken and observed result.
 
-Owners can review cases and add authenticated guidance in the Shield dashboard. Agent access tokens
-cannot add owner guidance.
+Owners can review cases, run deep consultations, and add authenticated guidance in the Shield
+dashboard. Agent access tokens cannot add owner guidance.
 
 ## What is stored
 
@@ -28,7 +29,8 @@ Set `ANTHROPIC_API_KEY` to enable model-backed investigation. `OPENCLASP_SHIELD_
 the default Anthropic model. `OPENCLASP_SHIELD_TIMEOUT_MS` can set a 5–55 second generation deadline;
 the default is 50 seconds to remain below the hosted function limit. If generation is unavailable,
 Shield returns an explicit low-confidence fallback and does not pretend that an AI investigation
-occurred.
+occurred. Each structured consultation records whether the fast or deep strategy ran, its duration,
+and available token usage.
 
 ## τ³ benchmark
 

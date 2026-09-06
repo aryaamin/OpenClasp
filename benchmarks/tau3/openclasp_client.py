@@ -126,6 +126,7 @@ class OpenClaspMcpClient:
                     f"PROPOSED NEXT STEP\n{draft}"
                 )[:4000],
                 "situationContext": situation_context[:8000],
+                "analysisDepth": "fast",
                 "proposedAction": draft[:1000],
                 "facts": [],
                 "evidence": [],
