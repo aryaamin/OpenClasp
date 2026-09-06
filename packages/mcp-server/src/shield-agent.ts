@@ -434,12 +434,16 @@ function fallbackAnalysis(caseRecord: ShieldCase, errorCode?: string): ShieldAna
 }
 
 function generationErrorMetadata(error: unknown) {
+  const cause =
+    typeof error === 'object' && error && 'cause' in error
+      ? (error as { cause?: unknown }).cause
+      : null;
   if (NoObjectGeneratedError.isInstance(error)) {
     return {
       finishReason: error.finishReason,
       totalTokens: error.usage?.totalTokens,
       generatedTextLength: error.text?.length,
-      cause: error.cause instanceof Error ? error.cause.name : undefined,
+      cause: cause instanceof Error ? cause.name : undefined,
     };
   }
   if (NoOutputGeneratedError.isInstance(error)) {
@@ -450,7 +454,7 @@ function generationErrorMetadata(error: unknown) {
     return {
       finishReason: metadata.openclaspFinishReason,
       totalTokens: metadata.openclaspTotalTokens,
-      cause: error.cause instanceof Error ? error.cause.name : undefined,
+      cause: cause instanceof Error ? cause.name : undefined,
     };
   }
   return {};
