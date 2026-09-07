@@ -27,7 +27,7 @@ import {
 } from '../../protocol/src/index.js';
 
 export const SHIELD_PROMPT_VERSION = 'shield-agent-v3';
-export const DEFAULT_SHIELD_MODEL = 'claude-sonnet-5';
+export const DEFAULT_SHIELD_MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_SHIELD_TIMEOUT_MS = 50_000;
 
 function shieldTimeoutMs(): number {
@@ -289,7 +289,6 @@ const generateFastWithAnthropic: ShieldAgentGenerator = async ({
     providerOptions: {
       anthropic: {
         thinking: { type: 'disabled' },
-        effort: 'low',
       } satisfies AnthropicLanguageModelOptions,
     },
     abortSignal: AbortSignal.timeout(shieldTimeoutMs()),
