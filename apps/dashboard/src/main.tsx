@@ -20,7 +20,6 @@ import { AgentMark, FrameCorners } from '@/components/agent-mark';
 import { AppShell } from '@/components/app-shell';
 import { ClaspMark } from '@/components/clasp-mark';
 import { FirstRunGuide } from '@/components/first-run-guide';
-import { ShieldWorkspace } from '@/components/shield-workspace';
 import { LandingBackdrop, LandingDiagram } from '@/components/landing-scene';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -753,17 +752,6 @@ function PageContent({
   if (page === 'agents')
     return <Agents data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />;
   if (page === 'insights') return <Insights data={data} />;
-  if (page === 'shield')
-    return (
-      <ShieldWorkspace
-        agents={data.agents}
-        cases={data.shieldCases}
-        consultations={data.shieldConsultations}
-        outcomes={data.shieldOutcomes}
-        api={api}
-        refreshDashboard={refreshDashboard}
-      />
-    );
   if (page !== 'dashboard')
     return (
       <Overview data={data} navigate={navigate} refreshDashboard={refreshDashboard} api={api} />

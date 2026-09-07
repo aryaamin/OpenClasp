@@ -61,6 +61,12 @@ export const sendMcpA2ARequest = async (value: Json): Promise<boolean> => {
   const bearerToken = a2a?.bearerToken;
   const request = a2a?.request ?? a2a?.requestTemplate;
   if (typeof endpoint !== 'string' || typeof bearerToken !== 'string' || !request) return false;
+  const interactionId =
+    value.interaction?.interactionId ??
+    value.plan?.interactionId ??
+    value.response?.interactionId ??
+    request.params?.message?.metadata?.interactionId;
+  const startedAt = Date.now();
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -74,6 +80,12 @@ export const sendMcpA2ARequest = async (value: Json): Promise<boolean> => {
       method: 'message/send',
       params: request.params ?? { message: request.message },
     }),
+  });
+  console.info('[openclasp-a2a]', {
+    event: 'mcp_a2a_request.completed',
+    interactionId,
+    statusCode: response.status,
+    durationMs: Date.now() - startedAt,
   });
   if (!response.ok)
     throw new sdk.RuntimeError(`Peer A2A endpoint returned HTTP ${response.status}`);

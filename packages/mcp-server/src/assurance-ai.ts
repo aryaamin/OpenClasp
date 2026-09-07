@@ -502,10 +502,21 @@ export async function generateAssuranceDecision(
   );
   const round = previousPlans.length + 1;
   if (round > 3) throw new Error(`Maximum ${input.phase} assurance probe rounds reached`);
+  const generationStartedAt = Date.now();
   const generationId = crypto.randomUUID();
   const model = process.env.OPENCLASP_ANTHROPIC_MODEL?.trim() || DEFAULT_ASSURANCE_MODEL;
   const modelLabel = `anthropic/${model}`;
   const snapshot = generationInput(input);
+  if (process.env.OPENCLASP_DIAGNOSTICS !== 'off')
+    console.info('[assurance]', {
+      event: 'generation.started',
+      generationId,
+      interactionId: input.interaction.interactionId,
+      phase: input.phase,
+      round,
+      model: modelLabel,
+      promptVersion: ASSURANCE_PROMPT_VERSION,
+    });
   await store.beginAssuranceGeneration({
     generationId,
     operatorId: input.operatorId,
@@ -535,6 +546,17 @@ export async function generateAssuranceDecision(
         : error instanceof Error
           ? error.name.slice(0, 80)
           : 'generation_failed';
+    if (process.env.OPENCLASP_DIAGNOSTICS !== 'off')
+      console.error('[assurance]', {
+        event: 'generation.fallback',
+        generationId,
+        interactionId: input.interaction.interactionId,
+        phase: input.phase,
+        round,
+        model: modelLabel,
+        errorCode,
+        durationMs: Date.now() - generationStartedAt,
+      });
   }
   const usedCodes = new Set(
     previousPlans.flatMap((plan) => plan.questions.map((question) => question.questionCode)),
@@ -685,6 +707,17 @@ export async function generateAssuranceDecision(
         errorCode: 'persistence_failed',
       })
       .catch(() => undefined);
+    if (process.env.OPENCLASP_DIAGNOSTICS !== 'off')
+      console.error('[assurance]', {
+        event: 'generation.persistence_failed',
+        generationId,
+        interactionId: input.interaction.interactionId,
+        phase: input.phase,
+        round,
+        model: modelLabel,
+        errorName: error instanceof Error ? error.name.slice(0, 80) : 'UnknownError',
+        durationMs: Date.now() - generationStartedAt,
+      });
     throw error;
   }
   await store.finishAssuranceGeneration(input.operatorId, generationId, {
@@ -693,6 +726,22 @@ export async function generateAssuranceDecision(
     ...(tokenUsage ? { tokenUsage } : {}),
     ...(errorCode ? { errorCode } : {}),
   });
+  if (process.env.OPENCLASP_DIAGNOSTICS !== 'off')
+    console.info('[assurance]', {
+      event: 'generation.completed',
+      generationId,
+      interactionId: input.interaction.interactionId,
+      phase: input.phase,
+      round,
+      model: modelLabel,
+      mode,
+      inputTokens: tokenUsage?.inputTokens,
+      outputTokens: tokenUsage?.outputTokens,
+      totalTokens: tokenUsage?.totalTokens,
+      candidateQuestionCount: decision.candidateQuestions.length,
+      safeguardCount: decision.safeguards.length,
+      durationMs: Date.now() - generationStartedAt,
+    });
   return saved;
 }
 

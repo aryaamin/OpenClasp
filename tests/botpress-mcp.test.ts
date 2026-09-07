@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { callOpenClaspTool, sendMcpA2ARequest } from '../connectors/botpress/src/mcp.js';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('Botpress OpenClasp MCP bridge', () => {
   it('calls a tool with the paired bearer token and parses an SSE result', async () => {
@@ -33,6 +36,7 @@ describe('Botpress OpenClasp MCP bridge', () => {
 
   it('sends a returned MCP A2A request directly to the peer', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    const logMock = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
@@ -41,14 +45,31 @@ describe('Botpress OpenClasp MCP bridge', () => {
           endpoint: 'https://peer.example/a2a',
           bearerToken: 'session-token',
           request: {
-            params: { message: { role: 'user', parts: [{ kind: 'data', data: {} }] } },
+            params: {
+              message: {
+                role: 'user',
+                parts: [{ kind: 'text', text: 'private message body' }],
+              },
+            },
           },
         },
+        plan: { interactionId: 'interaction-1' },
       }),
     ).resolves.toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       'https://peer.example/a2a',
       expect.objectContaining({ method: 'POST' }),
     );
+    expect(logMock).toHaveBeenCalledWith(
+      '[openclasp-a2a]',
+      expect.objectContaining({
+        event: 'mcp_a2a_request.completed',
+        interactionId: 'interaction-1',
+        statusCode: 200,
+      }),
+    );
+    expect(JSON.stringify(logMock.mock.calls)).not.toContain('private message body');
+    expect(JSON.stringify(logMock.mock.calls)).not.toContain('session-token');
+    expect(JSON.stringify(logMock.mock.calls)).not.toContain('peer.example');
   });
 });

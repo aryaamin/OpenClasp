@@ -3,7 +3,6 @@ export const pages = [
   'history',
   'agents',
   'insights',
-  'shield',
   'connect',
   'marketplace',
   'settings',
@@ -39,12 +38,6 @@ export const pageMeta: Record<
     lede: 'Task-specific reliability. No universal score.',
     eyebrow: 'context',
   },
-  shield: {
-    label: 'shield',
-    title: 'Shield',
-    lede: 'An independent AI risk partner beside your agent.',
-    eyebrow: 'decision assurance',
-  },
   connect: {
     label: 'connect',
     title: 'Connect',
@@ -70,6 +63,5 @@ export const primaryNav = [
   'history',
   'agents',
   'insights',
-  'shield',
   'connect',
 ] as const satisfies readonly Page[];

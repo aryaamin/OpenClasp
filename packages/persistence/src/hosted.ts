@@ -110,6 +110,29 @@ import {
   type SourceRecordWriteMetadata,
 } from './source-record.js';
 
+type DiagnosticFields = Record<string, string | number | boolean | null | undefined>;
+
+function a2aInfo(event: string, fields: DiagnosticFields = {}) {
+  if (process.env.OPENCLASP_DIAGNOSTICS === 'off') return;
+  console.info('[a2a]', { event, ...fields });
+}
+
+function a2aError(event: string, error: unknown, fields: DiagnosticFields = {}) {
+  if (process.env.OPENCLASP_DIAGNOSTICS === 'off') return;
+  console.error('[a2a]', {
+    event,
+    ...fields,
+    errorName: error instanceof Error ? error.name.slice(0, 80) : 'UnknownError',
+    errorCode:
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof error.code === 'string'
+        ? error.code.slice(0, 80)
+        : undefined,
+  });
+}
+
 export type HostedRecordKind =
   | 'agent'
   | 'delegation'
@@ -2309,6 +2332,13 @@ export class HostedRepository {
 
   async brokerLiveSession(interaction: FederatedInteraction) {
     await this.ensureSchema();
+    const brokerStartedAt = Date.now();
+    a2aInfo('session.broker_started', {
+      interactionId: interaction.interactionId,
+      initiatorAgentId: interaction.initiatorAgentId,
+      responderAgentId: interaction.responderAgentId,
+      contractRevision: interaction.contractRevision,
+    });
     const existing = await this.sql`
       SELECT status FROM openclasp_live_sessions
       WHERE interaction_id = ${interaction.interactionId}
@@ -2421,6 +2451,11 @@ export class HostedRepository {
         offer.offerId,
         offer,
       );
+      a2aInfo('runtime.offer_completed', {
+        interactionId: interaction.interactionId,
+        role: label.toLowerCase(),
+        statusCode: response.status,
+      });
       if (response.status < 200 || response.status >= 300)
         throw new Error(`${label} runtime is not live (HTTP ${response.status})`);
       return LiveSessionAcceptanceSchema.parse(response.body);
@@ -2542,6 +2577,11 @@ export class HostedRepository {
           activation.activationId,
           activation,
         );
+        a2aInfo('runtime.activation_completed', {
+          interactionId: interaction.interactionId,
+          role: label.toLowerCase(),
+          statusCode: response.status,
+        });
         if (response.status < 200 || response.status >= 300)
           throw new Error(`${label} activation failed with HTTP ${response.status}`);
       };
@@ -2562,6 +2602,12 @@ export class HostedRepository {
         this.touchAgentPresence(initiator.operatorId, initiator.agentId),
         this.touchAgentPresence(responder.operatorId, responder.agentId),
       ]);
+      a2aInfo('session.activated', {
+        interactionId: interaction.interactionId,
+        initiatorAgentId: initiator.agentId,
+        responderAgentId: responder.agentId,
+        durationMs: Date.now() - brokerStartedAt,
+      });
     } catch (error) {
       const reason =
         error instanceof Error ? error.message.slice(0, 500) : 'Session activation failed';
@@ -2570,6 +2616,10 @@ export class HostedRepository {
         WHERE interaction_id = ${interaction.interactionId}
       `;
       await this.journalLiveSessionState(interaction.interactionId);
+      a2aError('session.activation_failed', error, {
+        interactionId: interaction.interactionId,
+        durationMs: Date.now() - brokerStartedAt,
+      });
       throw error;
     }
   }
@@ -3538,6 +3588,16 @@ export class HostedRepository {
       this.upsert(participant.participantOperatorId, 'completion_report', stored.reportId, stored),
       this.upsert(participant.counterpartyOperatorId, 'completion_report', stored.reportId, stored),
     ]);
+    a2aInfo('completion.report_recorded', {
+      interactionId: stored.interactionId,
+      reportId: stored.reportId,
+      reportingAgentId: stored.reportingAgentId,
+      outcome: stored.outcome,
+      submissionMethod: verifiedSubmissionMethod,
+      criteriaCount: stored.criteria.length,
+      evidenceReferenceCount: stored.evidenceReferences.length,
+      confidence: stored.confidence,
+    });
     const assuranceComparisons = (
       await Promise.all([
         this.recalculateAssuranceComparison(
@@ -3613,6 +3673,12 @@ export class HostedRepository {
         stored.contractHash,
       ).catch(() => false);
       peerReportStatus = requested ? 'awaiting' : 'unreachable';
+      a2aInfo('completion.peer_finalization_requested', {
+        interactionId: stored.interactionId,
+        reportingAgentId: stored.reportingAgentId,
+        counterpartyAgentId: stored.counterpartyAgentId,
+        accepted: requested,
+      });
     }
     const conclusion = await this.finalizeInteractionConclusion(stored.interactionId, {
       peerReportStatus,
@@ -4021,6 +4087,18 @@ export class HostedRepository {
             conclusion,
           })
         : undefined;
+    a2aInfo('conclusion.released', {
+      interactionId,
+      conclusionId: conclusion.conclusionId,
+      lifecycle,
+      outcome: conclusion.outcome,
+      consensus: conclusion.consensus,
+      reportCount: reports.length,
+      feedbackCount: visibleFeedback.length,
+      feedbackRevealed: feedbackWindowClosed,
+      learningEligible: learning?.eligibility.eligible,
+      learningSampleWeight: learning?.eligibility.sampleWeight,
+    });
     return {
       released: true as const,
       feedbackRevealed: feedbackWindowClosed,
@@ -4114,6 +4192,18 @@ export class HostedRepository {
     if (existing[0] && canonicalHash(existing[0].payload) !== canonicalHash(stored))
       throw new Error('Conflicting feedback ID');
     await this.upsert(operatorId, 'interaction_feedback', stored.feedbackId, stored);
+    a2aInfo('feedback.recorded', {
+      interactionId: stored.interactionId,
+      feedbackId: stored.feedbackId,
+      reviewerAgentId: stored.reviewerAgentId,
+      subjectAgentId: stored.subjectAgentId,
+      submissionMethod: verifiedSubmissionMethod,
+      ratingDimensionCount: Object.keys(stored.ratings).length,
+      reasonCodeCount: stored.reasonCodes.length,
+      evidenceReferenceCount: stored.evidenceReferences.length,
+      confidence: stored.confidence,
+      hasPrivateComment: Boolean(stored.privateComment),
+    });
     const requestBase = { ...request, status: 'submitted' as const };
     delete requestBase.platformAttestation;
     const updatedRequest = FeedbackRequestSchema.parse({
@@ -4293,6 +4383,15 @@ export class HostedRepository {
         ...event,
         attestation,
       });
+    a2aInfo('session.event_recorded', {
+      interactionId: event.interactionId,
+      agentId: event.agentId,
+      eventId: event.eventId,
+      eventType: event.type,
+      sequence: event.sequence,
+      recorded: rows.length > 0,
+      evidenceReferenceCount: event.evidenceReferences.length,
+    });
     if (event.type === 'session_completed' || event.type === 'session_failed') {
       const terminal = await this.sql`
         SELECT COUNT(DISTINCT agent_id) AS count
@@ -4320,6 +4419,10 @@ export class HostedRepository {
           this.journalLiveSessionState(event.interactionId),
           this.journalFederatedInteraction(event.interactionId),
         ]);
+        a2aInfo('session.terminal_events_complete', {
+          interactionId: event.interactionId,
+          terminalReporterCount: Number(terminal[0]?.count ?? 0),
+        });
       }
     }
     return {
@@ -4395,6 +4498,14 @@ export class HostedRepository {
     `;
     const stored = FederatedInteractionSchema.parse(rows[0]?.payload);
     await this.journalFederatedInteraction(stored.interactionId);
+    a2aInfo('interaction.created', {
+      interactionId: stored.interactionId,
+      initiatorAgentId: stored.initiatorAgentId,
+      responderAgentId: stored.responderAgentId,
+      contractRevision: stored.contractRevision,
+      successCriteriaCount: stored.contract.successCriteria.length,
+      expiresAt: stored.expiresAt,
+    });
     const profiles = await this.sql`
       SELECT payload FROM openclasp_records
       WHERE operator_id = ${responder.operator_id}
@@ -4451,6 +4562,12 @@ export class HostedRepository {
     method: 'oauth_installation' | 'oauth_account' | 'policy_auto_accept' = 'oauth_account',
   ): Promise<FederatedInteraction> {
     await this.ensureSchema();
+    a2aInfo('invitation.response_started', {
+      interactionId,
+      agentId,
+      decision,
+      method,
+    });
     const rows = await this.sql`
       SELECT payload, responder_operator_id, responder_agent_id
       FROM openclasp_federated_interactions WHERE interaction_id = ${interactionId}
@@ -4515,6 +4632,11 @@ export class HostedRepository {
           UPDATE openclasp_agent_runtimes SET last_error = ${reason}, updated_at = NOW()
           WHERE agent_id IN (${current.initiatorAgentId}, ${current.responderAgentId})
         `;
+        a2aError('interaction.activation_failed', error, {
+          interactionId,
+          initiatorAgentId: current.initiatorAgentId,
+          responderAgentId: current.responderAgentId,
+        });
         throw error;
       }
     }
@@ -4525,6 +4647,12 @@ export class HostedRepository {
       current.updatedAt,
     );
     if (!updated) throw new Error('Invitation was already handled');
+    a2aInfo('interaction.status_changed', {
+      interactionId,
+      agentId,
+      status: next.status,
+      contractRevision: next.contractRevision,
+    });
     return next;
   }
 

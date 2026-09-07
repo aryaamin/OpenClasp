@@ -19,6 +19,14 @@ type RuntimeState = {
 
 const EXTENSION_URI = 'https://openclasp.dev/extensions/trust/v0.1';
 const normalizeUrl = (value: string) => value.replace(/\/$/, '');
+const connectorInfo = (event: string, fields: Record<string, unknown> = {}) =>
+  console.info('[openclasp-a2a]', { event, ...fields });
+const connectorError = (event: string, error: unknown, fields: Record<string, unknown> = {}) =>
+  console.error('[openclasp-a2a]', {
+    event,
+    ...fields,
+    errorName: error instanceof Error ? error.name.slice(0, 80) : 'UnknownError',
+  });
 const platformUrl = (ctx: bp.Context) => ctx.configuration.openClaspUrl ?? 'https://openclasp.dev';
 const botpressWebhookEndpoint = (webhookId: string) =>
   `https://webhook.botpress.cloud/${webhookId}`;
@@ -364,6 +372,12 @@ const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Js
     throw new sdk.RuntimeError(
       'Specify interactionId because there is not exactly one unfinished OpenClasp session',
     );
+  const completionStartedAt = Date.now();
+  connectorInfo('completion.started', {
+    interactionId,
+    agentId: state.agentId,
+    outcome: input.outcome,
+  });
   const session = sessions[interactionId];
   if (!session) throw new sdk.RuntimeError('OpenClasp live session is unavailable');
   if (finalizations[interactionId]?.status === 'completed') {
@@ -419,6 +433,12 @@ const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Js
     session.reporting.bearerToken,
     report,
   );
+  connectorInfo('completion.report_submitted', {
+    interactionId,
+    agentId: state.agentId,
+    reportId: report.reportId,
+    outcome: report.outcome,
+  });
   const request = completion.feedbackRequest;
   if (!request?.requestId)
     throw new sdk.RuntimeError('OpenClasp did not return a feedback request');
@@ -481,6 +501,13 @@ const completeInteraction = async (ctx: bp.Context, client: bp.Client, input: Js
     finalizationsJson: JSON.stringify(finalizations),
   });
   await heartbeat(ctx, client);
+  connectorInfo('completion.finished', {
+    interactionId,
+    agentId: state.agentId,
+    feedbackId: feedback.feedbackId,
+    feedbackRevealed: result.revealed,
+    durationMs: Date.now() - completionStartedAt,
+  });
   return {
     interactionId,
     status: 'completed' as const,
@@ -564,6 +591,11 @@ export default new bp.Integration({
       return { agentsJson: JSON.stringify(agents) };
     },
     startInteraction: async ({ ctx, client, input }) => {
+      connectorInfo('interaction.start_requested', {
+        targetReferenceType: input.targetAgent.startsWith('http') ? 'url' : 'identifier',
+        taskCategory: input.taskCategory ?? 'inferred',
+        successCriteriaCount: input.successCriteria?.length ?? 0,
+      });
       const result = await connectorTool(ctx, client, 'openclasp_connect_to_agent', {
         targetAgentReference: input.targetAgent,
         task: input.task,
@@ -572,6 +604,11 @@ export default new bp.Integration({
         allowedActions: input.allowedActions ?? [],
         prohibitedActions: input.prohibitedActions ?? [],
         allowedData: input.allowedData ?? [],
+      });
+      connectorInfo('interaction.start_completed', {
+        interactionId: result.interaction?.interactionId,
+        status: result.interaction?.status ?? 'pending',
+        ready: Boolean(result.ready),
       });
       return {
         interactionId: String(result.interaction?.interactionId ?? ''),
@@ -761,6 +798,7 @@ export default new bp.Integration({
               return;
             }
           }
+          const sendStartedAt = Date.now();
           const response = await fetch(session.peer.endpoint, {
             method: 'POST',
             headers: {
@@ -789,6 +827,14 @@ export default new bp.Integration({
                 },
               },
             }),
+          });
+          connectorInfo('message.sent_to_peer', {
+            interactionId,
+            agentId: state.agentId,
+            peerAgentId: session.peer.agentId,
+            statusCode: response.status,
+            contentBytes: Buffer.byteLength(payload.text, 'utf8'),
+            durationMs: Date.now() - sendStartedAt,
           });
           if (!response.ok)
             throw new sdk.RuntimeError(`Peer A2A endpoint returned HTTP ${response.status}`);
@@ -853,6 +899,11 @@ export default new bp.Integration({
       )
         return jsonResponse(401, { error: 'invalid_openclasp_signature' });
       if (body.agentId !== state.agentId) return jsonResponse(403, { error: 'wrong_agent' });
+      connectorInfo('control.received', {
+        controlType: body.type,
+        interactionId: body.interactionId,
+        agentId: state.agentId,
+      });
       if (body.type === 'openclasp.session.finalization_request') {
         const sessions = parseRecord(state.sessionsJson);
         const session = sessions[body.interactionId];
@@ -884,6 +935,10 @@ export default new bp.Integration({
           session.peer.agentId,
           finalizationPrompt(session, offer),
         );
+        connectorInfo('control.finalization_accepted', {
+          interactionId: body.interactionId,
+          agentId: state.agentId,
+        });
         return jsonResponse(202, { accepted: true });
       }
       if (body.type === 'openclasp.session.offer') {
@@ -903,6 +958,11 @@ export default new bp.Integration({
         await setState(client, ctx.integrationId, {
           ...state,
           offersJson: JSON.stringify(offers),
+        });
+        connectorInfo('control.offer_accepted', {
+          interactionId: body.interactionId,
+          agentId: state.agentId,
+          role: body.role,
         });
         return jsonResponse(200, {
           type: 'openclasp.session.accepted',
@@ -930,6 +990,11 @@ export default new bp.Integration({
         ...state,
         sessionsJson: JSON.stringify(sessions),
       });
+      connectorInfo('control.activation_accepted', {
+        interactionId: body.interactionId,
+        agentId: state.agentId,
+        role: body.role,
+      });
       if (body.role === 'initiator') {
         const offer = parseRecord(state.offersJson)[body.interactionId]?.offer;
         await createIncomingMessage(
@@ -955,6 +1020,12 @@ export default new bp.Integration({
       if (!session) return jsonResponse(404, { error: 'live_session_not_found' });
       validSessionCredential(authorization.slice(7), session, state.agentId);
       const peerText = textFromMessage(body.params?.message ?? {});
+      connectorInfo('message.received', {
+        interactionId,
+        agentId: state.agentId,
+        peerAgentId: session.peer.agentId,
+        contentBytes: Buffer.byteLength(peerText, 'utf8'),
+      });
       let deliveredText = peerText;
       if (!session.contextDelivered) {
         deliveredText = withSessionContext(
@@ -976,12 +1047,21 @@ export default new bp.Integration({
         deliveredText,
       );
       await heartbeat(ctx, client);
+      connectorInfo('message.delivered_to_agent', {
+        interactionId,
+        agentId: state.agentId,
+        peerAgentId: session.peer.agentId,
+        botpressMessageId: message.id,
+      });
       return jsonResponse(200, {
         jsonrpc: '2.0',
         id: body.id,
         result: { task: { id: message.id, state: 'submitted' } },
       });
     } catch (error) {
+      connectorError('message.delivery_failed', error, {
+        agentId: state.agentId,
+      });
       return jsonResponse(401, {
         error: error instanceof Error ? error.message : 'invalid_session_credential',
       });
